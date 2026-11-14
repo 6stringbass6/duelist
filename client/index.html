@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="screen-orientation" content="landscape" />
+<meta name="x5-orientation" content="landscape" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#0b0f18" />
+<title>GRIDSTRIKE</title>
+<style>
+:root{--bg:#0b0f18;--panel:#141a26;--panel2:#1b2332;--line:#2a3447;--txt:#e8edf5;--mut:#8b97ab;--acc:#ff4655;--acc2:#28e0ff;--ally:#3b9cff;--enemy:#ff4655;--gold:#ffd23f;--ok:#3ddc84}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,"Segoe UI","Noto Sans KR",sans-serif;overflow:hidden;overscroll-behavior:none;user-select:none;-webkit-user-select:none;touch-action:none}
+button{font:inherit;color:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel2);border-radius:6px;padding:8px 14px}
+button:hover{border-color:#44536e}button:disabled{opacity:.45;cursor:not-allowed}
+button.pri{background:var(--acc);border-color:var(--acc);font-weight:700}button.ghost{background:transparent}button.sm{padding:4px 10px;font-size:13px}
+button.on{border-color:var(--acc2);color:var(--acc2)}
+input,select{font:inherit;color:var(--txt);background:#0e131d;border:1px solid var(--line);border-radius:6px;padding:8px 10px;user-select:text;-webkit-user-select:text}
+input[type=range]{padding:0;accent-color:var(--acc)}input[type=color]{padding:0;width:38px;height:30px}
+.hidden{display:none!important}.mut{color:var(--mut)}.row{display:flex;align-items:center;gap:10px}.col{display:flex;flex-direction:column;gap:10px}.grow{flex:1}.right{margin-left:auto}
+#app{position:fixed;inset:0}
+#stage{position:absolute;inset:0;outline:none}#stage canvas{display:block;width:100%;height:100%}
+#xhair{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:8;image-rendering:pixelated}
+.screen{position:absolute;inset:0;z-index:20;overflow:auto;touch-action:pan-y;background:radial-gradient(1200px 600px at 50% -10%,#1b2540 0,var(--bg) 60%)}
+/* ── auth */
+#auth{display:flex;align-items:center;justify-content:center}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px}
+#auth .card{width:min(380px,92vw)}#auth h1{margin:0 0 4px;letter-spacing:4px;font-size:30px}#auth h1 b{color:var(--acc)}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}.tabs button{flex:1;white-space:nowrap}.tabs button.on{background:var(--panel);border-color:var(--acc);color:#fff}
+.google{background:#fff;color:#222;border-color:#fff;font-weight:600;width:100%}.err{color:#ff7b86;font-size:13px;min-height:18px}
+/* ── lobby */
+#lobby-top{position:sticky;top:0;z-index:2;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px;padding:10px 16px;background:rgba(11,15,24,.9);border-bottom:1px solid var(--line);backdrop-filter:blur(6px)}
+#btn-play{padding:6px 22px;font-size:14px;font-weight:800;letter-spacing:2px;background:var(--acc);border-color:var(--acc);border-radius:4px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:99px;background:var(--panel2);border:1px solid var(--line);font-size:13px;white-space:nowrap}
+#lobby-nav{display:flex;gap:6px;padding:10px 16px;overflow-x:auto}#lobby-body{padding:6px 16px 40px;max-width:1100px;margin:0 auto}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}.grid.wide{grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
+h2{margin:18px 0 10px;font-size:17px}h3{margin:0 0 6px;font-size:15px}
+.banner{position:relative;border-radius:14px;padding:26px;border:1px solid var(--line);overflow:hidden;min-height:150px}
+.banner .tag{font-size:12px;letter-spacing:3px;color:var(--gold)}.banner h3{font-size:28px;margin:6px 0}
+.skin{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;display:flex;flex-direction:column}
+.skin .sw{height:74px;position:relative}.skin .sw::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 40%,rgba(0,0,0,.5))}
+.skin .inf{padding:10px;display:flex;flex-direction:column;gap:6px}.skin .nm{font-weight:700;font-size:14px}.rar{font-size:11px;font-weight:700;letter-spacing:1px}
+.bar{height:8px;border-radius:99px;background:#0e131d;overflow:hidden}.bar>i{display:block;height:100%;background:var(--acc2)}
+.days{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}.day{padding:10px 4px;text-align:center;border-radius:8px;background:var(--panel2);border:1px solid var(--line);font-size:12px}
+.day.done{opacity:.5}.day.today{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold) inset}
+table{border-collapse:collapse;width:100%}th,td{padding:6px 8px;text-align:left;font-size:13px;border-bottom:1px solid var(--line)}th{color:var(--mut);font-weight:600}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}.stat b{display:block;font-size:24px}
+/* ── modal */
+.modal{position:absolute;inset:0;z-index:40;background:rgba(5,8,14,.72);display:flex;align-items:center;justify-content:center;padding:12px;touch-action:pan-y}
+.modal>.card{width:min(760px,96vw);max-height:92vh;overflow:auto}.modal>.card.sm{width:min(400px,94vw)}
+.mh{display:flex;align-items:center;margin-bottom:12px}.mh h3{font-size:18px;margin:0}.mh .x{margin-left:auto;border:none;background:none;font-size:20px;padding:0 6px}
+.modes{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}@media(max-width:700px){.modes{grid-template-columns:repeat(2,1fr)}}
+.mode{padding:16px 12px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);cursor:pointer;min-height:110px}.mode.on{border-color:var(--acc);background:#2a1a22}
+.mode b{font-size:17px}.mode small{display:block;color:var(--mut);margin-top:6px;font-size:12px;line-height:1.4}.badge{font-size:10px;background:var(--gold);color:#000;border-radius:3px;padding:1px 5px;margin-left:6px;vertical-align:middle}
+.set-row{display:grid;grid-template-columns:170px 1fr 70px;gap:10px;align-items:center;padding:6px 0}.set-row>span:last-child{text-align:right;color:var(--mut);font-size:13px}
+.kb{display:grid;grid-template-columns:1fr 110px 110px;gap:6px;align-items:center;padding:3px 0}.kb button{padding:6px}.kb button.wait{border-color:var(--gold);color:var(--gold)}
+.swatch{width:26px;height:26px;border-radius:5px;border:2px solid transparent;padding:0}.swatch.on{border-color:#fff}
+#xh-preview{background:repeating-conic-gradient(#3a4a3a 0 25%,#55665a 0 50%) 0 0/40px 40px;border-radius:8px;width:100%;height:120px;image-rendering:pixelated}
+/* ── gacha */
+#gacha-win{position:relative;height:120px;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:#0a0e16}
+#gacha-strip{display:flex;height:100%;will-change:transform}#gacha-strip>div{flex:0 0 120px;height:100%;border-right:1px solid #000;display:flex;align-items:flex-end;padding:6px;font-size:11px;font-weight:700}
+#gacha-win::after{content:"";position:absolute;left:50%;top:0;bottom:0;width:3px;margin-left:-1px;background:var(--gold);box-shadow:0 0 12px var(--gold)}
+#gacha-result{text-align:center;padding:14px 0;min-height:70px}@keyframes pop{0%{transform:scale(.6);opacity:0}100%{transform:scale(1);opacity:1}}.pop{animation:pop .35s ease-out}
+/* ── HUD */
+#hud{position:absolute;inset:0;z-index:10;pointer-events:none;font-variant-numeric:tabular-nums}
+#hud-top{position:absolute;top:calc(8px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:14px;background:rgba(10,14,22,.6);padding:6px 16px;border-radius:8px;pointer-events:auto}
+#hud-top .s{font-size:24px;font-weight:800;min-width:34px;text-align:center}#hud-sa{color:var(--ally)}#hud-sb{color:var(--enemy)}#hud-mid{text-align:center;font-size:12px;color:var(--mut)}#hud-timer{font-size:17px;color:#fff;font-weight:700}
+#killfeed{position:absolute;top:calc(10px + env(safe-area-inset-top));right:calc(10px + env(safe-area-inset-right));display:flex;flex-direction:column;gap:4px;align-items:flex-end}
+.kf{background:rgba(10,14,22,.7);padding:4px 10px;border-radius:4px;font-size:13px;border-left:3px solid transparent;white-space:nowrap}.kf.mine{border-left-color:var(--gold);background:rgba(60,50,10,.75)}
+.kf .a{color:var(--ally)}.kf .e{color:var(--enemy)}.kf .w{color:var(--mut);margin:0 6px}.kf .hs{color:var(--gold)}
+#hud-banner{position:absolute;top:18%;left:50%;transform:translateX(-50%);font-size:26px;font-weight:800;letter-spacing:3px;text-shadow:0 2px 12px #000;text-align:center}
+#hud-banner small{display:block;font-size:13px;font-weight:500;letter-spacing:0;color:#cfd8e6;margin-top:4px}
+#hud-bl{position:absolute;left:calc(18px + env(safe-area-inset-left));bottom:calc(16px + env(safe-area-inset-bottom));display:flex;align-items:flex-end;gap:12px}
+#hud-hp{font-size:40px;font-weight:800;line-height:1}#hud-hpbar{width:180px;height:8px;background:rgba(0,0,0,.5);border-radius:4px;overflow:hidden}#hud-hpbar i{display:block;height:100%;background:#fff}
+#hud-br{position:absolute;right:calc(18px + env(safe-area-inset-right));bottom:calc(16px + env(safe-area-inset-bottom));text-align:right}
+#hud-ammo{font-size:40px;font-weight:800;line-height:1}#hud-ammo small{font-size:18px;color:var(--mut)}#hud-weapon{font-size:13px;color:var(--mut)}
+#hud-slots{display:flex;gap:4px;justify-content:flex-end;margin-top:6px;pointer-events:auto}#hud-slots div{padding:3px 8px;font-size:12px;border-radius:4px;background:rgba(10,14,22,.6);border:1px solid transparent}#hud-slots div.on{border-color:#fff}
+#hud-skills{position:absolute;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));transform:translateX(-50%);display:flex;gap:10px}
+.sk{position:relative;width:54px;height:54px;border-radius:8px;background:rgba(10,14,22,.65);border:1px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800;overflow:hidden}
+.sk small{font-size:10px;font-weight:500;color:var(--mut)}.sk i{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.72)}.sk.act{border-color:var(--acc2);box-shadow:0 0 10px var(--acc2)}
+#hitmarker{position:absolute;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;opacity:0;background:linear-gradient(45deg,transparent 46%,#fff 46% 54%,transparent 54%),linear-gradient(-45deg,transparent 46%,#fff 46% 54%,transparent 54%);-webkit-mask:radial-gradient(circle,transparent 5px,#000 6px);mask:radial-gradient(circle,transparent 5px,#000 6px)}
+#hitmarker.hs{filter:drop-shadow(0 0 3px var(--acc)) hue-rotate(0);background:linear-gradient(45deg,transparent 44%,var(--acc) 44% 56%,transparent 56%),linear-gradient(-45deg,transparent 44%,var(--acc) 44% 56%,transparent 56%)}
+#hud-fps{position:absolute;left:calc(8px + env(safe-area-inset-left));top:calc(6px + env(safe-area-inset-top));font-size:12px;color:var(--ok)}
+#hud-dead{position:absolute;left:50%;top:62%;transform:translateX(-50%);font-size:18px;color:#ffb3ba;text-shadow:0 2px 8px #000}
+#hud-hint{position:absolute;left:50%;bottom:86px;transform:translateX(-50%);font-size:13px;color:#cfd8e6;background:rgba(10,14,22,.6);padding:4px 12px;border-radius:99px}
+#range-panel{position:absolute;left:calc(14px + env(safe-area-inset-left));top:calc(34px + env(safe-area-inset-top));pointer-events:auto;display:flex;gap:6px}
+/* ── scoreboard */
+#scoreboard{position:absolute;inset:0;z-index:15;background:rgba(5,8,14,.78);display:flex;align-items:center;justify-content:center;pointer-events:none}
+#scoreboard .card{width:min(920px,96vw);max-height:92vh;overflow:auto}#scoreboard tr.me td{background:rgba(255,210,63,.08)}#scoreboard h3.a{color:var(--ally)}#scoreboard h3.e{color:var(--enemy)}
+/* ── loadout */
+#loadout{position:absolute;z-index:30;left:50%;top:50%;transform:translate(-50%,-50%);width:min(720px,96vw);max-height:92vh;overflow:auto;touch-action:pan-y}
+.ld-row{display:grid;grid-template-columns:90px 1fr;gap:8px;align-items:start;padding:6px 0}.ld-opts{display:flex;gap:6px;flex-wrap:wrap}
+.ld-opts button{min-width:92px;text-align:left}.ld-opts button small{display:block;color:var(--mut);font-size:11px}.ld-opts button.on{border-color:var(--acc);background:#2a1a22}
+/* ── touch */
+#touch{position:absolute;inset:0;z-index:12;pointer-events:none}
+#joy-zone{position:absolute;left:0;top:18%;bottom:0;width:42%;pointer-events:auto}#aim-zone{position:absolute;right:0;top:12%;bottom:0;width:58%;pointer-events:auto}
+#joy-base{position:absolute;width:120px;height:120px;border-radius:50%;border:2px solid rgba(255,255,255,.35);background:rgba(255,255,255,.06);left:calc(36px + env(safe-area-inset-left));bottom:calc(36px + env(safe-area-inset-bottom))}
+#joy-knob{position:absolute;left:50%;top:50%;width:46%;height:46%;margin:-23% 0 0 -23%;border-radius:50%;background:rgba(255,255,255,.5)}
+.tbtn{position:absolute;pointer-events:auto;width:58px;height:58px;border-radius:50%;border:2px solid rgba(255,255,255,.45);background:rgba(20,26,38,.5);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:#fff;transform:scale(var(--ts,1));opacity:var(--to,.6)}
+.tbtn.down{background:rgba(255,255,255,.35)}.tbtn.big{width:84px;height:84px;font-size:15px;border-color:var(--acc)}
+#t-fire{right:calc(34px + env(safe-area-inset-right));bottom:calc(74px + env(safe-area-inset-bottom))}#t-ads{right:calc(132px + env(safe-area-inset-right));bottom:calc(46px + env(safe-area-inset-bottom))}
+#t-jump{right:calc(30px + env(safe-area-inset-right));bottom:calc(172px + env(safe-area-inset-bottom))}#t-slide{right:calc(126px + env(safe-area-inset-right));bottom:calc(120px + env(safe-area-inset-bottom))}
+#t-q{right:calc(202px + env(safe-area-inset-right));bottom:calc(30px + env(safe-area-inset-bottom))}#t-e{right:calc(204px + env(safe-area-inset-right));bottom:calc(104px + env(safe-area-inset-bottom))}
+#t-reload{right:calc(100px + env(safe-area-inset-right));bottom:calc(200px + env(safe-area-inset-bottom));width:46px;height:46px}
+#t-auto{right:calc(18px + env(safe-area-inset-right));top:calc(120px + env(safe-area-inset-top));width:auto;height:34px;border-radius:99px;padding:0 12px;font-size:11px}#t-auto.on{border-color:var(--ok);color:var(--ok)}
+#t-menu,#t-load{top:calc(8px + env(safe-area-inset-top));width:40px;height:40px;font-size:11px}#t-menu{left:calc(64px + env(safe-area-inset-left))}#t-load{left:calc(112px + env(safe-area-inset-left))}
+body.left #joy-base{left:auto;right:calc(36px + env(safe-area-inset-right))}
+/* ── misc */
+#toasts{position:absolute;left:50%;top:70px;transform:translateX(-50%);z-index:60;display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none}
+.toast{background:#1d2637;border:1px solid var(--line);padding:8px 16px;border-radius:8px;font-size:14px}.toast.bad{border-color:var(--acc)}.toast.good{border-color:var(--ok)}
+#rotate-hint{display:none;position:absolute;inset:0;z-index:80;background:var(--bg);align-items:center;justify-content:center;text-align:center;font-size:18px;line-height:1.6}
+@media (orientation:portrait) and (pointer:coarse){body.ingame #rotate-hint{display:flex}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage" tabindex="-1"></div>
+  <canvas id="xhair"></canvas>
+
+  <!-- 인게임 HUD -->
+  <div id="hud" class="hidden">
+    <div id="hud-fps" class="hidden"></div>
+    <div id="hud-top"><span class="s" id="hud-sa">0</span><div id="hud-mid"><div id="hud-timer">0:00</div><div id="hud-goal"></div></div><span class="s" id="hud-sb">0</span></div>
+    <div id="range-panel" class="hidden"><button class="sm" id="range-move">봇 이동: OFF</button><button class="sm" id="range-load">무기 변경</button><button class="sm" id="range-exit">나가기</button></div>
+    <div id="killfeed"></div>
+    <div id="hud-banner"></div>
+    <div id="hitmarker"></div>
+    <div id="hud-dead" class="hidden">사망 — 다음 스폰을 기다리는 중</div>
+    <div id="hud-hint" class="hidden"></div>
+    <div id="hud-bl"><div><div id="hud-hp">150</div><div id="hud-hpbar"><i></i></div></div></div>
+    <div id="hud-skills">
+      <div class="sk" id="sk-q"><span>Q</span><small>상승기류</small><i></i></div>
+      <div class="sk" id="sk-e"><span>E</span><small>가속</small><i></i></div>
+    </div>
+    <div id="hud-br"><div id="hud-ammo">0</div><div id="hud-weapon"></div><div id="hud-slots"><div data-slot="1">1 근접</div><div data-slot="2">2 보조</div><div data-slot="3">3 주무기</div><div data-slot="4">4 투척</div></div></div>
+  </div>
+
+  <!-- 모바일 듀얼 터치 HUD -->
+  <div id="touch" class="hidden">
+    <div id="joy-zone"><div id="joy-base"><div id="joy-knob"></div></div></div>
+    <div id="aim-zone"></div>
+    <div class="tbtn" id="t-menu">메뉴</div><div class="tbtn" id="t-load">무기</div>
+    <div class="tbtn" id="t-auto">Auto-Fire OFF</div>
+    <div class="tbtn" id="t-reload" data-act="reload">R</div>
+    <div class="tbtn" id="t-q" data-act="updraft">Q</div><div class="tbtn" id="t-e" data-act="dash">E</div>
+    <div class="tbtn" id="t-slide" data-act="slide">슬라</div><div class="tbtn" id="t-jump" data-act="jump">점프</div>
+    <div class="tbtn" id="t-ads" data-act="alt">줌</div><div class="tbtn big" id="t-fire" data-act="fire">사격</div>
+  </div>
+
+  <div id="scoreboard" class="hidden"><div class="card" id="sb-body"></div></div>
+  <div id="loadout" class="card hidden"></div>
+
+  <!-- 로그인 -->
+  <div id="auth" class="screen">
+    <div class="card col">
+      <div><h1>GRID<b>STRIKE</b></h1><div class="mut">링크 접속만으로 즐기는 웹 3D FPS</div></div>
+      <div class="tabs"><button id="auth-tab-in" class="on">로그인</button><button id="auth-tab-up">회원가입</button></div>
+      <input id="auth-id" placeholder="아이디 (영문 소문자·숫자 4~16자)" autocomplete="username" autocapitalize="off" />
+      <input id="auth-pw" type="password" placeholder="비밀번호 (6자 이상)" autocomplete="current-password" />
+      <input id="auth-nick" class="hidden" placeholder="닉네임 (2~16자)" />
+      <div class="err" id="auth-err"></div>
+      <button class="pri" id="auth-submit">로그인</button>
+      <button class="google" id="auth-google">Continue with Google</button>
+      <button class="ghost" id="auth-guest">게스트로 바로 플레이</button>
+    </div>
+  </div>
+
+  <!-- 로비 -->
+  <div id="lobby" class="screen hidden">
+    <div id="lobby-top">
+      <div class="row"><span class="chip" id="lb-nick"></span><span class="chip" id="lb-title"></span><span class="chip" id="lb-tier"></span></div>
+      <button id="btn-play">[ 플레이 ]</button>
+      <div class="row" style="justify-content:flex-end"><span class="chip" id="lb-credits"></span><span class="chip" id="lb-boxes"></span><button class="sm" id="btn-settings">설정</button><button class="sm ghost" id="btn-logout">로그아웃</button></div>
+    </div>
+    <div id="lobby-nav" class="tabs"></div>
+    <div id="lobby-body"></div>
+  </div>
+
+  <!-- 사설 방 대기실 -->
+  <div id="room" class="screen hidden"><div style="max-width:900px;margin:30px auto;padding:0 16px" id="room-body"></div></div>
+
+  <!-- 모달 -->
+  <div class="modal hidden" id="m-play"><div class="card"><div class="mh"><h3>게임 모드 선택</h3><button class="x" data-close>✕</button></div><div id="play-body"></div></div></div>
+  <div class="modal hidden" id="m-settings"><div class="card"><div class="mh"><h3>설정</h3><button class="x" data-close>✕</button></div><div class="tabs" id="set-tabs"></div><div id="set-body" style="margin-top:12px"></div></div></div>
+  <div class="modal hidden" id="m-nick"><div class="card sm col"><div class="mh"><h3>닉네임 변경</h3><button class="x" data-close>✕</button></div><div class="mut" id="nick-cost"></div><input id="nick-input" maxlength="16" placeholder="새 닉네임" /><div class="err" id="nick-err"></div><button class="pri" id="nick-ok">변경</button></div></div>
+  <div class="modal hidden" id="m-gacha"><div class="card"><div class="mh"><h3 id="gacha-title">랜덤 박스</h3><button class="x" data-close>✕</button></div><div id="gacha-win"><div id="gacha-strip"></div></div><div id="gacha-result"></div></div></div>
+  <div class="modal hidden" id="m-login"><div class="card sm col"><div class="mh"><h3>7일 연속 로그인 보상</h3><button class="x" data-close>✕</button></div><div id="login-body"></div><button class="pri" data-close>확인</button></div></div>
+  <div class="modal hidden" id="m-result"><div class="card sm col"><div class="mh"><h3 id="res-title"></h3></div><div id="res-body"></div><button class="pri" id="res-ok">로비로</button></div></div>
+  <div class="modal hidden" id="m-pause"><div class="card sm col"><div class="mh"><h3>일시 메뉴</h3></div><button class="pri" id="pause-resume">계속하기</button><button id="pause-load">무기 변경</button><button id="pause-settings">설정</button><button class="ghost" id="pause-leave">게임 나가기</button></div></div>
+
+  <div id="toasts"></div>
+  <div id="rotate-hint"><div>📱↻<br />가로 화면으로 돌려 주세요</div></div>
+</div>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
