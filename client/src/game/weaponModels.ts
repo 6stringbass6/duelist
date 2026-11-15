@@ -7,12 +7,12 @@ import * as THREE from 'three';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { WeaponId } from '../config/weapons';
+import { getSkin } from '../config/skins';
 
 /** 무기 → FBX 파일, 정규화 전체 길이(m, 개머리판~총구) */
 /** file 에 확장자(.glb/.gltf)가 있으면 GLTFLoader, 없으면 FBXLoader(.fbx).
  *  grip = 뒤쪽 끝에서 손잡이 위치(0~1, 모델 길이 비율) → 그 지점이 뷰모델 원점, roll = 길이축 회전(rad, 평평한 면을 카메라 쪽으로) */
 export const WEAPON_MODELS: Partial<Record<WeaponId, { file: string; length: number; grip?: number; roll?: number }>> = {
-  dagger: { file: 'karambit.glb', length: 0.27, grip: 0.3, roll: -0.9 },
   classic: { file: 'Pistol_1', length: 0.3 },
   shorty: { file: 'Shotgun_SawedOff', length: 0.42 },
   frenzy: { file: 'SubmachineGun_4', length: 0.34 },
@@ -67,8 +67,12 @@ function prepare(root: THREE.Object3D, length: number, glb: boolean, grip?: numb
   return { glb, root, roles, scale: length / size.x, offset: new THREE.Vector3(ox, -ctr.y, -ctr.z), muzzle: mz };
 }
 
-function load(id: WeaponId): Promise<Source | null> {
-  const def = WEAPON_MODELS[id]; if (!def) return Promise.resolve(null);
+type ModelDef = { file: string; length: number; grip?: number; roll?: number };
+/** 스킨 전용 모델(GLB)이 있으면 그것, 없으면 무기 기본 모델 */
+const modelFor = (id: WeaponId, skinId?: string | null): ModelDef | undefined => getSkin(skinId)?.glb ?? WEAPON_MODELS[id];
+
+function load(def: ModelDef | undefined): Promise<Source | null> {
+  if (!def) return Promise.resolve(null);
   let p = pending.get(def.file);
   if (!p) {
     const glb = isGlb(def.file);
@@ -80,7 +84,7 @@ function load(id: WeaponId): Promise<Source | null> {
   return p;
 }
 /** 시작 시 한 번 호출 — 사용하는 모델을 미리 받아 둔다 */
-export function preloadWeaponModels(): void { for (const id of Object.keys(WEAPON_MODELS) as WeaponId[]) void load(id); }
+export function preloadWeaponModels(): void { for (const id of Object.keys(WEAPON_MODELS) as WeaponId[]) void load(WEAPON_MODELS[id]); }
 
 const nativeCache = new Map<string, THREE.MeshStandardMaterial>();
 const native = (m: THREE.Material): THREE.MeshStandardMaterial => {
@@ -126,8 +130,8 @@ function build(src: Source, skin: SkinSet, roll = 0): THREE.Group {
 }
 
 /** 프로시저럴 폴백 group 에 FBX 모델을 비동기 교체 장착. 실패/미매핑이면 폴백 유지. */
-export function attachFbxModel(g: THREE.Group, weaponId: WeaponId, skin: SkinSet, viewmodel: boolean): void {
-  const def = WEAPON_MODELS[weaponId]; if (!def) return;
+export function attachFbxModel(g: THREE.Group, weaponId: WeaponId, skin: SkinSet, viewmodel: boolean, skinId?: string | null): void {
+  const def = modelFor(weaponId, skinId); if (!def) return;
   const apply = (src: Source): void => {
     const model = build(src, skin, def.roll ?? 0);
     model.traverse((o) => { if ((o as THREE.Mesh).isMesh) { o.castShadow = !viewmodel; if (viewmodel) { o.frustumCulled = false; o.renderOrder = 10; } } });
@@ -138,5 +142,5 @@ export function attachFbxModel(g: THREE.Group, weaponId: WeaponId, skin: SkinSet
     g.userData.fbx = true; (g.userData.onModel as (() => void) | undefined)?.(); // 총구 위치 확정 → 등급 파츠 재배치
   };
   const hit = ready.get(def.file); if (hit) { apply(hit); return; }
-  void load(weaponId).then((s) => { if (s) apply(s); });
+  void load(def).then((s) => { if (s) apply(s); });
 }

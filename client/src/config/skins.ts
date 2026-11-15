@@ -25,7 +25,10 @@ export interface SkinMaterial {
 /** mode: energy = 표면을 따라 흐르는 에너지(셰이더), plasma = 용암/성운 유동(셰이더). ambient = 마스크 밖 표면 전체에 깔리는 유동광 비율 */
 export interface SkinEmissive { color: number; color2?: number; intensity: number; mode: 'none' | 'static' | 'pulse' | 'flow' | 'energy' | 'plasma'; speed?: number; ambient?: number }
 export interface SkinVfx { tracerColor?: number; muzzleColor?: number; killEffect?: 'none' | 'shatter' | 'burn' | 'freeze' | 'void' | 'gold' | 'nova'; trail?: boolean }
+/** 외부 GLB/FBX 모델을 그대로 쓰는 스킨(절차적 재질 대신 내장 PBR 텍스처). 값 의미는 game/weaponModels.ts 참고 */
+export interface GlbSpec { file: string; length: number; grip?: number; roll?: number }
 export interface SkinDef {
+  glb?: GlbSpec;
   id: string; collection: string; weaponId: SkinWeaponId; name: string; tier: Tier; price: number;
   featured: boolean; inDaily: boolean; inBox: boolean; sort: number; blurb: string;
   model: ModelVariant; material: SkinMaterial; emissive: SkinEmissive; vfx: SkinVfx;
@@ -127,7 +130,14 @@ export const COLLECTIONS: CollectionDef[] = [
 ];
 
 /** 컬렉션에 속하지 않는 단품 스킨은 여기에 추가 */
-export const EXTRA_SKINS: SkinDef[] = [];
+export const KARAMBIT_SKIN_ID = 'karambit_dagger';
+export const EXTRA_SKINS: SkinDef[] = [
+  // 카람빗 스페셜 박스 전용(0.1%) — 상점/일일/일반 박스에는 나오지 않는다. 단검(근접 3번 슬롯) 전용, karambit.glb 의 내장 케이스 하드닝 PBR 텍스처 사용
+  { id: KARAMBIT_SKIN_ID, collection: 'karambit', weaponId: 'dagger', name: '카람빗 (케이스 하드닝)', tier: 'ultra', price: 4500, featured: false, inDaily: false, inBox: false, sort: 14,
+    blurb: '열처리로 푸른 대리석 무늬가 번지는 케이스 하드닝 카람빗. 카람빗 스페셜 박스 0.1% 한정.',
+    model: 'default', material: { style: 'solid', baseColor: 0x1d4fb8, accentColor: 0xe0b440, patternColor: 0x9fd0ff, metalness: 0.95, roughness: 0.25 },
+    emissive: NO_GLOW, vfx: { tracerColor: 0x9fd0ff }, glb: { file: 'karambit.glb', length: 0.27, grip: 0.3, roll: -0.9 } },
+];
 
 const weaponName = (id: SkinWeaponId): string => SKIN_WEAPONS.find((w) => w.id === id)!.name;
 
@@ -157,7 +167,7 @@ export const getSkin = (id: string | null | undefined): SkinDef | null => (id ? 
 export const skinsForWeapon = (weaponId: string): SkinDef[] => SKINS.filter((s) => s.weaponId === weaponId);
 export const featuredSkins = (): SkinDef[] => SKINS.filter((s) => s.featured);
 export const getCollection = (id: string): CollectionDef | undefined => COLLECTIONS.find((c) => c.id === (LEGACY_COLLECTIONS[id] ?? id));
-export const skinAttachment = (s: Pick<SkinDef, 'tier'> | null | undefined): SkinAttachment => (s?.tier === 'ultra' ? 'rings' : s?.tier === 'exclusive' ? 'wings' : 'none');
+export const skinAttachment = (s: Pick<SkinDef, 'tier' | 'glb'> | null | undefined): SkinAttachment => (s?.glb ? 'none' : s?.tier === 'ultra' ? 'rings' : s?.tier === 'exclusive' ? 'wings' : 'none');
 /** 상점 메인 Featured 배너 데이터 */
 export const FEATURED_BANNER = (() => {
   const c = COLLECTIONS.find((x) => x.featured);
@@ -173,24 +183,35 @@ export const DEFAULT_SKIN: Pick<SkinDef, 'model' | 'material' | 'emissive' | 'vf
 };
 
 // ───────────────────────────── 2) 랜덤박스 확률표 (스킨 데이터와 독립) ─────────────────────────────
-export interface LootboxDef { id: string; name: string; price: number; rates: Record<Tier, number> }
+/** jackpot = 등급과 별개로 특정 스킨 1종을 weight(%)로 뽑는 칸 (DB lootbox_rates 에 rarity='karambit' 행으로 저장). gunOnly = 등급 추첨 풀에서 근접(단검/장검) 제외 */
+export interface LootboxJackpot { key: string; skinId: string; weight: number; refund: number; label: string }
+export interface LootboxDef { id: string; name: string; price: number; rates: Partial<Record<Tier, number>>; jackpot?: LootboxJackpot; gunOnly?: boolean; desc?: string }
 export const LOOTBOXES: Record<string, LootboxDef> = {
   standard: { id: 'standard', name: '스탠다드 박스', price: 1000, rates: { select: 55, deluxe: 28, premium: 12, exclusive: 4.2, ultra: 0.8 } },
   premium: { id: 'premium', name: '프리미엄 박스', price: 2000, rates: { select: 20, deluxe: 40, premium: 27, exclusive: 10, ultra: 3 } },
+  karambit: {
+    id: 'karambit', name: '카람빗 스페셜 박스', price: 4000, gunOnly: true, desc: '총기 스킨 전용 · 셀렉트 등급 제외 · 0.1% 확률로 단검 카람빗 등장',
+    rates: { deluxe: 45, premium: 35, exclusive: 15, ultra: 4.9 },
+    jackpot: { key: 'karambit', skinId: KARAMBIT_SKIN_ID, weight: 0.1, refund: 2000, label: '단검: 카람빗' },
+  },
 };
 /** 중복 획득 시 크레딧 환급액 (등급 가격의 25%) */
 export const DUP_REFUND: Record<Tier, number> = { select: 150, deluxe: 300, premium: 550, exclusive: 800, ultra: 1125 };
 
-/** 확률표(%)로 정규화 — 상점의 확률 공개 UI용 */
-export function lootboxOdds(boxId: string): { tier: Tier; percent: number }[] {
+export interface OddsRow { key: string; label: string; color: string; percent: number; tier?: Tier; jackpot?: boolean }
+/** 확률표(%)로 정규화 — 상점의 확률 공개 UI용 (잭팟 칸이 있으면 맨 앞, 나머지는 높은 등급부터) */
+export function lootboxOdds(boxId: string): OddsRow[] {
   const box = LOOTBOXES[boxId]; if (!box) return [];
-  const total = Object.values(box.rates).reduce((a, b) => a + b, 0);
-  return TIER_ORDER.map((r) => ({ tier: r, percent: Math.round((box.rates[r] / total) * 10000) / 100 }));
+  const jp = box.jackpot, total = TIER_ORDER.reduce((a, t) => a + (box.rates[t] ?? 0), 0) + (jp?.weight ?? 0), pct = (w: number): number => Math.round((w / total) * 10000) / 100;
+  const rows: OddsRow[] = TIER_ORDER.filter((t) => (box.rates[t] ?? 0) > 0).map((t) => ({ key: t, label: TIERS[t].name, color: TIERS[t].color, percent: pct(box.rates[t]!), tier: t }));
+  if (!jp) return rows;
+  return [{ key: jp.key, label: jp.label, color: '#ffd23f', percent: pct(jp.weight), jackpot: true }, ...rows.reverse()];
 }
 /** 가챠 연출용 릴(실제 결과는 서버 open_lootbox 가 결정). 마지막에서 4번째 칸에 결과가 오도록 구성 */
-export function buildGachaReel(resultSkinId: string, length = 40): SkinDef[] {
-  const pool = SKINS.filter((s) => s.inBox), reel: SkinDef[] = [];
+export function buildGachaReel(resultSkinId: string, length = 40, boxId = ''): SkinDef[] {
+  const box = LOOTBOXES[boxId], pool = SKINS.filter((s) => s.inBox && !(box?.gunOnly && (s.weaponId === 'dagger' || s.weaponId === 'sword'))), reel: SkinDef[] = [];
   for (let i = 0; i < length; i++) reel.push(pool[Math.floor(Math.random() * pool.length)]);
+  const jp = box?.jackpot && getSkin(box.jackpot.skinId); if (jp) for (const k of [5, 13, 22, 31]) reel[k] = jp; // 연출용 카람빗 노출(실제 확률과 무관)
   const result = getSkin(resultSkinId); if (result) reel[length - 4] = result;
   return reel;
 }
@@ -201,7 +222,7 @@ const q = (s: string): string => `'${s.replace(/'/g, "''")}'`;
 export function catalogSeedSql(): string {
   const skins = SKINS.map((s) => `  (${q(s.id)}, ${q(s.weaponId)}, ${q(s.name)}, ${q(s.tier)}, ${s.price}, ${s.featured}, ${s.inDaily}, ${s.inBox}, ${s.sort})`).join(',\n');
   const boxes = Object.values(LOOTBOXES).map((b) => `  (${q(b.id)}, ${q(b.name)}, ${b.price})`).join(',\n');
-  const rates = Object.values(LOOTBOXES).flatMap((b) => TIER_ORDER.map((r) => `  (${q(b.id)}, ${q(r)}, ${b.rates[r]}, ${DUP_REFUND[r]})`)).join(',\n');
+  const rates = Object.values(LOOTBOXES).flatMap((b) => [...TIER_ORDER.map((r) => `  (${q(b.id)}, ${q(r)}, ${b.rates[r] ?? 0}, ${DUP_REFUND[r]})`), ...(b.jackpot ? [`  (${q(b.id)}, ${q(b.jackpot.key)}, ${b.jackpot.weight}, ${b.jackpot.refund})`] : [])]).join(',\n');
   const ids = SKINS.map((s) => q(s.id)).join(', ');
   return [
     'insert into public.skin_catalog (skin_id, weapon_id, name, rarity, price, featured, in_daily, in_box, sort) values',
@@ -212,7 +233,7 @@ export function catalogSeedSql(): string {
     'insert into public.lootboxes (box_id, name, price) values',
     boxes,
     'on conflict (box_id) do update set name = excluded.name, price = excluded.price;',
-    `delete from public.lootbox_rates where rarity not in (${TIER_ORDER.map(q).join(', ')});`,
+    `delete from public.lootbox_rates where rarity not in (${[...TIER_ORDER, 'karambit'].map(q).join(', ')});`,
     'insert into public.lootbox_rates (box_id, rarity, weight, dup_refund) values',
     rates,
     'on conflict (box_id, rarity) do update set weight = excluded.weight, dup_refund = excluded.dup_refund;',

@@ -121,7 +121,7 @@ export function createWeaponMesh(weaponId: WeaponId, skinId?: string | null, vie
   }
   g.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = true; });
   attachSkinFx(g, skinId, viewmodel); // 등급 전용 파츠(홀로그램 윙 / 에너지 코어 링 / 총구 섬광)
-  attachFbxModel(g, weaponId, { base, accent, skinned: !!getSkin(skinId) }, viewmodel); // FBX 로드 완료 시 박스 모델 교체 (실패 시 폴백 유지)
+  const sk = getSkin(skinId); attachFbxModel(g, weaponId, { base, accent, skinned: !!sk && !sk.glb }, viewmodel, skinId); // FBX 로드 완료 시 박스 모델 교체 (실패 시 폴백 유지)
   return g;
 }
 

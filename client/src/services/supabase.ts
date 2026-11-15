@@ -32,7 +32,7 @@ export interface DailyMission { slot: number; mission_id: string; description: s
 export interface ShopItem { slot: number; skin_id: string; price: number; owned: boolean }
 export interface LoginReward { day: number; reward_type: 'credits' | 'lootbox'; reward_amount: number }
 export interface MatchRow { id: number; mode: string; map: string; team_size: number; result: 'win' | 'loss' | 'draw' | 'left'; kills: number; deaths: number; assists: number; headshot_kills: number; damage: number; rp_delta: number; credits_earned: number; played_at: string }
-export interface LootboxResult { skin_id: string; weapon_id: string; rarity: string; duplicate: boolean; refund: number; credits: number; lootboxes: number; unlocked: string[] }
+export interface LootboxResult { jackpot?: boolean; skin_id: string; weapon_id: string; rarity: string; duplicate: boolean; refund: number; credits: number; lootboxes: number; unlocked: string[] }
 export interface DailyLoginResult { claimed: boolean; streak: number; day: number; reward_type?: 'credits' | 'lootbox'; reward_amount?: number; credits: number; lootboxes: number; unlocked?: string[] }
 export interface AccountBundle {
   profile: Profile; stats: CareerStats; skins: OwnedSkin[]; achievements: Achievement[]; missions: DailyMission[]; shop: ShopItem[]; loginRewards: LoginReward[];

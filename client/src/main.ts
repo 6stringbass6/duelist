@@ -210,7 +210,7 @@ function htmlShop(): string {
   const daily = dailyItems.map((d) => skinCard(d.s, buyFoot(d.s, d.price, d.has), d.s.id === cur?.id)).join('');
   const curDaily = dailyItems.find((d) => d.s.id === cur?.id);
   const pvFoot = !cur ? '' : owned(cur.id) || curDaily?.has ? `<span class="mut">보유 중</span>` : curDaily ? buyFoot(cur, curDaily.price, false) : cur.featured ? buyFoot(cur, cur.price, false) : `<span class="mut">일일 상점 · 랜덤 박스에서 획득</span>`;
-  const boxes = Object.values(LOOTBOXES).map((b) => `<div class="card col"><h3>🎁 ${esc(b.name)}</h3><div class="odds">${lootboxOdds(b.id).map((o) => `<span style="color:${TIERS[o.tier].color}">${tierEmblemSvg(o.tier, 13)}${TIERS[o.tier].name} ${o.percent}%</span>`).join('')}</div><div class="mut" style="font-size:12px">중복 획득 시 크레딧으로 환급됩니다.</div><div class="row"><button class="pri" data-box="${b.id}">◈ ${fmt(b.price)} 개봉</button>${b.id === 'standard' ? `<button data-box="${b.id}" data-owned="1" ${p.lootboxes < 1 ? 'disabled' : ''}>보유 박스 사용 (${p.lootboxes})</button>` : ''}</div></div>`).join('');
+  const boxes = Object.values(LOOTBOXES).map((b) => `<div class="card col${b.jackpot ? ' jpbox' : ''}"><h3>🎁 ${esc(b.name)}</h3>${b.desc ? `<div class="mut" style="font-size:12px">${esc(b.desc)}</div>` : ''}<div class="odds">${lootboxOdds(b.id).map((o) => o.jackpot ? `<span class="jp">💎 ${esc(o.label)} ${o.percent}%</span>` : `<span style="color:${o.color}">${tierEmblemSvg(o.tier, 13)}${o.label} ${o.percent}%</span>`).join('')}</div><div class="mut" style="font-size:12px">중복 획득 시 크레딧으로 환급됩니다${b.jackpot ? ` (카람빗 ◈ ${fmt(b.jackpot.refund)})` : ''}.</div><div class="row"><button class="pri" data-box="${b.id}">◈ ${fmt(b.price)} 개봉</button>${b.id === 'standard' ? `<button data-box="${b.id}" data-owned="1" ${p.lootboxes < 1 ? 'disabled' : ''}>보유 박스 사용 (${p.lootboxes})</button>` : ''}</div></div>`).join('');
   const tiers = TIER_ORDER.map((k) => `<span class="tierchip" style="--tc:${TIERS[k].color}">${tierEmblemSvg(k, 16)}<b>${TIERS[k].name}</b>◈ ${fmt(TIERS[k].price)}</span>`).join('');
   return `
   ${cur ? htmlPreview(cur, '', pvFoot) : ''}
@@ -309,7 +309,7 @@ let needReconnect = false;
 // ── 랜덤박스 가챠 연출
 async function runGacha(boxId: string, useOwned: boolean): Promise<void> {
   const res = await guard(() => openLootbox(boxId, useOwned)); if (!res) return;
-  const reel = buildGachaReel(res.skin_id, 40), strip = $('gacha-strip'), CELL = 120, target = reel.length - 4;
+  const reel = buildGachaReel(res.skin_id, 40, boxId), strip = $('gacha-strip'), CELL = 120, target = reel.length - 4;
   $('gacha-title').textContent = LOOTBOXES[boxId]?.name ?? '랜덤 박스'; $('gacha-result').innerHTML = '<span class="mut">개봉 중…</span>';
   strip.innerHTML = reel.map((s) => `<div style="${swatch(s)};border-bottom:4px solid ${TIERS[s.tier].color}"><span class="badge">${tierEmblemSvg(s.tier, 13)}</span>${esc(s.name)}</div>`).join('');
   show('m-gacha'); strip.style.transition = 'none'; strip.style.transform = 'translateX(0)';
@@ -319,8 +319,38 @@ async function runGacha(boxId: string, useOwned: boolean): Promise<void> {
   setTimeout(() => {
     const s = getSkin(res.skin_id), r = TIERS[s?.tier ?? normalizeTier(res.rarity)];
     $('gacha-result').innerHTML = `<div class="pop"><div class="rar" style="color:${r.color};font-size:14px;display:flex;gap:6px;justify-content:center;align-items:center">${tierEmblemSvg(s?.tier ?? res.rarity, 20)}${r.name} 에디션</div><div style="font-size:22px;font-weight:800">${esc(s?.name ?? res.skin_id)}</div>${res.duplicate ? `<div class="mut">이미 보유한 스킨 — ◈ ${fmt(res.refund)} 환급</div>` : `<div style="color:var(--ok)">새 스킨 획득!</div>`}</div>`;
-    pc.audio.kill(); void loadBundle();
+    if (s?.glb) { jackpotBurst(); pc.audio.jackpot(); $('gacha-result').classList.add('jackpot'); } else pc.audio.kill();
+    void loadBundle();
   }, 4400);
+}
+/** 0.1% 잭팟(카람빗) — 룰렛이 멈추는 순간 전체 화면 황금/블루젬 폭발 파티클 (캔버스 오버레이, 약 3.2초 후 자동 제거) */
+function jackpotBurst(): void {
+  const cv = document.createElement('canvas'), dpr = Math.min(devicePixelRatio || 1, 2), W = innerWidth, H = innerHeight;
+  cv.width = W * dpr; cv.height = H * dpr; cv.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;z-index:200;pointer-events:none';
+  const ctx = cv.getContext('2d'); if (!ctx) return; document.body.appendChild(cv); ctx.scale(dpr, dpr);
+  const cx = W / 2, cy = H / 2, COLS = ['#ffd23f', '#ffe27a', '#fff3c0', '#3b8cff', '#7fc0ff', '#bfe4ff'];
+  interface P { x: number; y: number; vx: number; vy: number; r: number; life: number; max: number; c: string; star: boolean }
+  const ps: P[] = [], spawn = (n: number, speed: number): void => { for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, v = speed * (0.25 + Math.random() * 0.75); ps.push({ x: cx, y: cy, vx: Math.cos(a) * v, vy: Math.sin(a) * v, r: 1.5 + Math.random() * 4, life: 0, max: 1.4 + Math.random() * 1.6, c: COLS[Math.floor(Math.random() * COLS.length)], star: Math.random() < 0.3 }); } };
+  spawn(320, 900); const t0 = performance.now(); let waves = 0;
+  const frame = (now: number): void => {
+    const t = (now - t0) / 1000, dt = 1 / 60;
+    if (t > 0.35 * (waves + 1) && waves < 3) { waves++; spawn(140, 600 + waves * 120); }
+    ctx.clearRect(0, 0, W, H);
+    const flash = Math.max(0, 1 - t / 0.9); // 중앙 섬광 + 확장 링
+    if (flash > 0) { const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(W, H) * (0.25 + t * 0.9)); g.addColorStop(0, `rgba(255,243,192,${0.85 * flash})`); g.addColorStop(0.35, `rgba(255,210,63,${0.45 * flash})`); g.addColorStop(0.7, `rgba(59,140,255,${0.25 * flash})`); g.addColorStop(1, 'rgba(59,140,255,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); }
+    ctx.lineWidth = 3; for (let k = 0; k < 2; k++) { const rr = (t - k * 0.18) * 900; if (rr > 0 && t < 1.6) { ctx.strokeStyle = k ? 'rgba(127,192,255,.6)' : 'rgba(255,226,122,.7)'; ctx.globalAlpha = Math.max(0, 1 - t / 1.6); ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.stroke(); } }
+    ctx.globalCompositeOperation = 'lighter';
+    for (const p of ps) {
+      p.life += dt; if (p.life > p.max) continue;
+      p.vx *= 0.985; p.vy = p.vy * 0.985 + 260 * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+      ctx.globalAlpha = Math.max(0, 1 - p.life / p.max); ctx.fillStyle = p.c;
+      if (p.star) { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.life * 4); ctx.beginPath(); for (let i = 0; i < 4; i++) { ctx.lineTo(0, -p.r * 2.4); ctx.rotate(Math.PI / 4); ctx.lineTo(0, -p.r * 0.7); ctx.rotate(Math.PI / 4); } ctx.fill(); ctx.restore(); }
+      else { ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill(); }
+    }
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+    if (t < 3.4) requestAnimationFrame(frame); else cv.remove();
+  };
+  requestAnimationFrame(frame);
 }
 function showLoginReward(r: DailyLoginResult): void {
   const days = (bundle?.loginRewards ?? []).map((d) => `<div class="day ${d.day < r.day ? 'done' : d.day === r.day ? 'today' : ''}"><b>${d.day}</b><br />${d.reward_type === 'credits' ? `◈${d.reward_amount}` : '🎁'}</div>`).join('');

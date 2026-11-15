@@ -84,6 +84,12 @@ export class AudioFX {
   }
   swing(heavy: boolean, vol = 1): void { this.burst(heavy ? 0.25 : 0.12, heavy ? 500 : 1400, 0.35 * vol, 2); }
   hit(head: boolean): void { if (head) { this.tone('triangle', 1900, 2400, 0.09, 0.5); this.tone('sine', 3200, 2800, 0.12, 0.25, 0.02); } else this.tone('square', 900, 600, 0.05, 0.22); }
+  /** 0.1% 잭팟(카람빗): 저음 폭발 → 상승 아르페지오 → 반짝이는 고음 샤워 */
+  jackpot(): void {
+    this.tone('sine', 140, 38, 0.9, 0.9); this.burst(0.9, 900, 0.5, 0.6, 'lowpass');
+    [523.25, 659.25, 783.99, 1046.5, 1318.5, 1568, 2093].forEach((f, i) => { this.tone('triangle', f, f, 0.5, 0.34, 0.12 + i * 0.09); this.tone('sine', f * 2, f * 2, 0.6, 0.14, 0.12 + i * 0.09); });
+    for (let i = 0; i < 14; i++) this.tone('sine', 2400 + Math.random() * 2600, 3000 + Math.random() * 2000, 0.25, 0.1, 0.9 + i * 0.07);
+  }
   kill(): void { this.tone('triangle', 660, 660, 0.09, 0.4); this.tone('triangle', 990, 990, 0.16, 0.4, 0.08); }
   /** 신스 보이스: 빠른 어택 + 지수 감쇠. pan(스테레오 위치)·send(리버브 센드 양) 지정 가능 */
   private voice(type: OscillatorType, f0: number, at: number, dur: number, gain: number, o: { pan?: number; send?: number; f1?: number; attack?: number; detune?: number } = {}): void {

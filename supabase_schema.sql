@@ -393,29 +393,37 @@ end $$;
 create or replace function public.open_lootbox(p_box_id text default 'standard', p_use_owned boolean default false) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare v_uid uuid := auth.uid(); v_box lootboxes; v_p profiles; v_total numeric; v_roll numeric; v_acc numeric := 0;
-        r record; v_rarity text; v_refund int := 0; v_skin skin_catalog; v_dup boolean; v_new text[];
+        r record; v_rarity text; v_refund int := 0; v_skin skin_catalog; v_dup boolean; v_new text[]; v_gun_only boolean := (p_box_id = 'karambit');
 begin
   if v_uid is null then raise exception 'NOT_AUTHENTICATED'; end if;
   select * into v_box from lootboxes where box_id = p_box_id and active;
   if not found then raise exception 'BOX_NOT_FOUND'; end if;
   select * into v_p from profiles where id = v_uid for update;
   if p_use_owned then
+    -- 보유 박스(미션/로그인 보상)는 스탠다드 전용 — 스페셜 박스는 크레딧 결제만
+    if p_box_id = 'karambit' then raise exception 'NO_LOOTBOX'; end if;
     if v_p.lootboxes < 1 then raise exception 'NO_LOOTBOX'; end if;
     update profiles set lootboxes = lootboxes - 1 where id = v_uid;
   else
     if v_p.credits < v_box.price then raise exception 'NOT_ENOUGH_CREDITS'; end if;
     update profiles set credits = credits - v_box.price where id = v_uid;
   end if;
-  select coalesce(sum(weight), 0) into v_total from lootbox_rates where box_id = p_box_id;
+  select coalesce(sum(weight), 0) into v_total from lootbox_rates where box_id = p_box_id and weight > 0;
   if v_total <= 0 then raise exception 'BOX_MISCONFIGURED'; end if;
   v_roll := random() * v_total;
-  for r in select * from lootbox_rates where box_id = p_box_id order by weight desc loop
+  -- rarity = 등급(select..ultra) 또는 특수 칸 'karambit'(단일 스킨 잭팟, dup_refund = 중복 환급액)
+  for r in select * from lootbox_rates where box_id = p_box_id and weight > 0 order by weight desc, rarity loop
     v_acc := v_acc + r.weight; v_rarity := r.rarity; v_refund := r.dup_refund;
     exit when v_roll <= v_acc;
   end loop;
-  select * into v_skin from skin_catalog where rarity = v_rarity and in_box and active order by random() limit 1;
+  if v_rarity = 'karambit' then
+    select * into v_skin from skin_catalog where skin_id = 'karambit_dagger' and active;
+  else
+    select * into v_skin from skin_catalog where rarity = v_rarity and in_box and active
+      and (not v_gun_only or weapon_id not in ('dagger','sword')) order by random() limit 1;
+  end if;
   if not found then
-    select * into v_skin from skin_catalog where in_box and active order by random() limit 1;
+    select * into v_skin from skin_catalog where in_box and active and (not v_gun_only or weapon_id not in ('dagger','sword')) order by random() limit 1;
     if not found then raise exception 'BOX_EMPTY'; end if;
     select coalesce((select dup_refund from lootbox_rates where box_id = p_box_id and rarity = v_skin.rarity), 0) into v_refund;
   end if;
@@ -426,7 +434,7 @@ begin
   select * into v_p from profiles where id = v_uid;
   return jsonb_build_object('skin_id', v_skin.skin_id, 'weapon_id', v_skin.weapon_id, 'rarity', v_skin.rarity, 'duplicate', v_dup,
                             'refund', case when v_dup then v_refund else 0 end, 'credits', v_p.credits, 'lootboxes', v_p.lootboxes,
-                            'unlocked', to_jsonb(v_new));
+                            'jackpot', (v_rarity = 'karambit'), 'unlocked', to_jsonb(v_new));
 end $$;
 
 create or replace function public.equip_skin(p_weapon_id text, p_skin_id text default null) returns void
@@ -545,7 +553,7 @@ insert into public.login_rewards (day, reward_type, reward_amount) values
   (1,'credits',100),(2,'credits',150),(3,'credits',200),(4,'credits',250),(5,'credits',300),(6,'credits',400),(7,'lootbox',1)
 on conflict (day) do update set reward_type = excluded.reward_type, reward_amount = excluded.reward_amount;
 
-insert into public.lootboxes (box_id, name, price) values ('standard','스탠다드 박스',1000), ('premium','프리미엄 박스',2000)
+insert into public.lootboxes (box_id, name, price) values ('standard','스탠다드 박스',1000), ('premium','프리미엄 박스',2000), ('karambit','카람빗 스페셜 박스',4000)
 on conflict (box_id) do update set name = excluded.name, price = excluded.price;
 
 -- ── 5단계 등급 마이그레이션 (1/2): 구버전 등급값(common/rare/epic/legendary/mythic) → select/deluxe/premium/exclusive/ultra. 여러 번 실행해도 안전
@@ -554,12 +562,14 @@ update public.skin_catalog set rarity = case rarity when 'common' then 'select' 
   when 'legendary' then 'exclusive' when 'mythic' then 'ultra' else rarity end
 where rarity in ('common','rare','epic','legendary','mythic');
 alter table public.skin_catalog add constraint skin_catalog_rarity_check check (rarity in ('select','deluxe','premium','exclusive','ultra'));
-delete from public.lootbox_rates where rarity not in ('select','deluxe','premium','exclusive','ultra');
+delete from public.lootbox_rates where rarity not in ('select','deluxe','premium','exclusive','ultra','karambit');
 
 -- 중복 환급 = 등급 가격의 25%
 insert into public.lootbox_rates (box_id, rarity, weight, dup_refund) values
   ('standard','select',55,150),('standard','deluxe',28,300),('standard','premium',12,550),('standard','exclusive',4.2,800),('standard','ultra',0.8,1125),
-  ('premium','select',20,150),('premium','deluxe',40,300),('premium','premium',27,550),('premium','exclusive',10,800),('premium','ultra',3,1125)
+  ('premium','select',20,150),('premium','deluxe',40,300),('premium','premium',27,550),('premium','exclusive',10,800),('premium','ultra',3,1125),
+  -- 카람빗 스페셜 박스: 0.1% 카람빗(단검, 중복 환급 2000) / 4.9% 울트라 / 15% 익스클루시브 / 35% 프리미엄 / 45% 디럭스 (총기 스킨, 셀렉트 제외)
+  ('karambit','karambit',0.1,2000),('karambit','ultra',4.9,1125),('karambit','exclusive',15,800),('karambit','premium',35,550),('karambit','deluxe',45,300),('karambit','select',0,150)
 on conflict (box_id, rarity) do update set weight = excluded.weight, dup_refund = excluded.dup_refund;
 
 -- 스킨 카탈로그: id = <collection>_<weapon>. (client/src/config/skins.ts 와 동일 규칙)
@@ -579,6 +589,12 @@ cross join (values
 ) as w(id, name)
 on conflict (skin_id) do update set name = excluded.name, rarity = excluded.rarity, price = excluded.price,
   featured = excluded.featured, in_daily = excluded.in_daily, in_box = excluded.in_box, sort = excluded.sort, active = true;
+
+-- 카람빗 (케이스 하드닝): 단검 전용 · 카람빗 스페셜 박스 0.1% 한정 (in_box=false 라 다른 박스/일일 상점에는 나오지 않고 구매 불가)
+insert into public.skin_catalog (skin_id, weapon_id, name, rarity, price, featured, in_daily, in_box, sort)
+values ('karambit_dagger','dagger','카람빗 (케이스 하드닝)','ultra',4500,false,false,false,14)
+on conflict (skin_id) do update set weapon_id = excluded.weapon_id, name = excluded.name, rarity = excluded.rarity, price = excluded.price,
+  featured = false, in_daily = false, in_box = false, sort = excluded.sort, active = true;
 
 -- ── 5단계 등급 마이그레이션 (2/2): 구버전 컬렉션 보유분을 같은 등급대의 신규 컬렉션으로 이관 (클라이언트 LEGACY_COLLECTIONS 와 동일 매핑)
 with m(old_id, new_id) as (values
