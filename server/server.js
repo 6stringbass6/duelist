@@ -1098,9 +1098,20 @@ async function loadProfile(sess) {
   let p = await selProfile();
   if (!p.error && !p.data) { // auth.users 에는 있으나 profiles 행이 없음 → 기본값으로 자동 생성
     const r = await supabase.rpc('create_profile_for', { p_id: sess.userId });
-    if (r.error) console.error('[profile] auto-create failed:', r.error.message);
+    if (r.error) { // RPC 미배포/실패 → service_role 로 직접 insert (스키마 마이그레이션 누락 대비)
+      console.error('[profile] rpc create_profile_for failed:', r.error.message);
+      const base = (sess.meta?.nickname || sess.meta?.full_name || sess.meta?.name || 'Player').toString().replace(/[^A-Za-z0-9가-힣_]/g, '').slice(0, 12);
+      let nick = base.length >= 2 ? base : 'Player';
+      for (let i = 0; i < 5; i++) {
+        const ins = await supabase.from('profiles').insert({ id: sess.userId, nickname: nick });
+        if (!ins.error || ins.error.code === '23505' && /profiles_pkey/.test(ins.error.message)) break;
+        console.error('[profile] direct insert failed:', ins.error.message);
+        nick = (base.length >= 2 ? base : 'Player') + randInt(1000, 9999);
+      }
+    }
     p = await selProfile();
   }
+  if (p.error) console.error('[profile] select failed:', p.error.message);
   const [st, sk] = await Promise.all([
     supabase.from('player_stats_total').select('kd,hs_pct,win_rate,matches').eq('user_id', sess.userId).maybeSingle(),
     supabase.from('user_skins').select('weapon_id,skin_id').eq('user_id', sess.userId).eq('equipped', true),
@@ -1130,7 +1141,7 @@ export function attach(ioInstance) {
       try {
         const { data, error } = await supabase.auth.getUser(a.token);
         if (error || !data?.user) return next(new Error('AUTH_INVALID'));
-        sess.userId = data.user.id; sess.guest = false; await loadProfile(sess);
+        sess.userId = data.user.id; sess.meta = data.user.user_metadata || {}; sess.guest = false; await loadProfile(sess);
       } catch (err) { return next(new Error(err.message || 'AUTH_FAILED')); }
     }
     socket.data.sess = sess; next();
