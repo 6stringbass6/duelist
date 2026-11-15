@@ -21,7 +21,7 @@ export const clock = { now: () => Date.now() };
 
 // ───────────────────────────── 1. 규칙 / 상수 ─────────────────────────────
 export const RULES = {
-  hp: 150, tickHz: 30, snapMs: 50,
+  hp: 150, dummyHp: 150, tickHz: 30, snapMs: 50,
   roundsToWin: 5, buyMs: 8000, roundMs: 100000, roundEndMs: 4500, endMs: 12000,
   tdmWarmupMs: 5000, tdmTimeMs: 600000, tdmKillsPerPlayer: 10, tdmRespawnMs: 250, spawnProtectMs: 1500,
   loadoutWindowMs: 5000, rangeRespawnMs: 1500, assistWindowMs: 10000, maxRewindMs: 250, fireTolMs: 35,
@@ -56,9 +56,9 @@ export const WEAPONS = {
              spread: { base: 0.2, perShot: 0.3, max: 1.9, recoverMs: 350 }, move: 1.06, equipMs: 300 },
   sheriff: { slot: 2, type: 'gun', auto: false, rps: 4, mag: 6, reloadMs: 2250, scale: 1, ranges: [[30, 80, 38, 32], [Infinity, 76, 36, 30]],
              spread: { base: 0.15, perShot: 0.9, max: 2.5, recoverMs: 500 }, move: 1.06, equipMs: 350 },
-  vandal:  { slot: 1, type: 'gun', auto: true, rps: 9.75, mag: 25, reloadMs: 2500, scale: 1, ranges: [[Infinity, 62, 28, 24]],
+  vandal:  { slot: 1, type: 'gun', auto: true, rps: 9.75, mag: 25, reloadMs: 2500, scale: 1, ranges: [[Infinity, 56, 28, 24]],
              spread: { base: 0.12, perShot: 0.14, max: 1.7, recoverMs: 380 }, adsSpread: 0.85, move: 1, equipMs: 400 },
-  phantom: { slot: 1, type: 'gun', auto: true, rps: 11, mag: 30, reloadMs: 2500, scale: 1, ranges: [[Infinity, 64, 24, 20]],
+  phantom: { slot: 1, type: 'gun', auto: true, rps: 11, mag: 30, reloadMs: 2500, scale: 1, ranges: [[Infinity, 52, 24, 20]],
              spread: { base: 0.1, perShot: 0.11, max: 1.4, recoverMs: 350 }, adsSpread: 0.85, move: 1, equipMs: 400 },
   marshal: { slot: 1, type: 'gun', auto: false, rps: 1.5, mag: 5, reloadMs: 2500, scale: 1, ranges: [[Infinity, 202, 101, 85]],
              spread: { base: 0, perShot: 0, max: 0, recoverMs: 300, hip: 6.5 }, zoom: 3.5, scopeMs: 150, move: 1, equipMs: 450 },
@@ -354,7 +354,7 @@ function refill(e) {
 function spawnEntity(room, e, pt, now) {
   if (e.pending) { e.loadout = e.pending; e.pending = null; emitRoom(room, 'loadout', { id: e.id, l: e.loadout }); }
   e.pos = { x: pt.x, y: pt.y, z: pt.z }; e.vel = { x: 0, y: 0, z: 0 }; e.yaw = pt.yaw; e.pitch = 0; e.flags = 0;
-  e.hp = RULES.hp; e.alive = true; e.slot = SLOT.primary; refill(e);
+  e.hp = e.ai?.dummy ? RULES.dummyHp : RULES.hp; e.alive = true; e.slot = SLOT.primary; refill(e);
   e.spray = 0; e.heat = 0; e.nextFireAt = now; e.nextThrowAt = now; e.dashUntil = 0; e.flashedUntil = 0; e.respawnAt = 0;
   e.protUntil = room.mode === 'tdm' ? now + RULES.spawnProtectMs : 0;
   e.spawnedAt = now; e.spawnSeq++; e.lastMoveAt = now; e.violations = 0; e.hist = []; e.dmgLog.clear();
