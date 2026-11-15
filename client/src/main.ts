@@ -2,6 +2,7 @@
 // GRIDSTRIKE — 애플리케이션 진입점: 계정 · 로비/상점/미션/업적 · 설정 · 인게임 HUD · 터치 컨트롤 · 렌더 루프
 // =====================================================================
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import {
   ACTIONS, ACTION_LABELS, CROSSHAIR_COLORS, CROSSHAIR_PRESETS, FPS_CAP_OPTIONS, HFOV_DEG, RESERVED_CODES, SETTINGS_LIMITS, VALORANT_YAW_DEG,
   applyCrosshairPreset, applyGraphicsPreset, bindFromEvent, bindLabel, cmPer360, createFrameLimiter, drawCrosshair, effectiveFpsCap, effectivePixelRatio,
@@ -12,6 +13,7 @@ import {
   MODES, RULES, SLOT, SLOT_KEYS, WEAPONS, WEAPONS_BY_SLOT, damageTable, isGun, tdmTargetKills, tierInfo, tierLevel, tierProgress,
   type GameMode, type Loadout, type SlotKey, type WeaponId,
 } from './config/weapons';
+import { skinSwatchUrl } from './game/skinTextures';
 import { FEATURED_BANNER, LOOTBOXES, RARITY, SKIN_WEAPONS, buildGachaReel, featuredSkins, getSkin, lootboxOdds, skinsForWeapon, type SkinDef } from './config/skins';
 import {
   GameError, buySkin, changeNickname, claimDailyLogin, claimMission, equipSkin, equipTitle, fetchBundle, fetchMatchHistory, getNicknameChangeCost, getProfile,
@@ -52,6 +54,7 @@ function makeRenderer(): void {
   renderer = new THREE.WebGLRenderer({ antialias: rendererAA, powerPreference: 'high-performance' });
   renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.outputColorSpace = THREE.SRGBColorSpace;
   stage.prepend(renderer.domElement);
+  { const pm = new THREE.PMREMGenerator(renderer); scene.environment?.dispose(); scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture; scene.environmentIntensity = 0.35; pm.dispose(); } // 금속/클리어코트 반사용 약한 IBL
   applyGraphics();
 }
 function applyGraphics(): void {
@@ -150,7 +153,7 @@ function renderLobby(): void {
   body.innerHTML = { home: htmlHome, shop: htmlShop, inventory: htmlInventory, missions: htmlMissions, achievements: htmlAchievements, stats: htmlStats }[lobbyTab]();
   bindLobbyBody();
 }
-const swatch = (s: SkinDef): string => `background:linear-gradient(120deg,${hex(s.material.baseColor)} 0%,${hex(s.material.accentColor)} 55%,${hex(s.emissive.mode === 'none' ? s.material.patternColor : s.emissive.color)} 100%)`;
+const swatch = (s: SkinDef): string => { const u = skinSwatchUrl(s); return u ? `background:url(${u}) center/cover` : `background:linear-gradient(120deg,${hex(s.material.baseColor)} 0%,${hex(s.material.accentColor)} 55%,${hex(s.emissive.mode === 'none' ? s.material.patternColor : s.emissive.color)} 100%)`; };
 function skinCard(s: SkinDef, foot: string): string {
   const r = RARITY[s.rarity];
   return `<div class="skin"><div class="sw" style="${swatch(s)}"></div><div class="inf"><span class="rar" style="color:${r.color}">${r.name}</span><span class="nm">${esc(s.name)}</span>${foot}</div></div>`;

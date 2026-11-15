@@ -5,7 +5,8 @@
 import * as THREE from 'three';
 import { io, type Socket } from 'socket.io-client';
 import { F, RULES, SLOT, SLOT_KEYS, WEAPONS, isGun, type GameMode, type HitZone, type Loadout, type MapId, type WeaponId } from '../config/weapons';
-import { DEFAULT_SKIN, getSkin, type SkinDef, type SkinMaterial } from '../config/skins';
+import { DEFAULT_SKIN, getSkin, type SkinDef } from '../config/skins';
+import { getSkinTextures } from './skinTextures';
 import { SERVER_URL, socketAuthPayload } from '../services/supabase';
 import type { SkillId, UltId } from '../config/skills';
 import { buildArena, textSprite, type ArenaBuild, type MapData, type World } from './arena';
@@ -64,37 +65,24 @@ interface SkinMats { base: THREE.MeshStandardMaterial; accent: THREE.MeshStandar
 const matCache = new Map<string, SkinMats>();
 const animated: { mat: THREE.MeshStandardMaterial; mode: 'pulse' | 'flow'; speed: number; base: number }[] = [];
 
-function patternTexture(m: SkinMaterial): THREE.CanvasTexture | null {
-  if (m.pattern === 'solid') return null;
-  const S = 128, c = document.createElement('canvas'); c.width = c.height = S;
-  const g = c.getContext('2d')!, hex = (n: number): string => '#' + n.toString(16).padStart(6, '0');
-  g.fillStyle = hex(m.baseColor); g.fillRect(0, 0, S, S); g.fillStyle = g.strokeStyle = hex(m.patternColor);
-  const rnd = (() => { let s = (m.baseColor ^ m.patternColor) >>> 0 || 1; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); })();
-  switch (m.pattern) {
-    case 'gradient': { const gr = g.createLinearGradient(0, 0, S, S); gr.addColorStop(0, hex(m.baseColor)); gr.addColorStop(1, hex(m.patternColor)); g.fillStyle = gr; g.fillRect(0, 0, S, S); break; }
-    case 'stripes': g.lineWidth = 10; for (let i = -S; i < S * 2; i += 28) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i + S, S); g.stroke(); } break;
-    case 'carbon': for (let y = 0; y < S; y += 8) for (let x = 0; x < S; x += 8) if (((x + y) / 8) % 2 === 0) g.fillRect(x, y, 8, 8); break;
-    case 'hex': g.lineWidth = 2; for (let y = 0; y < S + 20; y += 20) for (let x = 0; x < S + 24; x += 24) { const ox = (y / 20) % 2 ? 12 : 0; g.beginPath(); for (let k = 0; k < 6; k++) { const a = (Math.PI / 3) * k; g.lineTo(x + ox + Math.cos(a) * 10, y + Math.sin(a) * 10); } g.closePath(); g.stroke(); } break;
-    case 'wave': g.lineWidth = 3; for (let y = 8; y < S; y += 16) { g.beginPath(); for (let x = 0; x <= S; x += 4) g.lineTo(x, y + Math.sin((x / S) * Math.PI * 4) * 5); g.stroke(); } break;
-    case 'circuit': g.lineWidth = 2; for (let i = 0; i < 14; i++) { let x = rnd() * S, y = rnd() * S; g.beginPath(); g.moveTo(x, y); for (let k = 0; k < 4; k++) { if (rnd() < 0.5) x += (rnd() - 0.5) * 60; else y += (rnd() - 0.5) * 60; g.lineTo(x, y); } g.stroke(); g.fillRect(x - 3, y - 3, 6, 6); } break;
-    case 'petals': for (let i = 0; i < 26; i++) { g.save(); g.translate(rnd() * S, rnd() * S); g.rotate(rnd() * 6.28); g.beginPath(); g.ellipse(0, 0, 7, 3.5, 0, 0, 6.28); g.fill(); g.restore(); } break;
-    case 'cracks': g.lineWidth = 2.5; for (let i = 0; i < 9; i++) { let x = rnd() * S, y = rnd() * S; g.beginPath(); g.moveTo(x, y); for (let k = 0; k < 6; k++) { x += (rnd() - 0.5) * 40; y += (rnd() - 0.5) * 40; g.lineTo(x, y); } g.stroke(); } break;
-    case 'stars': for (let i = 0; i < 70; i++) { const r = rnd() * 1.8 + 0.4; g.globalAlpha = 0.4 + rnd() * 0.6; g.beginPath(); g.arc(rnd() * S, rnd() * S, r, 0, 6.28); g.fill(); } break;
-  }
-  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(Math.max(1, m.patternScale / 4), 1); t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
 /** 스킨 → 무기 재질(본체/포인트). 스킨별 캐시 공유. */
 export function skinMaterials(skinId: string | null | undefined): SkinMats {
   const key = skinId && getSkin(skinId) ? skinId : 'default';
   let mats = matCache.get(key);
   if (mats) return mats;
-  const s: Pick<SkinDef, 'material' | 'emissive'> = getSkin(skinId) ?? DEFAULT_SKIN, m = s.material, e = s.emissive, tex = patternTexture(m);
-  const base = new THREE.MeshStandardMaterial({ color: tex ? 0xffffff : m.baseColor, map: tex, metalness: m.metalness, roughness: m.roughness,
-    emissive: e.color, emissiveMap: tex && e.mode !== 'none' ? tex : null, emissiveIntensity: e.mode === 'none' ? 0 : e.intensity * 0.35 });
+  const def = getSkin(skinId), s: Pick<SkinDef, 'material' | 'emissive'> = def ?? DEFAULT_SKIN, m = s.material, e = s.emissive;
+  const tex = getSkinTextures(m, def?.rarity), glow = e.mode !== 'none', hasEm = !!tex?.emissiveMap;
+  const baseIntensity = !glow ? 0 : hasEm ? e.intensity * 0.7 : e.intensity * 0.12;
+  const baseParams: THREE.MeshPhysicalMaterialParameters = {
+    color: tex ? 0xffffff : m.baseColor, map: tex?.map ?? null, roughnessMap: tex?.roughnessMap ?? null,
+    metalness: m.metalness, roughness: Math.min(1, m.roughness * (tex?.roughnessScale ?? 1)),
+    emissive: e.color, emissiveMap: glow ? tex?.emissiveMap ?? null : null, emissiveIntensity: baseIntensity,
+    clearcoat: Math.max(m.clearcoat ?? 0, tex?.clearcoat ?? 0), clearcoatRoughness: tex?.clearcoatRoughness ?? 0.3,
+  };
+  const base = new THREE.MeshPhysicalMaterial(baseParams);
   const accent = new THREE.MeshStandardMaterial({ color: m.accentColor, metalness: Math.min(1, m.metalness + 0.2), roughness: Math.max(0.05, m.roughness - 0.1),
-    emissive: e.color, emissiveIntensity: e.mode === 'none' ? 0 : e.intensity });
-  if (e.mode === 'pulse' || e.mode === 'flow') animated.push({ mat: accent, mode: e.mode, speed: e.speed ?? 0.5, base: e.intensity }, { mat: base, mode: e.mode, speed: e.speed ?? 0.5, base: e.intensity * 0.35 });
+    emissive: e.color, emissiveIntensity: glow ? e.intensity : 0 });
+  if (e.mode === 'pulse' || e.mode === 'flow') animated.push({ mat: accent, mode: e.mode, speed: e.speed ?? 0.5, base: e.intensity }, { mat: base, mode: e.mode, speed: e.speed ?? 0.5, base: baseIntensity });
   mats = { base, accent }; matCache.set(key, mats);
   return mats;
 }
@@ -166,6 +154,7 @@ class RemoteEntity {
   private readonly upper = new THREE.Group();
   private readonly hand = new THREE.Group();
   private readonly bodyMat: THREE.MeshStandardMaterial;
+  private readonly neonMat: THREE.MeshStandardMaterial;
   private tag: THREE.Sprite | null = null;
   private readonly aura: THREE.Mesh; private readonly bubble: THREE.Mesh; private readonly fxMat: THREE.MeshBasicMaterial[] = [];
   private ally: boolean;
@@ -180,13 +169,25 @@ class RemoteEntity {
     const color = info.dummy ? COLOR_DUMMY : ally ? COLOR_ALLY : COLOR_ENEMY;
     this.bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.15, emissive: color, emissiveIntensity: 0.18 });
     const dark = new THREE.MeshStandardMaterial({ color: 0x1c2028, roughness: 0.7, metalness: 0.2 });
+    const gear = new THREE.MeshStandardMaterial({ color: 0x0c0e12, roughness: 0.45, metalness: 0.6 }); // 관절/장비 — 더 어둡고 금속감
+    this.neonMat = new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 1.6, roughness: 0.3, metalness: 0.2 });
+    const visorMat = new THREE.MeshStandardMaterial({ color: 0x05070a, roughness: 0.15, metalness: 0.9, emissive: color, emissiveIntensity: 0.25 });
     const g = this.group;
     g.add(part(dark, 0.2, 0.72, 0.24, -0.14, 0.36, 0), part(dark, 0.2, 0.72, 0.24, 0.14, 0.36, 0));       // 다리
+    g.add(part(gear, 0.22, 0.16, 0.27, -0.14, 0.08, -0.01), part(gear, 0.22, 0.16, 0.27, 0.14, 0.08, -0.01)); // 부츠
+    g.add(part(gear, 0.23, 0.1, 0.27, -0.14, 0.4, 0), part(gear, 0.23, 0.1, 0.27, 0.14, 0.4, 0));        // 무릎 관절
+    g.add(part(this.neonMat, 0.03, 0.4, 0.02, -0.25, 0.4, -0.12), part(this.neonMat, 0.03, 0.4, 0.02, 0.25, 0.4, -0.12)); // 다리 네온 라인
     g.add(part(this.bodyMat, 0.56, 0.66, 0.32, 0, 1.05, 0));                                               // 몸통
+    g.add(part(gear, 0.5, 0.34, 0.06, 0, 1.12, -0.17), part(gear, 0.6, 0.08, 0.36, 0, 0.74, 0));          // 가슴 플레이트 + 벨트
+    g.add(part(this.neonMat, 0.5, 0.025, 0.02, 0, 1.3, -0.205), part(this.neonMat, 0.62, 0.025, 0.37, 0, 0.74, 0)); // 가슴/허리 네온
     this.upper.position.set(0, 1.38, 0);
     const head = new THREE.Mesh(HEAD_GEO, this.bodyMat); head.position.set(0, 0.24, 0);
-    this.upper.add(head, part(dark, 0.3, 0.1, 0.05, 0, 0.26, -0.21));                                      // 머리 + 바이저
+    this.upper.add(head, part(visorMat, 0.36, 0.11, 0.08, 0, 0.27, -0.19));                                // 머리 + 전술 바이저(고글)
+    this.upper.add(part(this.neonMat, 0.34, 0.02, 0.02, 0, 0.27, -0.235));                                 // 바이저 발광 라인
+    this.upper.add(part(gear, 0.1, 0.16, 0.1, -0.23, 0.2, 0.02), part(gear, 0.1, 0.16, 0.1, 0.23, 0.2, 0.02)); // 헤드셋
+    this.upper.add(part(gear, 0.2, 0.14, 0.2, 0.3, 0.0, 0), part(gear, 0.2, 0.14, 0.2, -0.3, 0.0, 0));     // 어깨 장갑
     this.upper.add(part(dark, 0.13, 0.13, 0.5, 0.3, -0.12, -0.2), part(dark, 0.13, 0.13, 0.45, -0.24, -0.14, -0.22).rotateY(-0.5)); // 팔
+    this.upper.add(part(gear, 0.15, 0.15, 0.1, 0.3, -0.12, -0.34), part(this.neonMat, 0.145, 0.02, 0.12, 0.3, -0.04, -0.24)); // 팔뚝 장갑 + 네온 밴드
     this.hand.position.set(0.24, -0.1, -0.42); this.upper.add(this.hand);
     g.add(this.upper);
     g.traverse((o) => { if ((o as THREE.Mesh).isMesh) { o.castShadow = true; o.userData.entityId = info.id; } });
@@ -205,7 +206,7 @@ class RemoteEntity {
   }
   setInfo(info: PlayerInfo, ally: boolean): void {
     const renamed = info.name !== this.info.name; this.info = info; this.ally = ally;
-    const color = info.dummy ? COLOR_DUMMY : ally ? COLOR_ALLY : COLOR_ENEMY; this.bodyMat.color.setHex(color); this.bodyMat.emissive.setHex(color);
+    const color = info.dummy ? COLOR_DUMMY : ally ? COLOR_ALLY : COLOR_ENEMY; this.bodyMat.color.setHex(color); this.bodyMat.emissive.setHex(color); this.neonMat.color.setHex(color); this.neonMat.emissive.setHex(color);
     if (renamed) this.setTag(ally);
     this.weaponKey = '';
   }
@@ -233,6 +234,7 @@ class RemoteEntity {
     const ghost = !!(this.flags & F.INVIS), cast = !!(this.flags & F.CAST), t = performance.now() / 1000;
     this.bodyMat.transparent = !!(this.flags & F.PROT) || ghost || cast; this.bodyMat.opacity = ghost ? 0.2 : cast ? 0.45 + 0.25 * Math.sin(t * 20) : this.flags & F.PROT ? 0.45 : 1;
     this.bodyMat.emissiveIntensity = this.flags & (F.DASH | F.HEAL) ? 0.7 : 0.18;
+    this.neonMat.transparent = this.bodyMat.transparent; this.neonMat.opacity = this.bodyMat.opacity;
     this.aura.visible = !!(this.flags & F.AMP);
     if (this.aura.visible) this.aura.scale.setScalar(1.05 + 0.08 * Math.sin(t * 9));
     this.fxMat[1].color.setHex(this.flags & F.SILENCED ? 0xb06bff : 0x5ef0ff); this.bubble.visible = !!(this.flags & (F.SHIELD | F.SILENCED));
@@ -245,7 +247,7 @@ class RemoteEntity {
     }
   }
   dispose(): void {
-    this.group.removeFromParent(); this.bodyMat.dispose(); for (const m of this.fxMat) m.dispose();
+    this.group.removeFromParent(); this.bodyMat.dispose(); this.neonMat.dispose(); for (const m of this.fxMat) m.dispose();
     if (this.tag) { this.tag.material.map?.dispose(); this.tag.material.dispose(); }
   }
 }
