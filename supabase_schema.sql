@@ -236,13 +236,16 @@ begin new.updated_at := now(); return new; end $$;
 drop trigger if exists profiles_touch on public.profiles;
 create trigger profiles_touch before update on public.profiles for each row execute function public.touch_updated_at();
 
-create or replace function public.handle_new_user() returns trigger
+-- auth.users 한 행으로부터 profiles 행을 (없으면) 만든다. 트리거/백필/ensure_* 가 공유.
+create or replace function public.create_profile_for(p_id uuid) returns void
 language plpgsql security definer set search_path = public as $$
-declare v_user text; v_base text; v_nick text; i int := 0;
+declare u auth.users; v_user text; v_base text; v_nick text; i int := 0;
 begin
-  if new.email like '%@game.local' then v_user := lower(split_part(new.email, '@', 1)); end if;
-  v_base := regexp_replace(coalesce(new.raw_user_meta_data->>'nickname', new.raw_user_meta_data->>'full_name',
-                                    new.raw_user_meta_data->>'name', v_user, 'Player'), '[^A-Za-z0-9가-힣_]', '', 'g');
+  select * into u from auth.users where id = p_id;
+  if not found or exists (select 1 from profiles where id = p_id) then return; end if;
+  if u.email like '%@game.local' then v_user := lower(split_part(u.email, '@', 1)); end if;
+  v_base := regexp_replace(coalesce(u.raw_user_meta_data->>'nickname', u.raw_user_meta_data->>'full_name',
+                                    u.raw_user_meta_data->>'name', v_user, 'Player'), '[^A-Za-z0-9가-힣_]', '', 'g');
   v_base := left(v_base, 12);
   if char_length(v_base) < 2 then v_base := 'Player'; end if;
   v_nick := v_base;
@@ -251,11 +254,31 @@ begin
     v_nick := v_base || floor(random() * 9000 + 1000)::int::text;
     exit when i > 30;
   end loop;
-  insert into profiles (id, username, nickname) values (new.id, v_user, v_nick) on conflict (id) do nothing;
+  insert into profiles (id, username, nickname) values (p_id, v_user, v_nick) on conflict do nothing;
+end $$;
+
+create or replace function public.handle_new_user() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  perform public.create_profile_for(new.id);
   return new;
 end $$;
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created after insert on auth.users for each row execute function public.handle_new_user();
+
+-- 로그인 시 프로필이 없으면 자동 생성 (클라이언트용)
+create or replace function public.ensure_my_profile() returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is not null then perform public.create_profile_for(auth.uid()); end if;
+end $$;
+
+-- 기존 누락 계정 일괄 백필 (재실행해도 안전)
+do $$ declare r record; begin
+  for r in select id from auth.users u where not exists (select 1 from public.profiles p where p.id = u.id) loop
+    perform public.create_profile_for(r.id);
+  end loop;
+end $$;
 
 -- ---------------------------------------------------------------- internal helpers
 create or replace function public.check_achievements(p_user uuid) returns text[]
@@ -507,7 +530,8 @@ revoke execute on all functions in schema public from public, anon;
 grant execute on function public.kst_today(), public.ji(jsonb, text) to anon, authenticated, service_role;
 grant execute on function public.change_nickname(text), public.claim_daily_login(), public.get_daily_shop(), public.buy_skin(text),
   public.open_lootbox(text, boolean), public.equip_skin(text, text), public.equip_title(text), public.get_daily_missions(),
-  public.claim_mission(int), public.rank_position(uuid) to authenticated;
+  public.claim_mission(int), public.rank_position(uuid), public.ensure_my_profile() to authenticated;
+grant execute on function public.create_profile_for(uuid) to service_role;
 revoke execute on function public.apply_match_result(uuid, jsonb), public.check_achievements(uuid), public.ensure_daily_missions(uuid) from authenticated;
 grant execute on function public.apply_match_result(uuid, jsonb), public.check_achievements(uuid), public.ensure_daily_missions(uuid),
   public.rank_position(uuid) to service_role;

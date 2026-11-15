@@ -183,10 +183,14 @@ export async function loadProfile(): Promise<Profile> {
   const c = client(), session = await getSession();
   if (!session) throw new GameError('NOT_AUTHENTICATED');
   let row: Record<string, unknown> | null = null;
-  for (let i = 0; i < 5 && !row; i++) { // 가입 트리거 반영 대기
+  for (let i = 0; i < 3 && !row; i++) {
     const { data, error } = await c.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
     if (error) throw toError(error);
-    row = data; if (!row) await new Promise((r) => setTimeout(r, 300));
+    row = data;
+    if (!row) { // 프로필 행 누락 → 기본값으로 자동 생성 후 재조회
+      const { error: e2 } = await c.rpc('ensure_my_profile');
+      if (e2 && i === 2) throw toError(e2);
+    }
   }
   if (!row) throw new GameError('PROFILE_NOT_FOUND');
   currentProfile = { ...(row as unknown as Profile), loadout: sanitizeLoadout(row.loadout), settings: (row.settings as Partial<Settings>) ?? {}, isGuest: false };

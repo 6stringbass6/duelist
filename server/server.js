@@ -1094,8 +1094,14 @@ async function loadTitles(now) {
 }
 async function loadProfile(sess) {
   await loadTitles(clock.now());
-  const [p, st, sk] = await Promise.all([
-    supabase.from('profiles').select('nickname,rank_points,equipped_title,loadout').eq('id', sess.userId).single(),
+  const selProfile = () => supabase.from('profiles').select('nickname,rank_points,equipped_title,loadout').eq('id', sess.userId).maybeSingle();
+  let p = await selProfile();
+  if (!p.error && !p.data) { // auth.users 에는 있으나 profiles 행이 없음 → 기본값으로 자동 생성
+    const r = await supabase.rpc('create_profile_for', { p_id: sess.userId });
+    if (r.error) console.error('[profile] auto-create failed:', r.error.message);
+    p = await selProfile();
+  }
+  const [st, sk] = await Promise.all([
     supabase.from('player_stats_total').select('kd,hs_pct,win_rate,matches').eq('user_id', sess.userId).maybeSingle(),
     supabase.from('user_skins').select('weapon_id,skin_id').eq('user_id', sess.userId).eq('equipped', true),
   ]);
