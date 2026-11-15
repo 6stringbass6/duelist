@@ -9,7 +9,7 @@ import {
   type Action, type BindCode,
 } from '../config/settings';
 import {
-  F, MOVE, RULES, SLOT_KEYS, THROW, WEAPONS, fireIntervalMs, isGun, isMelee, isThrow, spreadDeg,
+  F, MOVE, RULES, SLOT, SLOT_KEYS, THROW, WEAPONS, fireIntervalMs, isGun, isMelee, isThrow, spreadDeg,
   type GunDef, type WeaponDef, type WeaponId,
 } from '../config/weapons';
 import { createWeaponMesh, type GameClient } from './network';
@@ -96,7 +96,7 @@ export class PlayerController {
   yaw = 0; pitch = 0;
   hp: number = RULES.hp;
   alive = false;
-  slot: Slot = 3;
+  slot: Slot = SLOT.primary;
   readonly audio = new AudioFX();
   /** scoreboard / loadout / menu 등 UI 동작 콜백 */
   onUiAction: ((action: Action, down: boolean) => void) | null = null;
@@ -229,7 +229,7 @@ export class PlayerController {
     this.offs.push(
       n.on('spawn', (x, y, z, yaw, seq) => {
         this.pos.set(x, y, z); this.vel.set(0, 0, 0); this.yaw = yaw; this.pitch = 0; this.spawnSeq = seq;
-        this.alive = true; this.hp = RULES.hp; this.slot = 3; this.grounded = true;
+        this.alive = true; this.hp = RULES.hp; this.slot = SLOT.primary; this.grounded = true;
         this.slideUntil = 0; this.dashUntil = 0; this.spray = this.heat = 0; this.recoilPitch = this.recoilYaw = 0; this.flashUntil = 0;
         this.nextFireAt = this.equipUntil = this.nextThrowAt = 0; this.vmKey = '';
         if (n.phase === 'buy') { this.qReadyAt = this.eReadyAt = 0; }
@@ -265,7 +265,7 @@ export class PlayerController {
   private get reloading(): boolean { const a = this.net.ammo; return a.reloadUntil > 0 && a.reloadUntil > this.net.serverNow(); }
   private get frozen(): boolean { return this.net.phase === 'buy' && this.net.mode !== 'range'; }
   private get canAct(): boolean { return this.alive && this.net.phase === 'live'; }
-  private magAmmo(): number { return this.slot === 2 ? this.localAmmo.secondary : this.slot === 3 ? this.localAmmo.primary : this.slot === 4 ? this.localAmmo.charges : 0; }
+  private magAmmo(): number { return this.slot === SLOT.secondary ? this.localAmmo.secondary : this.slot === SLOT.primary ? this.localAmmo.primary : this.slot === SLOT.throwable ? this.localAmmo.charges : 0; }
 
   switchSlot(s: Slot): void {
     if (!this.alive || s === this.slot) return;
@@ -363,7 +363,7 @@ export class PlayerController {
     if (now - this.lastShotAt > w.spread.recoverMs) this.spray = 0;
     this.nextFireAt = now + fireIntervalMs(w, alt, this.heat);
     const shots = alt && w.alt ? Math.min(w.alt.burst, this.magAmmo()) : 1;
-    if (this.slot === 2) this.localAmmo.secondary -= shots; else this.localAmmo.primary -= shots;
+    if (this.slot === SLOT.secondary) this.localAmmo.secondary -= shots; else this.localAmmo.primary -= shots;
     // 반동이 반영된 실제 조준 방향으로 발사 (탄퍼짐·판정은 서버)
     this.net.fire(this.eyePos(), this.yaw + this.recoilYaw, Math.max(-UP_LIMIT, Math.min(UP_LIMIT, this.pitch + this.recoilPitch)), alt);
     this.spray += shots; this.heat++; this.lastShotAt = now;

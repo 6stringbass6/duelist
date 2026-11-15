@@ -9,7 +9,7 @@ import {
   type Action, type CrosshairLines, type CrosshairPresetId, type FpsCap, type Settings,
 } from './config/settings';
 import {
-  MODES, RULES, SLOT_KEYS, WEAPONS, WEAPONS_BY_SLOT, damageTable, isGun, tdmTargetKills, tierInfo, tierLevel, tierProgress,
+  MODES, RULES, SLOT, SLOT_KEYS, WEAPONS, WEAPONS_BY_SLOT, damageTable, isGun, tdmTargetKills, tierInfo, tierLevel, tierProgress,
   type GameMode, type Loadout, type SlotKey, type WeaponId,
 } from './config/weapons';
 import { FEATURED_BANNER, LOOTBOXES, RARITY, SKIN_WEAPONS, buildGachaReel, featuredSkins, getSkin, lootboxOdds, skinsForWeapon, type SkinDef } from './config/skins';
@@ -406,7 +406,7 @@ $('hud-top').addEventListener('pointerdown', () => { show('scoreboard', true); r
 addEventListener('pointerup', () => { if (TOUCH && visible('scoreboard')) show('scoreboard', false); });
 
 // ───────────────────────────── 로드아웃 (4슬롯 자유 선택) ─────────────────────────────
-const SLOT_LABEL: Record<SlotKey, string> = { melee: '1 · 근접', secondary: '2 · 보조', primary: '3 · 주무기', throwable: '4 · 투척' };
+const SLOT_LABEL: Record<SlotKey, string> = { primary: '1 · 주무기', secondary: '2 · 보조', melee: '3 · 근접', throwable: '4 · 투척' };
 function currentLoadout(): Loadout { return { ...(net.me?.loadout ?? getProfile()!.loadout) }; }
 let loadoutDraft: Loadout | null = null;
 function toggleLoadout(on: boolean): void {
@@ -459,7 +459,7 @@ function updateHud(now: number): void {
   // 체력 / 탄약 / 슬롯
   $('hud-hp').textContent = String(h.hp); ($('hud-hpbar').firstElementChild as HTMLElement).style.width = `${(h.hp / h.maxHp) * 100}%`;
   $('hud-hp').style.color = h.hp < 45 ? 'var(--acc)' : '';
-  $('hud-ammo').innerHTML = h.slot === 1 ? '∞' : h.reloading ? `<small>재장전 ${Math.round(h.reloadProgress * 100)}%</small>` : `${h.ammo}<small> / ${h.magSize}</small>`;
+  $('hud-ammo').innerHTML = h.slot === SLOT.melee ? '∞' : h.reloading ? `<small>재장전 ${Math.round(h.reloadProgress * 100)}%</small>` : `${h.ammo}<small> / ${h.magSize}</small>`;
   $('hud-weapon').textContent = h.weaponName;
   $('hud-slots').querySelectorAll<HTMLElement>('[data-slot]').forEach((d) => d.classList.toggle('on', +d.dataset.slot! === h.slot));
   const sk = (id: string, cd: number, act: boolean): void => { const e = $(id); (e.lastElementChild as HTMLElement).style.height = `${cd * 100}%`; e.classList.toggle('act', act); };
@@ -509,7 +509,7 @@ function bindTouch(): void {
   document.querySelectorAll<HTMLElement>('.tbtn[data-act]').forEach((b) => {
     const act = b.dataset.act as Action;
     if (act === 'alt') { // 줌은 토글. 섬광탄/클래식은 탭 = 우클릭 1회
-      b.addEventListener('pointerdown', () => { const on = !pc.isHeld('alt'); pc.setAction('alt', on); b.classList.toggle('down', on); if (on && pc.getHudState().slot !== 3) setTimeout(() => { pc.setAction('alt', false); b.classList.remove('down'); }, 120); });
+      b.addEventListener('pointerdown', () => { const on = !pc.isHeld('alt'); pc.setAction('alt', on); b.classList.toggle('down', on); if (on && pc.getHudState().slot !== SLOT.primary) setTimeout(() => { pc.setAction('alt', false); b.classList.remove('down'); }, 120); });
       return;
     }
     b.addEventListener('pointerdown', () => { b.classList.add('down'); if (act === 'fire') manualFire = true; pc.setAction(act, true); });

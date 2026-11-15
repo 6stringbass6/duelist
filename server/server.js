@@ -35,15 +35,17 @@ const HB = { // 히트박스 (발 기준 높이)
   s: { headY: 1.62, headR: 0.23, bodyTop: 1.38, legTop: 0.72, bodyR: 0.36, legR: 0.28 },
   c: { headY: 1.02, headR: 0.23, bodyTop: 0.8, legTop: 0.4, bodyR: 0.38, legR: 0.34 },
 };
-const SLOT_KEYS = { 1: 'melee', 2: 'secondary', 3: 'primary', 4: 'throwable' };
+// 슬롯 번호 = 숫자키: 1 주무기 / 2 보조 / 3 근접 / 4 투척 (client/src/config/weapons.ts SLOT_KEYS 와 동일)
+const SLOT_KEYS = { 1: 'primary', 2: 'secondary', 3: 'melee', 4: 'throwable' };
+const SLOT = { primary: 1, secondary: 2, melee: 3, throwable: 4 };
 const DEFAULT_LOADOUT = { melee: 'dagger', secondary: 'classic', primary: 'vandal', throwable: 'grenade' };
 const THROW_G = 20, PROJ_R = 0.12;
 
 // ranges: [최대거리, head, body, leg] (발로란트 원본) × scale → 반올림
 export const WEAPONS = {
-  fists:   { slot: 1, type: 'melee', dmg: 25, intervalMs: 400, range: 1.9, arcDeg: 70, backMult: 1, move: 1.15, equipMs: 150 },
-  dagger:  { slot: 1, type: 'melee', dmg: 35, intervalMs: 300, range: 2.1, arcDeg: 70, backMult: 2, move: 1.2, equipMs: 150 },
-  sword:   { slot: 1, type: 'melee', dmg: 95, intervalMs: 1050, range: 2.7, arcDeg: 90, backMult: 1.6, move: 1.12, equipMs: 250 },
+  fists:   { slot: 3, type: 'melee', dmg: 25, intervalMs: 400, range: 1.9, arcDeg: 70, backMult: 1, move: 1.15, equipMs: 150 },
+  dagger:  { slot: 3, type: 'melee', dmg: 35, intervalMs: 300, range: 2.1, arcDeg: 70, backMult: 2, move: 1.2, equipMs: 150 },
+  sword:   { slot: 3, type: 'melee', dmg: 95, intervalMs: 1050, range: 2.7, arcDeg: 90, backMult: 1.6, move: 1.12, equipMs: 250 },
   classic: { slot: 2, type: 'gun', auto: false, rps: 6.75, mag: 12, reloadMs: 1750, scale: 1, ranges: [[30, 78, 26, 22], [Infinity, 66, 22, 18]],
              spread: { base: 0.25, perShot: 0.35, max: 2.2, recoverMs: 350 }, alt: { burst: 3, rps: 2.22, spread: 1.8 }, move: 1.06, equipMs: 300 },
   shorty:  { slot: 2, type: 'gun', auto: false, rps: 3.33, mag: 2, reloadMs: 1750, scale: 1, pellets: 12, ranges: [[7, 36, 12, 10], [15, 24, 8, 6], [Infinity, 9, 3, 2]],
@@ -54,13 +56,13 @@ export const WEAPONS = {
              spread: { base: 0.2, perShot: 0.3, max: 1.9, recoverMs: 350 }, move: 1.06, equipMs: 300 },
   sheriff: { slot: 2, type: 'gun', auto: false, rps: 4, mag: 6, reloadMs: 2250, scale: 1, ranges: [[30, 159, 55, 46], [Infinity, 145, 50, 42]],
              spread: { base: 0.15, perShot: 0.9, max: 2.5, recoverMs: 500 }, move: 1.06, equipMs: 350 },
-  vandal:  { slot: 3, type: 'gun', auto: true, rps: 9.75, mag: 25, reloadMs: 2500, scale: 0.5, ranges: [[Infinity, 160, 40, 34]],
+  vandal:  { slot: 1, type: 'gun', auto: true, rps: 9.75, mag: 25, reloadMs: 2500, scale: 0.5, ranges: [[Infinity, 160, 40, 34]],
              spread: { base: 0.12, perShot: 0.14, max: 1.7, recoverMs: 380 }, adsSpread: 0.85, move: 1, equipMs: 400 },
-  phantom: { slot: 3, type: 'gun', auto: true, rps: 11, mag: 30, reloadMs: 2500, scale: 0.5, ranges: [[15, 156, 39, 33], [30, 140, 35, 29], [Infinity, 124, 31, 26]],
+  phantom: { slot: 1, type: 'gun', auto: true, rps: 11, mag: 30, reloadMs: 2500, scale: 0.5, ranges: [[15, 156, 39, 33], [30, 140, 35, 29], [Infinity, 124, 31, 26]],
              spread: { base: 0.1, perShot: 0.11, max: 1.4, recoverMs: 350 }, adsSpread: 0.85, move: 1, equipMs: 400 },
-  marshal: { slot: 3, type: 'gun', auto: false, rps: 1.5, mag: 5, reloadMs: 2500, scale: 1, ranges: [[Infinity, 202, 101, 85]],
+  marshal: { slot: 1, type: 'gun', auto: false, rps: 1.5, mag: 5, reloadMs: 2500, scale: 1, ranges: [[Infinity, 202, 101, 85]],
              spread: { base: 0, perShot: 0, max: 0, recoverMs: 300, hip: 6.5 }, zoom: 3.5, scopeMs: 150, move: 1, equipMs: 450 },
-  odin:    { slot: 3, type: 'gun', auto: true, rps: 12, rpsMax: 15.6, rampShots: 10, mag: 100, reloadMs: 5000, scale: 0.5, ranges: [[30, 95, 38, 32], [Infinity, 77, 31, 26]],
+  odin:    { slot: 1, type: 'gun', auto: true, rps: 12, rpsMax: 15.6, rampShots: 10, mag: 100, reloadMs: 5000, scale: 0.5, ranges: [[30, 95, 38, 32], [Infinity, 77, 31, 26]],
              spread: { base: 0.5, perShot: 0.07, max: 2.4, recoverMs: 450 }, adsSpread: 0.7, move: 0.88, equipMs: 550 },
   grenade: { slot: 4, type: 'throw', fuseMs: 2000, speed: 21, lift: 3, radius: 6.5, maxDmg: 130, minDmg: 15, selfMult: 0.5, charges: 2, restitution: 0.45, move: 1.06 },
   flash:   { slot: 4, type: 'throw', fuseMs: 1600, altFuseMs: 1000, speed: 24, altSpeed: 10, lift: 2, altLift: 3.5, maxBlindMs: 2250, altMaxBlindMs: 1500, charges: 2, restitution: 0.5, move: 1.06 },
@@ -252,7 +254,7 @@ function buildGrid() {
   const boxes = [
     B(0, 0, 14, 14, 1.0, 0, 'platform'), B(0, 0, 4, 4, 4, 1.0, 'pillar'),
     ...sym([
-      B(0, -44, 18, 1.5, 3.5, 0, 'wall'),                                  // 스폰 차폐벽
+      B(0, -44, 24, 1.5, 3.5, 0, 'wall'),                                  // 스폰 차폐벽: 스폰열(x±10)보다 넓게 → 시작 시 상호 시야 차단, 좌우(|x|>12)로 우회
       B(-9, -34, 10, 1.2, 1.4, 0, 'cover'), B(9, -34, 10, 1.2, 1.4, 0, 'cover'),
       B(-16, -10, 3, 3, 3), B(-24, 4, 3, 3, 3), B(16, -18, 3, 3, 3),
       B(-10, -22, 6, 2, 2.2, 0, 'wall'), B(-30, -14, 2, 8, 3.2, 0, 'wall'), B(28, -26, 8, 2, 3.2, 0, 'wall'),
@@ -273,7 +275,7 @@ function buildArena() {
   const boxes = [
     B(0, 0, 4, 4, 3.2, 0, 'block'),
     ...sym([
-      B(0, -14.5, 7, 1.2, 3.2, 0, 'wall'),
+      B(0, -15.5, 21, 1.2, 3.2, 0, 'wall'),                                // 스폰 차폐벽: 스폰열(x±9) 전체를 가림 → 시작 시 상호 시야 차단, 좌우(|x|>10.5)로 우회
       B(-8, -4, 1.2, 8, 3.2, 0, 'wall'), B(-13, 5, 5, 1.2, 3.2, 0, 'wall'),
       B(-6, -10.5, 4, 1.2, 1.3, 0, 'cover'), B(6, -10.5, 4, 1.2, 1.3, 0, 'cover'),
       B(-17, -9, 4, 4, 1.6, 0, 'crate'), B(-17.5, -13.5, 3, 3, 3.2, 0, 'crate'), B(13, -6, 2.5, 2.5, 2.5, 0, 'crate'),
@@ -330,7 +332,7 @@ function newEntity(room, base) {
   const e = {
     id: room.nextId++, isBot: false, sess: null, userId: null, name: '', rp: 0, level: 0, title: null, skins: {}, career: { kd: 0, hs: 0, wr: 0 },
     team: 0, pos: { x: 0, y: 0, z: 0 }, vel: { x: 0, y: 0, z: 0 }, yaw: 0, pitch: 0, flags: 0, hp: 0, alive: false,
-    loadout: { ...DEFAULT_LOADOUT }, pending: null, slot: 3, ammo: { secondary: 0, primary: 0 }, charges: 0,
+    loadout: { ...DEFAULT_LOADOUT }, pending: null, slot: SLOT.primary, ammo: { secondary: 0, primary: 0 }, charges: 0,
     reloadUntil: 0, reloadKey: null, nextFireAt: 0, nextThrowAt: 0, spray: 0, heat: 0, lastShotAt: 0, adsSince: 0,
     skillAt: { q: 0, e: 0 }, dashUntil: 0, protUntil: 0, respawnAt: 0, spawnedAt: 0, spawnSeq: 0, flashedUntil: 0,
     lastMoveAt: 0, violations: 0, hist: [], dmgLog: new Map(), stats: newStats(), persisted: false, ai: null, ...base,
@@ -354,7 +356,7 @@ function refill(e) {
 function spawnEntity(room, e, pt, now) {
   if (e.pending) { e.loadout = e.pending; e.pending = null; emitRoom(room, 'loadout', { id: e.id, l: e.loadout }); }
   e.pos = { x: pt.x, y: pt.y, z: pt.z }; e.vel = { x: 0, y: 0, z: 0 }; e.yaw = pt.yaw; e.pitch = 0; e.flags = 0;
-  e.hp = RULES.hp; e.alive = true; e.slot = 3; refill(e);
+  e.hp = RULES.hp; e.alive = true; e.slot = SLOT.primary; refill(e);
   e.spray = 0; e.heat = 0; e.nextFireAt = now; e.nextThrowAt = now; e.dashUntil = 0; e.flashedUntil = 0; e.respawnAt = 0;
   e.protUntil = room.mode === 'tdm' ? now + RULES.spawnProtectMs : 0;
   e.spawnedAt = now; e.spawnSeq++; e.lastMoveAt = now; e.violations = 0; e.hist = []; e.dmgLog.clear();
@@ -441,10 +443,10 @@ function botThink(room, b, now) {
 
   // 무기 관리
   if (!b.reloadUntil) {
-    if (b.slot !== 3 && ai.state !== 'engage') { b.slot = 3; b.nextFireAt = now + 300; }
+    if (b.slot !== SLOT.primary && ai.state !== 'engage') { b.slot = SLOT.primary; b.nextFireAt = now + 300; }
     const key = SLOT_KEYS[b.slot], w = WEAPONS[b.loadout[key]];
     if (b.ammo[key] <= 0) {
-      if (b.slot === 3 && ai.state === 'engage' && bd < 14 && b.ammo.secondary > 0 && P.skill > 0.25) { b.slot = 2; b.nextFireAt = now + 300; }
+      if (b.slot === SLOT.primary && ai.state === 'engage' && bd < 14 && b.ammo.secondary > 0 && P.skill > 0.25) { b.slot = SLOT.secondary; b.nextFireAt = now + 300; }
       else startReload(room, b, now);
     } else if (ai.state !== 'engage' && b.ammo[key] < w.mag * 0.4) startReload(room, b, now);
   }
@@ -464,7 +466,7 @@ function botThink(room, b, now) {
 }
 function botFire(room, b, now, dist) {
   const ai = b.ai, key = SLOT_KEYS[b.slot], wid = b.loadout[key], w = WEAPONS[wid];
-  if ((b.slot !== 2 && b.slot !== 3) || b.reloadUntil || b.ammo[key] <= 0 || now < b.nextFireAt) return;
+  if ((b.slot !== SLOT.secondary && b.slot !== SLOT.primary) || b.reloadUntil || b.ammo[key] <= 0 || now < b.nextFireAt) return;
   if (wid === 'shorty' && dist > 9) return;
   if (w.auto) {
     if (ai.burst <= 0) { if (now < ai.pauseUntil) return; ai.burst = randInt(ai.P.burst[0], ai.P.burst[1]) * (dist > 25 ? 1 : 2); }
@@ -549,7 +551,7 @@ function posAt(e, t) { // 지연 보상: 과거 위치 보간
 const canAct = (room, e) => e.alive && room.phase === 'live';
 
 function startReload(room, e, now) {
-  if (e.reloadUntil || (e.slot !== 2 && e.slot !== 3)) return;
+  if (e.reloadUntil || (e.slot !== SLOT.secondary && e.slot !== SLOT.primary)) return;
   const key = SLOT_KEYS[e.slot], w = WEAPONS[e.loadout[key]];
   if (e.ammo[key] >= w.mag) return;
   e.reloadUntil = now + w.reloadMs; e.reloadKey = key; emitAmmo(e);

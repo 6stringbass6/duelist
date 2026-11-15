@@ -100,7 +100,7 @@ export type Keybinds = Record<Action, BindPair>;
 
 export const ACTION_LABELS: Record<Action, string> = {
   forward: '앞으로', back: '뒤로', left: '왼쪽', right: '오른쪽', jump: '점프', crouch: '앉기', slide: '슬라이딩', updraft: '상승기류', dash: '가속',
-  fire: '사격', alt: '줌 / 보조 사격', reload: '재장전', slot1: '근접무기', slot2: '보조무기', slot3: '주무기', slot4: '투척류',
+  fire: '사격', alt: '줌 / 보조 사격', reload: '재장전', slot1: '주무기', slot2: '보조무기', slot3: '근접무기', slot4: '투척류',
   nextWeapon: '다음 무기', prevWeapon: '이전 무기', scoreboard: '스코어보드', loadout: '로드아웃', menu: '메뉴',
 };
 export const DEFAULT_KEYBINDS: Keybinds = {

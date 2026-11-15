@@ -3,7 +3,7 @@
 // 서버가 판정 권위. 이 파일은 예측·연출·UI 용.
 // =====================================================================
 
-export type SlotKey = 'melee' | 'secondary' | 'primary' | 'throwable';
+export type SlotKey = 'primary' | 'secondary' | 'melee' | 'throwable';
 export type MeleeId = 'fists' | 'dagger' | 'sword';
 export type SecondaryId = 'classic' | 'shorty' | 'frenzy' | 'ghost' | 'sheriff';
 export type PrimaryId = 'vandal' | 'phantom' | 'marshal' | 'odin';
@@ -14,7 +14,9 @@ export type HitZone = 'head' | 'body' | 'leg';
 
 export interface Loadout { melee: MeleeId; secondary: SecondaryId; primary: PrimaryId; throwable: ThrowableId }
 
-export const SLOT_KEYS: Record<1 | 2 | 3 | 4, SlotKey> = { 1: 'melee', 2: 'secondary', 3: 'primary', 4: 'throwable' };
+/** 숫자키 슬롯 (FPS 표준): 1 주무기 / 2 보조 / 3 근접 / 4 투척 — server.js SLOT_KEYS 와 동일 */
+export const SLOT_KEYS: Record<1 | 2 | 3 | 4, SlotKey> = { 1: 'primary', 2: 'secondary', 3: 'melee', 4: 'throwable' };
+export const SLOT: Record<SlotKey, 1 | 2 | 3 | 4> = { primary: 1, secondary: 2, melee: 3, throwable: 4 };
 export const DEFAULT_LOADOUT: Loadout = { melee: 'dagger', secondary: 'classic', primary: 'vandal', throwable: 'grenade' };
 
 interface BaseDef { id: WeaponId; slot: 1 | 2 | 3 | 4; name: string; desc: string; move: number; equipMs: number; model: string }
@@ -43,10 +45,10 @@ export type WeaponDef = MeleeDef | GunDef | ThrowDef;
 const INF = Infinity;
 
 export const WEAPONS: Record<WeaponId, WeaponDef> = {
-  // ── 1번: 근접 (장착 시 이동속도 증가)
-  fists: { id: 'fists', slot: 1, type: 'melee', name: '주먹', desc: '미장착. 가볍고 빠르다.', dmg: 25, intervalMs: 400, range: 1.9, arcDeg: 70, backMult: 1, move: 1.15, equipMs: 150, model: 'fists' },
-  dagger: { id: 'dagger', slot: 1, type: 'melee', name: '단검', desc: '낮은 데미지, 초고속 연타. 백스탭 2배.', dmg: 35, intervalMs: 300, range: 2.1, arcDeg: 70, backMult: 2, move: 1.2, equipMs: 150, model: 'dagger' },
-  sword: { id: 'sword', slot: 1, type: 'melee', name: '장검', desc: '높은 데미지, 느린 휘두르기. 백스탭 1.6배.', dmg: 95, intervalMs: 1050, range: 2.7, arcDeg: 90, backMult: 1.6, move: 1.12, equipMs: 250, model: 'sword' },
+  // ── 3번: 근접 (장착 시 이동속도 증가)
+  fists: { id: 'fists', slot: 3, type: 'melee', name: '주먹', desc: '미장착. 가볍고 빠르다.', dmg: 25, intervalMs: 400, range: 1.9, arcDeg: 70, backMult: 1, move: 1.15, equipMs: 150, model: 'fists' },
+  dagger: { id: 'dagger', slot: 3, type: 'melee', name: '단검', desc: '낮은 데미지, 초고속 연타. 백스탭 2배.', dmg: 35, intervalMs: 300, range: 2.1, arcDeg: 70, backMult: 2, move: 1.2, equipMs: 150, model: 'dagger' },
+  sword: { id: 'sword', slot: 3, type: 'melee', name: '장검', desc: '높은 데미지, 느린 휘두르기. 백스탭 1.6배.', dmg: 95, intervalMs: 1050, range: 2.7, arcDeg: 90, backMult: 1.6, move: 1.12, equipMs: 250, model: 'sword' },
 
   // ── 2번: 보조무기
   classic: { id: 'classic', slot: 2, type: 'gun', name: '클래식', desc: '기본 권총. 우클릭 3점사.', auto: false, rps: 6.75, mag: 12, reloadMs: 1750, scale: 1,
@@ -66,17 +68,17 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     ranges: [[30, 159, 55, 46], [INF, 145, 50, 42]], spread: { base: 0.15, perShot: 0.9, max: 2.5, recoverMs: 500 },
     adsZoom: 1, move: 1.06, equipMs: 350, model: 'sheriff', recoil: { pitch: 2.6, yaw: 0.4, recover: 6, maxPitch: 8 }, tracer: 0xffe0a0 },
 
-  // ── 3번: 주무기 (밴달/팬텀/오딘 = 발로란트 데미지 50% 반올림)
-  vandal: { id: 'vandal', slot: 3, type: 'gun', name: '밴달', desc: '거리 감쇠 없는 돌격소총.', auto: true, rps: 9.75, mag: 25, reloadMs: 2500, scale: 0.5,
+  // ── 1번: 주무기 (밴달/팬텀/오딘 = 발로란트 데미지 50% 반올림)
+  vandal: { id: 'vandal', slot: 1, type: 'gun', name: '밴달', desc: '거리 감쇠 없는 돌격소총.', auto: true, rps: 9.75, mag: 25, reloadMs: 2500, scale: 0.5,
     ranges: [[INF, 160, 40, 34]], spread: { base: 0.12, perShot: 0.14, max: 1.7, recoverMs: 380 }, adsSpread: 0.85,
     adsZoom: 1.25, move: 1, equipMs: 400, model: 'vandal', recoil: { pitch: 0.62, yaw: 0.3, recover: 7, maxPitch: 9 }, tracer: 0xffc070 },
-  phantom: { id: 'phantom', slot: 3, type: 'gun', name: '팬텀', desc: '빠른 연사, 안정적인 소음 소총.', auto: true, rps: 11, mag: 30, reloadMs: 2500, scale: 0.5,
+  phantom: { id: 'phantom', slot: 1, type: 'gun', name: '팬텀', desc: '빠른 연사, 안정적인 소음 소총.', auto: true, rps: 11, mag: 30, reloadMs: 2500, scale: 0.5,
     ranges: [[15, 156, 39, 33], [30, 140, 35, 29], [INF, 124, 31, 26]], spread: { base: 0.1, perShot: 0.11, max: 1.4, recoverMs: 350 }, adsSpread: 0.85,
     adsZoom: 1.25, move: 1, equipMs: 400, model: 'phantom', recoil: { pitch: 0.5, yaw: 0.24, recover: 7.5, maxPitch: 8 }, tracer: 0xc0d8ff },
-  marshal: { id: 'marshal', slot: 3, type: 'gun', name: '마샬', desc: '고배율 저격소총. 노줌 지향사격은 탄퍼짐 극대화.', auto: false, rps: 1.5, mag: 5, reloadMs: 2500, scale: 1,
+  marshal: { id: 'marshal', slot: 1, type: 'gun', name: '마샬', desc: '고배율 저격소총. 노줌 지향사격은 탄퍼짐 극대화.', auto: false, rps: 1.5, mag: 5, reloadMs: 2500, scale: 1,
     ranges: [[INF, 202, 101, 85]], spread: { base: 0, perShot: 0, max: 0, recoverMs: 300, hip: 6.5 }, zoom: 3.5, scopeMs: 150,
     adsZoom: 3.5, move: 1, equipMs: 450, model: 'marshal', recoil: { pitch: 3.5, yaw: 0.3, recover: 5, maxPitch: 6 }, tracer: 0xffffff },
-  odin: { id: 'odin', slot: 3, type: 'gun', name: '오딘', desc: '100발 경기관총. 쏠수록 연사 가속.', auto: true, rps: 12, rpsMax: 15.6, rampShots: 10, mag: 100, reloadMs: 5000, scale: 0.5,
+  odin: { id: 'odin', slot: 1, type: 'gun', name: '오딘', desc: '100발 경기관총. 쏠수록 연사 가속.', auto: true, rps: 12, rpsMax: 15.6, rampShots: 10, mag: 100, reloadMs: 5000, scale: 0.5,
     ranges: [[30, 95, 38, 32], [INF, 77, 31, 26]], spread: { base: 0.5, perShot: 0.07, max: 2.4, recoverMs: 450 }, adsSpread: 0.7,
     adsZoom: 1.15, move: 0.88, equipMs: 550, model: 'odin', recoil: { pitch: 0.42, yaw: 0.36, recover: 6, maxPitch: 10 }, tracer: 0xffb060 },
 
@@ -87,10 +89,10 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     maxBlindMs: 2250, altMaxBlindMs: 1500, charges: 2, restitution: 0.5, move: 1.06, equipMs: 300, model: 'flash' },
 };
 
-export const WEAPONS_BY_SLOT: Record<SlotKey, WeaponId[]> = {
-  melee: ['fists', 'dagger', 'sword'],
-  secondary: ['classic', 'shorty', 'frenzy', 'ghost', 'sheriff'],
+export const WEAPONS_BY_SLOT: Record<SlotKey, WeaponId[]> = { // 키 순서 = 로드아웃 UI 표시 순서
   primary: ['vandal', 'phantom', 'marshal', 'odin'],
+  secondary: ['classic', 'shorty', 'frenzy', 'ghost', 'sheriff'],
+  melee: ['fists', 'dagger', 'sword'],
   throwable: ['grenade', 'flash'],
 };
 

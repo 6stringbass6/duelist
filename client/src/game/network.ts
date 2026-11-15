@@ -4,7 +4,7 @@
 // =====================================================================
 import * as THREE from 'three';
 import { io, type Socket } from 'socket.io-client';
-import { F, RULES, SLOT_KEYS, WEAPONS, isGun, type GameMode, type HitZone, type Loadout, type MapId, type WeaponId } from '../config/weapons';
+import { F, RULES, SLOT, SLOT_KEYS, WEAPONS, isGun, type GameMode, type HitZone, type Loadout, type MapId, type WeaponId } from '../config/weapons';
 import { DEFAULT_SKIN, getSkin, type SkinDef, type SkinMaterial } from '../config/skins';
 import { SERVER_URL, socketAuthPayload } from '../services/supabase';
 import { buildArena, textSprite, type ArenaBuild, type MapData, type World } from './arena';
@@ -162,7 +162,7 @@ class RemoteEntity {
   private weapon: THREE.Group | null = null;
   private weaponKey = '';
   readonly buf: Snap[] = [];
-  x = 0; y = 0; z = 0; yaw = 0; pitch = 0; flags = 0; hp = 0; slot = 3; alive = false;
+  x = 0; y = 0; z = 0; yaw = 0; pitch = 0; flags = 0; hp = 0; slot: number = SLOT.primary; alive = false;
   private kick = 0;
 
   constructor(public info: PlayerInfo, ally: boolean) {
@@ -247,7 +247,7 @@ export class GameClient {
   readonly killfeed: KillFeedItem[] = [];
   ammo: AmmoState = { secondary: 0, primary: 0, charges: 0, reloadUntil: 0, reloadKey: null };
   /** 내 엔티티의 최신 서버 상태 */
-  self = { hp: 0, alive: false, flags: 0, slot: 3 };
+  self = { hp: 0, alive: false, flags: 0, slot: SLOT.primary as number };
   rangeMoving = false;
   pingMs = 0;
   particles: 'off' | 'low' | 'high' = 'low';
@@ -428,7 +428,7 @@ export class GameClient {
   }
   private onSpawn(sp: SpawnTuple): void {
     const [id, x, y, z, yaw, seq] = sp;
-    if (id === this.you) { this.self.alive = true; this.self.hp = RULES.hp; this.self.slot = 3; this.emit('spawn', x, y, z, yaw, seq); }
+    if (id === this.you) { this.self.alive = true; this.self.hp = RULES.hp; this.self.slot = SLOT.primary; this.emit('spawn', x, y, z, yaw, seq); }
     else { const e = this.entities.get(id); if (e) e.buf.length = 0; }
   }
   private onSnap(m: { t: number; e: number[][]; p: number[][]; s: [number, number] }): void {
@@ -505,7 +505,7 @@ export class GameClient {
     for (const e of this.entities.values()) e.dispose();
     this.entities.clear(); this.players.clear(); this.killfeed.length = 0;
     this.arena?.dispose(); this.arena = null; this.room = null; this.you = 0;
-    this.self = { hp: 0, alive: false, flags: 0, slot: 3 };
+    this.self = { hp: 0, alive: false, flags: 0, slot: SLOT.primary };
   }
 
   /** 프레임마다 호출: 원격 엔티티 보간 + 투사체/이펙트 갱신 */
