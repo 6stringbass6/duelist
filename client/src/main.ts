@@ -24,6 +24,7 @@ import {
 import { SKILLS, SKILL_IDS, ULTS, ULT_IDS, ULT_COST, type SkillId, type UltId } from './config/skills';
 import { GameClient, type MatchEnd, type MatchPlayerResult, type MatchReward, type PlayerInfo, type RoomState } from './game/network';
 import { PlayerController } from './game/playerController';
+import { HS_ICON, killBannerHtml, playBannerParticles, weaponIcon } from './game/killUi';
 
 // ───────────────────────────── DOM 헬퍼 ─────────────────────────────
 const $ = <T extends HTMLElement = HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -365,7 +366,7 @@ function renderRoom(): void {
 function enterGame(): void {
   setView('game'); applyGraphics(); resetMatchEnd();
   show('range-panel', net.mode === 'range'); show('hud-top', net.mode !== 'range'); show('hud-skills', true);
-  setBanner('', ''); if (!TOUCH) pc.requestCapture();
+  setBanner('', ''); resetCombatFx(); if (!TOUCH) pc.requestCapture();
   if (net.mode === 'range') toggleLoadout(true);
 }
 function resumeGame(): void { show('m-pause', false); show('loadout', false); if (view === 'game' && !TOUCH) pc.requestCapture(); }
@@ -390,8 +391,8 @@ net.on('phase', (p) => {
   if (view !== 'game' || !net.room) return;
   const round = net.mode === 'classic' || net.mode === 'ranked';
   if (p.phase === 'buy') { setBanner(round ? `ROUND ${p.round}` : '준비', '무기를 선택하세요 — 4개 슬롯 자유 선택 (B)'); if (TOUCH) toggleLoadout(true); }
-  else if (p.phase === 'live') { setBanner(round ? '전투 개시' : 'FIGHT', '', 1500); if (visible('loadout') && net.mode !== 'range') toggleLoadout(false); }
-  else if (p.phase === 'roundEnd') setBanner(p.winner === undefined || p.winner < 0 ? '무승부' : p.winner === net.myTeam ? '라운드 승리' : '라운드 패배', `${p.score[net.myTeam]} : ${p.score[1 - net.myTeam]}`);
+  else if (p.phase === 'live') { if (countdownGo(p.round)) setBanner('', ''); else setBanner(round ? '전투 개시' : 'FIGHT', '', 1500); if (visible('loadout') && net.mode !== 'range') toggleLoadout(false); }
+  else if (p.phase === 'roundEnd') { hideCountdown(); setBanner(p.winner === undefined || p.winner < 0 ? '무승부' : p.winner === net.myTeam ? '라운드 승리' : '라운드 패배', `${p.score[net.myTeam]} : ${p.score[1 - net.myTeam]}`); }
 });
 // ───────────────────────────── 매치 종료: 승패 시네마틱 → 결과 화면 ─────────────────────────────
 const RESULT_DELAY_MS = 2000;
@@ -565,8 +566,12 @@ function renderScoreboard(): void {
 }
 
 // ───────────────────────────── HUD ─────────────────────────────
-let hitUntil = 0, kfSig = '', fpsFrames = 0, fpsAt = performance.now();
-net.on('hit', (h) => { hitUntil = performance.now() + (h.k ? 320 : 160); $('hitmarker').classList.toggle('hs', h.z === 'head' || h.k); });
+let hitUntil = 0, xhFlashUntil = 0, kfSig = '', fpsFrames = 0, fpsAt = performance.now();
+const restartAnim = (el: HTMLElement, cls: string): void => { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); };
+net.on('hit', (h) => {
+  const now = performance.now(); hitUntil = now + (h.k ? 320 : 160); $('hitmarker').classList.toggle('hs', h.z === 'head' || h.k);
+  if (h.z === 'head') { xhFlashUntil = now + 240; restartAnim($('xflash'), 'on'); } // 헤드샷: 조준선 붉은 플래시
+});
 net.on('kill', () => { if (visible('scoreboard')) renderScoreboard(); });
 // ── 스킬 알림 / 오멘 전술 맵 / 청부 계약 연출
 let lastDenyAt = 0;
@@ -610,24 +615,12 @@ $('tac-canvas').addEventListener('click', (e) => {
 addEventListener('keydown', (e) => { if (e.code === 'Escape' && visible('tacmap')) closeTacMap(); });
 // ── 킬 배너 / 연속 킬 (라운드 내 누적, 라운드 시작·사망 시 초기화)
 let killStreak = 0, kbTimer = 0;
-function killBannerSvg(n: number, hs: boolean): string {
-  const col = n >= 5 ? '#ffd34d' : n >= 3 ? '#ff9f3b' : n === 2 ? '#fff' : '#5ef0ff', acc = hs ? '#ff3b4a' : col;
-  const wing = (dir: number) => {
-    let d = '';
-    for (let i = 0; i < Math.min(n, 5); i++) d += `<path d="M${95 + dir * (22 + i * 13)} ${39 - 6 - i * 2} l${dir * 10} ${-3 - i} l${-dir * 4} ${9 + i * 2} z" fill="${col}" opacity="${0.55 + i * 0.1}"/>`;
-    return d;
-  };
-  const core = `<path d="M95 8 L122 39 L95 70 L68 39 Z" fill="#0b0f16" stroke="${acc}" stroke-width="3"/><path d="M95 18 L113 39 L95 60 L77 39 Z" fill="none" stroke="${col}" stroke-width="1.5" opacity=".8"/>`;
-  const mid = hs
-    ? `<circle cx="95" cy="39" r="11" fill="none" stroke="#ff3b4a" stroke-width="2.5"/><circle cx="95" cy="39" r="5" fill="#ff3b4a"/><path d="M95 22v10M95 46v10M78 39h10M102 39h10" stroke="#ff3b4a" stroke-width="2.5"/>`
-    : `<text x="95" y="48" text-anchor="middle" font-family="sans-serif" font-weight="900" font-size="26" fill="${col}">${n >= 5 ? '★' : n}</text>`;
-  const crown = n >= 5 ? `<path d="M80 6 l8 -8 l7 8 l7 -8 l8 8" fill="none" stroke="#ffd34d" stroke-width="3"/>` : '';
-  return `<svg viewBox="0 0 190 78">${wing(1)}${wing(-1)}${core}${mid}${crown}</svg>`;
-}
+function clearKillBanner(): void { clearTimeout(kbTimer); $('killbanner').innerHTML = ''; }
 function showKillBanner(n: number, hs: boolean): void {
-  const el = $('killbanner'), label = n >= 5 ? 'ACE' : `${n} KILL`;
-  el.innerHTML = `<div class="kb ${hs ? 'hs' : ''} ${n >= 5 ? 'ace' : ''}" style="--kc:${n >= 5 ? '#ffd34d' : n >= 3 ? '#ff9f3b' : n === 2 ? '#fff' : '#5ef0ff'}">${killBannerSvg(n, hs)}<b>${hs ? 'HEADSHOT · ' : ''}${label}</b></div>`;
-  clearTimeout(kbTimer); kbTimer = window.setTimeout(() => { el.innerHTML = ''; }, 2550);
+  const el = $('killbanner'), q = getSettings().graphics.particles, density = q === 'off' ? 0 : q === 'low' ? 0.6 : 1;
+  el.innerHTML = killBannerHtml(n, hs, density > 0 && (n >= 2 || hs)); // 새 노드로 교체 → 스프링/쉐이크 애니메이션 재시작
+  const cv = el.querySelector<HTMLCanvasElement>('.kb-fx'); if (cv) playBannerParticles(cv, n, hs, density);
+  clearTimeout(kbTimer); kbTimer = window.setTimeout(() => { el.innerHTML = ''; }, n >= 5 ? 3300 : 2750);
 }
 net.on('kill', (k, raw) => {
   if (raw.v === net.you) { killStreak = 0; return; }
@@ -635,7 +628,39 @@ net.on('kill', (k, raw) => {
   killStreak++;
   showKillBanner(killStreak, k.hs); pc.audio.killStreak(killStreak, k.hs);
 });
-net.on('phase', (p) => { if (p.phase === 'buy' || p.phase === 'live') { killStreak = 0; $('killbanner').innerHTML = ''; } });
+net.on('phase', (p) => { if (p.phase === 'buy' || p.phase === 'live') { killStreak = 0; clearKillBanner(); } });
+
+// ── 라운드 시작 카운트다운: 준비(buy) 페이즈의 마지막 3초를 서버 시각 기준으로 3-2-1, 전투 개시와 동시에 MATCH START
+let cdShown = 0, cdTimer = 0;
+function hideCountdown(): void { clearTimeout(cdTimer); cdShown = 0; show('cd', false); $('cd').classList.remove('go'); }
+function countdownTick(): void {
+  const room = net.room; if (!room || room.mode === 'range' || room.phase !== 'buy') return;
+  const ms = net.phaseRemainingMs(); if (ms <= 0 || ms > 3000) return;
+  const n = Math.ceil(ms / 1000);
+  ($('cd-bar').firstElementChild as HTMLElement).style.width = `${(ms / 3000) * 100}%`;
+  if (n === cdShown) return;
+  if (!cdShown) { // 배너 등장
+    clearTimeout(cdTimer); setBanner('', ''); $('cd').classList.remove('go');
+    const round = room.mode === 'classic' || room.mode === 'ranked';
+    $('cd-l').textContent = round ? `ROUND ${room.round}` : MODES[room.mode].name; $('cd-r').textContent = room.round <= 1 ? 'MATCH START IN' : 'ROUND START IN';
+    show('cd');
+  }
+  cdShown = n; const num = $('cd-num'); num.textContent = String(n); num.dataset.n = String(n); restartAnim(num, 'tick');
+  pc.audio.countBeep(false);
+}
+/** 전투 개시 순간. 카운트다운이 떠 있었으면 MATCH START 로 전환하고 true */
+function countdownGo(round: number): boolean {
+  if (!cdShown) return false;
+  cdShown = 0; clearTimeout(cdTimer);
+  const num = $('cd-num'); num.textContent = round <= 1 || !(net.mode === 'classic' || net.mode === 'ranked') ? 'MATCH START' : `ROUND ${round} START`; num.dataset.n = 'go';
+  ($('cd-bar').firstElementChild as HTMLElement).style.width = '0%';
+  restartAnim($('cd'), 'go'); pc.audio.countBeep(true);
+  cdTimer = window.setTimeout(() => { show('cd', false); $('cd').classList.remove('go'); }, 1500);
+  return true;
+}
+/** 킬 배너·카운트다운·조준선 플래시 초기화 (입장 / 매치 종료 시 — 승패 연출과 겹치지 않게) */
+function resetCombatFx(): void { killStreak = 0; clearKillBanner(); hideCountdown(); xhFlashUntil = 0; $('xflash').classList.remove('on'); }
+net.on('matchEnd', resetCombatFx);
 
 $('hud-slots').querySelectorAll<HTMLElement>('[data-slot]').forEach((d) => d.addEventListener('pointerdown', () => pc.switchSlot(+d.dataset.slot! as 1 | 2 | 3 | 4)));
 
@@ -644,7 +669,7 @@ function updateHud(now: number): void {
   // 조준선 (픽셀 캔버스)
   xctx.clearRect(0, 0, xhair.width, xhair.height);
   const dpr = xhair.width / innerWidth;
-  if (h.alive && !h.scoped && h.flash < 0.9 && !anyPanelOpen()) drawCrosshair(xctx, s.crosshair, xhair.width / 2, xhair.height / 2, Math.max(1, Math.round(dpr)), h.spreadPx > 14 ? h.spreadPx * dpr : 0);
+  if (h.alive && !h.scoped && h.flash < 0.9 && !anyPanelOpen()) drawCrosshair(xctx, now < xhFlashUntil ? { ...s.crosshair, color: '#ff1a2e' } : s.crosshair, xhair.width / 2, xhair.height / 2, Math.max(1, Math.round(dpr)), h.spreadPx > 14 ? h.spreadPx * dpr : 0);
   // 체력 / 탄약 / 슬롯
   $('hud-hp').textContent = String(h.hp); ($('hud-hpbar').firstElementChild as HTMLElement).style.width = `${(h.hp / h.maxHp) * 100}%`;
   $('hud-hp').style.color = h.hp < 45 ? 'var(--acc)' : '';
@@ -679,9 +704,13 @@ function updateHud(now: number): void {
   const kf = net.activeKillfeed(), sig = kf.map((k) => k.at).join(',');
   if (sig !== kfSig) {
     kfSig = sig; const t = net.myTeam;
-    $('killfeed').innerHTML = kf.map((k) => `<div class="kf ${k.mine ? 'mine' : ''}"><span class="${k.killerTeam === t ? 'a' : 'e'}">${k.suicide ? '' : esc(k.killer)}</span>${k.assists.length ? `<span class="mut"> + ${k.assists.map(esc).join(', ')}</span>` : ''}<span class="w">${k.suicide ? '☠' : `[${esc(WEAPONS[k.weapon]?.name ?? k.weapon)}]`}${k.hs ? ' <span class="hs">◎</span>' : ''}</span><span class="${k.victimTeam === t ? 'a' : 'e'}">${esc(k.victim)}</span></div>`).join('');
+    $('killfeed').innerHTML = kf.map((k) => {
+      const who = (name: string, team: number): string => `<span class="${team === t ? 'a' : 'e'}">${esc(name)}</span>`, wname = WEAPONS[k.weapon]?.name ?? k.weapon;
+      return `<div class="kf ${k.killerTeam === t ? 'ka' : 'ke'}${k.mine ? ' mine' : ''}${k.hs ? ' hs' : ''}${now - k.at < 350 ? ' new' : ''}">${k.suicide ? '' : who(k.killer, k.killerTeam)}${k.assists.length ? `<span class="as">+ ${k.assists.map(esc).join(', ')}</span>` : ''}<span class="kf-w">${k.suicide ? '<span class="kf-x">☠</span>' : weaponIcon(k.weapon, esc(wname))}${k.hs ? HS_ICON : ''}</span>${who(k.victim, k.victimTeam)}</div>`;
+    }).join('');
   }
   $('hitmarker').style.opacity = now < hitUntil ? '1' : '0';
+  countdownTick();
   if (bannerUntil && now > bannerUntil) setBanner('', '');
   show('hud-dead', !h.alive && net.phase === 'live' && net.mode !== 'range');
   const hint = !TOUCH && !document.pointerLockElement && !anyPanelOpen() ? '화면을 클릭하면 조작이 시작됩니다' : h.frozen && !TOUCH ? 'B 키로 무기를 변경하세요' : '';

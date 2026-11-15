@@ -11,6 +11,7 @@ import { attachFbxModel } from './weaponModels';
 import { SERVER_URL, socketAuthPayload } from '../services/supabase';
 import type { SkillId, UltId } from '../config/skills';
 import { buildArena, textSprite, type ArenaBuild, type MapData, type World } from './arena';
+import { ImpactFx } from './impactFx';
 
 // ───────────────────────────── 타입 ─────────────────────────────
 export type Phase = 'lobby' | 'buy' | 'live' | 'roundEnd' | 'ended';
@@ -293,8 +294,15 @@ export class GameClient {
   private readonly orbs = new Map<number, { mesh: THREE.Mesh; base: THREE.Vector3; mine: boolean }>();
   private readonly fx: Fx[] = [];
   private readonly tmp = new THREE.Vector3();
+  /** 풀링된 타격 이펙트 (스파크 / 헤드샷 파편 / 탄흔 / 먼지) */
+  readonly impacts: ImpactFx;
+  /** 내 최근 사격이 적에게 맞은 지점 — 'hit' 이벤트(헤드샷 파편)의 정확한 위치 계산용. 고정 슬롯 재사용 */
+  private readonly ownHits = Array.from({ length: 16 }, () => ({ x: 0, y: 0, z: 0, dx: 0, dy: 0, dz: 0, at: -1e9 }));
+  private ownHitCursor = 0;
+  private readonly rayO = { x: 0, y: 0, z: 0 };
+  private readonly rayD = { x: 0, y: 0, z: 0 };
 
-  constructor(readonly scene: THREE.Scene) {}
+  constructor(readonly scene: THREE.Scene) { this.impacts = new ImpactFx(scene); }
 
   // ── 이벤트
   on<K extends keyof NetEvents>(ev: K, fn: NetEvents[K]): () => void {
@@ -435,7 +443,7 @@ export class GameClient {
     s.on('shot', (m: { id: number; w: WeaponId; o: [number, number, number]; h: number[]; alt: boolean }) => this.onShot(m));
     s.on('melee', (m: { id: number; w: WeaponId; hit: number }) => { this.entities.get(m.id)?.onShot(); this.emit('melee', m); });
     s.on('reload', (m: { id: number }) => this.emit('reload', m.id));
-    s.on('hit', (m: { v: number; d: number; z: HitZone; k: boolean }) => this.emit('hit', m));
+    s.on('hit', (m: { v: number; d: number; z: HitZone; k: boolean }) => { this.onHitFx(m); this.emit('hit', m); });
     s.on('hurt', (m: { a: number; d: number; hp: number; from: [number, number] }) => { this.self.hp = m.hp; this.emit('hurt', m); });
     s.on('flash', (m: { dur: number; by: number; full: boolean }) => this.emit('flash', m));
     s.on('skill', (m: Parameters<NetEvents['skill']>[0]) => this.emit('skill', m));
@@ -526,17 +534,49 @@ export class GameClient {
       const from = ent ? ent.muzzleWorld(this.tmp) : this.tmp.set(m.o[0], m.o[1] - 0.12, m.o[2]);
       const step = this.particles === 'low' && m.h.length > 9 ? 6 : 3;
       for (let i = 0; i < m.h.length; i += step) this.spawnTracer(from, m.h[i], m.h[i + 1], m.h[i + 2], color);
+      const lite = m.h.length > 9; // 산탄/점사: 탄착당 파티클 수를 줄여 총량 유지
+      this.impacts.quality = this.particles;
+      for (let i = 0; i + 2 < m.h.length; i += 3) this.spawnImpact(m.id === this.you, m.o, m.h[i], m.h[i + 1], m.h[i + 2], lite);
     }
     this.emit('shot', { id: m.id, w: m.w, o: m.o, alt: m.alt });
+  }
+  /** 탄착점 분류: 월드 레이캐스트가 같은 거리에서 맞으면 벽/바닥(탄흔+먼지), 그 전에 멈췄으면 캐릭터 피격(스파크) */
+  private spawnImpact(mine: boolean, o: [number, number, number], x: number, y: number, z: number, lite: boolean): void {
+    const world = this.world; if (!world) return;
+    const dx = x - o[0], dy = y - o[1], dz = z - o[2], len = Math.hypot(dx, dy, dz);
+    if (len < 0.05 || len > 295) return; // 허공으로 날아간 탄
+    const ro = this.rayO, rd = this.rayD; ro.x = o[0]; ro.y = o[1]; ro.z = o[2]; rd.x = dx / len; rd.y = dy / len; rd.z = dz / len;
+    const wh = world.raycast(ro, rd, len + 0.15);
+    if (wh && wh.t > len - 0.15) {
+      const nx = wh.axis === 0 ? wh.sign : 0, ny = wh.axis === 1 ? wh.sign : 0, nz = wh.axis === 2 ? wh.sign : 0;
+      this.impacts.wallImpact(x, y, z, nx, ny, nz, !this.inBarrier(x, y, z), lite); return;
+    }
+    let near = false; // 원격 캐릭터 근처에서 멈춘 탄만 피격으로 처리 (내가 맞은 탄은 화면 앞에서 터지지 않게 제외)
+    for (const e of this.entities.values()) if (e.alive && Math.abs(x - e.x) < 0.8 && Math.abs(z - e.z) < 0.8 && y > e.y - 0.2 && y < e.y + 2.1) { near = true; break; }
+    if (!near) return;
+    this.impacts.hitSpark(x, y, z, -rd.x, -rd.y, -rd.z, lite);
+    if (mine) { const h = this.ownHits[this.ownHitCursor]; this.ownHitCursor = (this.ownHitCursor + 1) % this.ownHits.length; h.x = x; h.y = y; h.z = z; h.dx = -rd.x; h.dy = -rd.y; h.dz = -rd.z; h.at = performance.now(); }
+  }
+  /** 소멸 가능한 장벽 위에는 탄흔을 남기지 않는다 (장벽이 사라지면 허공에 뜨므로) */
+  private inBarrier(x: number, y: number, z: number): boolean {
+    for (const w of this.walls.values()) { const b = w.box as unknown as number[]; if (x > b[0] - 0.06 && x < b[3] + 0.06 && y > b[1] - 0.06 && y < b[4] + 0.06 && z > b[2] - 0.06 && z < b[5] + 0.06) return true; }
+    return false;
+  }
+  /** 내 공격 적중 통지: 헤드샷이면 황금 파편, 탄착점이 없는 공격(근접 등)이면 스파크 */
+  private onHitFx(m: { v: number; d: number; z: HitZone; k: boolean }): void {
+    if (this.particles === 'off') return;
+    const e = this.entities.get(m.v); if (!e) return;
+    const now = performance.now(), head = m.z === 'head', ty = e.y + (head ? 1.62 : m.z === 'leg' ? 0.5 : 1.15) * e.group.scale.y;
+    let best: (typeof this.ownHits)[number] | null = null, bd = 1.6;
+    for (const h of this.ownHits) { if (now - h.at > 300) continue; const d = Math.hypot(h.x - e.x, (h.y - ty) * 0.6, h.z - e.z); if (d < bd) { bd = d; best = h; } }
+    this.impacts.quality = this.particles;
+    if (head) { if (best) this.impacts.headShards(best.x, best.y, best.z, best.dx, best.dy, best.dz); else this.impacts.headShards(e.x, ty, e.z, 0, 0.4, 0); }
+    else if (!best) this.impacts.hitSpark(e.x, ty, e.z, 0, 0.5, 0);
   }
   private spawnTracer(from: THREE.Vector3, x: number, y: number, z: number, color: number): void {
     const geo = new THREE.BufferGeometry().setFromPoints([from.clone(), new THREE.Vector3(x, y, z)]);
     const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9 }));
     this.scene.add(line); this.fx.push({ obj: line, life: 0.09, max: 0.09, kind: 'tracer' });
-    if (this.particles === 'high') { // 탄착 스파크
-      const sp = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 5), new THREE.MeshBasicMaterial({ color, transparent: true }));
-      sp.position.set(x, y, z); this.scene.add(sp); this.fx.push({ obj: sp, life: 0.15, max: 0.15, kind: 'pop' });
-    }
   }
   private spawnBlast(type: 'grenade' | 'flash' | 'zero', p: [number, number, number]): void {
     if (type === 'zero') { // 제로/포인트: 반경 12m 감지 파동
@@ -586,6 +626,7 @@ export class GameClient {
     for (const id of [...this.walls.keys()]) this.removeWall(id);
     for (const id of [...this.orbs.keys()]) this.removeOrb(id);
     for (const f of this.fx) disposeFx(f); this.fx.length = 0;
+    this.impacts.clear(); for (const h of this.ownHits) h.at = -1e9;
   }
   private clearRoom(): void {
     this.clearEffects();
@@ -610,6 +651,7 @@ export class GameClient {
       mat.opacity = a * (f.kind === 'boom' ? 0.85 : 0.9);
       if (f.kind === 'boom') f.obj.scale.setScalar(0.3 + (1 - a) * (f.obj.userData.radius as number) * 0.8);
     }
+    this.impacts.update(dt);
     tickSkinMaterials(performance.now() / 1000);
   }
 }

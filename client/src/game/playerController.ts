@@ -42,6 +42,7 @@ export class AudioFX {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private noise: AudioBuffer | null = null;
+  private reverb: ConvolverNode | null = null;
   private ensure(): AudioContext | null {
     if (this.ctx) return this.ctx;
     const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -50,6 +51,11 @@ export class AudioFX {
     this.master = ctx.createGain(); this.master.connect(ctx.destination);
     const n = (this.noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate)), d = n.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    // 스테레오 리버브: 좌우 비상관 노이즈에 지수 감쇠를 입힌 합성 임펄스 응답 (외부 IR 파일 없음)
+    const len = Math.floor(ctx.sampleRate * 2.4), ir = ctx.createBuffer(2, len, ctx.sampleRate), pre = Math.floor(ctx.sampleRate * 0.012);
+    for (let ch = 0; ch < 2; ch++) { const b = ir.getChannelData(ch); for (let i = pre; i < len; i++) b[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2); }
+    const hp = ctx.createBiquadFilter(), wet = ctx.createGain(); hp.type = 'highpass'; hp.frequency.value = 420; wet.gain.value = 0.55;
+    this.reverb = ctx.createConvolver(); this.reverb.buffer = ir; this.reverb.connect(hp).connect(wet).connect(this.master);
     this.applyVolume();
     return ctx;
   }
@@ -78,16 +84,65 @@ export class AudioFX {
   swing(heavy: boolean, vol = 1): void { this.burst(heavy ? 0.25 : 0.12, heavy ? 500 : 1400, 0.35 * vol, 2); }
   hit(head: boolean): void { if (head) { this.tone('triangle', 1900, 2400, 0.09, 0.5); this.tone('sine', 3200, 2800, 0.12, 0.25, 0.02); } else this.tone('square', 900, 600, 0.05, 0.22); }
   kill(): void { this.tone('triangle', 660, 660, 0.09, 0.4); this.tone('triangle', 990, 990, 0.16, 0.4, 0.08); }
-  /** 연속 킬 사운드: 킬 수가 오를수록 피치 상승, 5킬(ACE)은 웅장한 화음. 헤드샷은 금속성 딩 레이어. 볼륨은 master*sfx 연동 */
+  /** 신스 보이스: 빠른 어택 + 지수 감쇠. pan(스테레오 위치)·send(리버브 센드 양) 지정 가능 */
+  private voice(type: OscillatorType, f0: number, at: number, dur: number, gain: number, o: { pan?: number; send?: number; f1?: number; attack?: number; detune?: number } = {}): void {
+    const c = this.ensure(); if (!c || !this.master) return;
+    const osc = c.createOscillator(), g = c.createGain(), t = c.currentTime + at, a = o.attack ?? 0.004;
+    osc.type = type; osc.frequency.setValueAtTime(f0, t); if (o.f1) osc.frequency.exponentialRampToValueAtTime(Math.max(1, o.f1), t + dur);
+    if (o.detune) osc.detune.value = o.detune;
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(gain, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    let out: AudioNode = osc.connect(g);
+    if (o.pan && typeof c.createStereoPanner === 'function') { const p = c.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, o.pan)); out = out.connect(p); }
+    out.connect(this.master);
+    if (o.send && this.reverb) { const s = c.createGain(); s.gain.value = o.send; out.connect(s).connect(this.reverb); }
+    osc.start(t); osc.stop(t + dur + 0.05);
+  }
+  /** 크리스탈 차임 1음: 기음 + 비정수배 배음(2.0/2.76/5.4, 유리 종 음색) + 좌우로 벌린 디튠 쌍 */
+  private chime(f: number, at: number, dur: number, gain: number, pan: number, send = 0.6): void {
+    this.voice('sine', f, at, dur, gain, { pan, send });
+    this.voice('sine', f, at, dur * 0.9, gain * 0.5, { pan: -pan, send, detune: 7 });
+    this.voice('sine', f * 2, at, dur * 0.6, gain * 0.32, { pan: pan * 0.5, send });
+    this.voice('sine', f * 2.76, at, dur * 0.42, gain * 0.16, { pan: -pan * 0.7, send });
+    this.voice('sine', f * 5.4, at, dur * 0.22, gain * 0.07, { pan, send: send * 0.5 });
+  }
+  /**
+   * 킬 사운드 (전부 Web Audio 합성). 3개 레이어:
+   *  ① 서브 베이스 타격 — 피치가 급강하하는 사인 킥 + 어택 클릭 + 저역 노이즈 바디
+   *  ② 크리스탈 차임 — C 메이저 펜타토닉(C·D·E·G·A)으로 킬마다 근음이 올라가고, 장화음 구성음이 한 층씩 쌓인다
+   *  ③ 스테레오 리버브 잔향 — 차임/핑을 컨볼버로 보내 넓게 퍼뜨린다
+   * 헤드샷은 날카로운 금속성 크리티컬 핑을 추가로 겹친다. 5킬(ACE)은 서브 드롭 + 패드 + 상승 글리터.
+   */
   killStreak(n: number, head: boolean): void {
-    const c = this.ensure(); if (!c) return;
-    const k = Math.max(1, Math.min(5, n));
-    const root = 392 * Math.pow(2, [0, 2, 4, 7, 9][k - 1] / 12); // G4 기준 펜타토닉 상승
-    this.tone('triangle', root, root, 0.22, 0.4); this.tone('sine', root / 2, root / 2, 0.3, 0.45);
-    this.tone('triangle', root * 1.5, root * 1.5, 0.2, 0.3, 0.07);
-    if (k >= 3) this.tone('triangle', root * 2, root * 2, 0.25, 0.3, 0.12);
-    if (k >= 5) { for (const [m, d] of [[1.25, 0.1], [1.5, 0.16], [2, 0.22], [3, 0.28]]) this.tone('sawtooth', root * m, root * m, 0.7, 0.18, d); this.tone('sine', root / 4, root / 4, 0.9, 0.6); this.burst(0.5, 5000, 0.25, 0.5, 'highpass'); }
-    if (head) { this.tone('sine', 3400, 3300, 0.3, 0.35); this.tone('square', 5100, 5000, 0.08, 0.1); this.tone('sine', 2300, 2250, 0.4, 0.2, 0.01); }
+    if (!this.ensure()) return;
+    const k = Math.max(1, Math.min(5, Math.floor(n)));
+    const root = 523.25 * Math.pow(2, [0, 2, 4, 7, 9][k - 1] / 12);                       // C5 → D5 → E5 → G5 → A5
+    const stack = [[0, 12], [0, 7, 12], [0, 4, 7, 12], [0, 4, 7, 12, 16], [0, 4, 7, 12, 16, 19, 24]][k - 1];
+    // ① 서브 베이스 타격
+    this.tone('sine', 165, 40, 0.3, 0.85 + k * 0.03); this.tone('triangle', 320, 70, 0.07, 0.4);
+    this.burst(0.022, 2600, 0.28, 0.7); this.burst(0.1, 130, 0.5, 0.6, 'lowpass');
+    if (k >= 3) this.voice('sine', root / 8, 0.02, 0.55, 0.5, { attack: 0.01 });           // 근음 서브 (화음을 받쳐 줌)
+    // ② 차임 스트럼 (아래에서 위로)
+    const step = k >= 5 ? 0.05 : 0.028, dur = 0.95 + k * 0.16, g = 0.3 / Math.sqrt(stack.length);
+    stack.forEach((semi, i) => this.chime(root * Math.pow(2, semi / 12), 0.012 + i * step, dur, g, (i % 2 ? 1 : -1) * Math.min(0.8, 0.22 + i * 0.1)));
+    if (k >= 5) { // ACE: 두 번째 타격 + 서브 드롭 + 브라스 패드 + 펜타토닉 글리터 + 심벌 쉬머
+      this.tone('sine', 150, 34, 0.5, 0.95, 0.3); this.voice('sine', 110, 0.3, 1.3, 0.6, { f1: 30, attack: 0.006 });
+      for (const m of [0.5, 0.625, 0.75, 1]) { this.note('sawtooth', root * m, 0.04, 1.6, 0.06, { cutoff: 1900, attack: 0.05 }); this.note('sawtooth', root * m, 0.04, 1.6, 0.045, { cutoff: 1900, attack: 0.05, detune: 11 }); }
+      for (let i = 0; i < 9; i++) this.chime(root * 2 * Math.pow(2, ([0, 2, 4, 7, 9][i % 5] + 12 * Math.floor(i / 5)) / 12), 0.38 + i * 0.055, 0.5, 0.055, i % 2 ? 0.75 : -0.75, 0.8);
+      this.noiseAt(0, 1.5, 7000, 0.14, 'highpass'); this.noiseAt(0.3, 0.9, 9000, 0.1, 'highpass');
+    }
+    if (head) { // 크리티컬 핑: 비정수배 금속 배음 + 초고역 클릭 + 좌우로 튀는 에코
+      this.voice('sine', 3520, 0, 0.6, 0.24, { send: 0.7 }); this.voice('sine', 3520 * 1.503, 0, 0.36, 0.11, { send: 0.6, pan: 0.3 });
+      this.voice('sine', 3520 * 2.41, 0, 0.2, 0.06, { pan: -0.3 }); this.voice('triangle', 7040, 0, 0.08, 0.1, { f1: 6400 });
+      this.burst(0.016, 9500, 0.32, 0.8, 'highpass');
+      this.voice('sine', 4186, 0.09, 0.34, 0.09, { pan: 0.6, send: 0.8 }); this.voice('sine', 4186, 0.17, 0.28, 0.05, { pan: -0.6, send: 0.8 });
+    }
+  }
+  /** 라운드 시작 카운트다운 비프. final = MATCH START (화음 + 타격) */
+  countBeep(final: boolean): void {
+    if (!this.ensure()) return;
+    if (!final) { this.voice('sine', 880, 0, 0.16, 0.34, { send: 0.25 }); this.voice('triangle', 1760, 0, 0.09, 0.1); this.tone('sine', 130, 60, 0.07, 0.35); return; }
+    for (const [f, p] of [[880, 0], [1318.5, -0.5], [1760, 0.5]]) { this.voice('sine', f, 0, 0.8, 0.22, { pan: p, send: 0.6 }); this.voice('triangle', f * 2, 0, 0.3, 0.05, { pan: -p, send: 0.4 }); }
+    this.tone('sine', 170, 42, 0.35, 0.8); this.burst(0.03, 2400, 0.25, 0.7); this.noiseAt(0, 0.6, 6500, 0.13, 'highpass');
   }
   hurt(): void { this.tone('sine', 140, 60, 0.18, 0.7); this.burst(0.08, 400, 0.3, 1); }
   empty(): void { this.tone('square', 1500, 1200, 0.03, 0.15); }
@@ -145,7 +200,7 @@ export class AudioFX {
   }
   slide(): void { this.burst(0.3, 350, 0.25, 0.8, 'lowpass'); }
   jump(): void { this.burst(0.05, 300, 0.12, 1, 'lowpass'); }
-  dispose(): void { void this.ctx?.close(); this.ctx = null; }
+  dispose(): void { void this.ctx?.close(); this.ctx = null; this.master = null; this.reverb = null; }
 }
 
 // ───────────────────────────── PlayerController ─────────────────────────────
