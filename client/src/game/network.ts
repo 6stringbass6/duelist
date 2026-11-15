@@ -28,7 +28,16 @@ export interface KillFeedItem { at: number; killer: string; victim: string; kill
 export interface Ack { ok: boolean; error?: string; code?: string; applied?: boolean }
 /** [id, x, y, z, yaw, spawnSeq] */
 export type SpawnTuple = [number, number, number, number, number, number];
-export interface MatchEnd { winner: number; score: [number, number]; players: { id: number; k: number; d: number; a: number; hs: number; dmg: number }[] }
+/** 매치 종료 시 참가자별 상세 기록. userId 는 방 내 플레이어 ID (GameClient.you 와 동일 체계) */
+export interface MatchPlayerResult {
+  userId: number; nickname: string; team: number; bot: boolean;
+  kills: number; deaths: number; assists: number; damageDealt: number; headshots: number; combatScore: number; earnedCredits: number;
+}
+export interface MatchEnd {
+  winner: number; winnerTeam: 'teamA' | 'teamB' | null; score: [number, number]; teamScore: { teamA: number; teamB: number };
+  /** combatScore 내림차순 정렬 */
+  players: MatchPlayerResult[]; matchMvpId: number; teamMvpId: [number, number];
+}
 export interface MatchReward { result: 'win' | 'loss' | 'draw' | 'left'; rp_delta: number; credits: number; saved: boolean; rank_points?: number; credits_earned?: number; unlocked?: string[] }
 export interface HelloInfo { serverTime: number; guest: boolean; name: string; rp: number; tier: number; tierLabel: string; loadout: Loadout }
 interface Snap { t: number; x: number; y: number; z: number; yaw: number; pitch: number; f: number; hp: number; slot: number }
@@ -444,7 +453,7 @@ export class GameClient {
     s.on('range:config', (m: { moving: boolean }) => { this.rangeMoving = m.moving; this.emit('rangeConfig', m.moving); });
     s.on('match:end', (m: MatchEnd) => {
       if (this.room) this.room.score = m.score;
-      for (const r of m.players) { const p = this.players.get(r.id); if (p) { p.k = r.k; p.d = r.d; p.a = r.a; } }
+      for (const r of m.players) { const p = this.players.get(r.userId); if (p) { p.k = r.kills; p.d = r.deaths; p.a = r.assists; } }
       this.emit('matchEnd', m);
     });
     s.on('match:reward', (r: MatchReward) => this.emit('reward', r));

@@ -947,11 +947,25 @@ function rpDelta(room, e, won) { // Elo 기반 RP 증감
   const mates = teamEnts(room, e.team), top = mates.every((m) => m.stats.k <= e.stats.k) ? 3 : 0;
   return won ? clamp(Math.round(40 * (1 - exp)) + top, 10, 40) : -clamp(Math.round(40 * exp) - top, 5, 35);
 }
+const matchResultOf = (e, winner) => (winner < 0 ? 'draw' : e.team === winner ? 'win' : 'loss');
+const matchCredits = (room, e, result) => (room.isPrivate ? 10 : result === 'left' ? 0 : (result === 'win' ? 1000 : 500) + e.stats.k * 25);
+const combatScore = (s) => s.k * 200 + s.a * 100 + Math.round(s.dmg); // 킬 200 + 어시스트 100 + 피해 1당 1점
+/** 매치 종료 요약: 팀 스코어, 참가자별 상세 기록(전투 점수 내림차순), 매치/팀 MVP. 읽기 전용 — e.stats 를 변경하지 않는다 */
+export function matchSummary(room, winner) {
+  const players = [...room.ents.values()].filter((e) => !e.ai?.dummy).map((e) => ({
+    userId: e.id, nickname: e.name, team: e.team, bot: e.isBot,
+    kills: e.stats.k, deaths: e.stats.d, assists: e.stats.a, damageDealt: Math.round(e.stats.dmg), headshots: e.stats.hsk,
+    combatScore: combatScore(e.stats), earnedCredits: e.isBot ? 0 : matchCredits(room, e, matchResultOf(e, winner)),
+  })).sort((a, b) => b.combatScore - a.combatScore || b.kills - a.kills || a.deaths - b.deaths || a.userId - b.userId);
+  const teamMvpId = [0, 1].map((t) => players.find((p) => p.team === t)?.userId ?? 0);
+  return { winner, winnerTeam: winner < 0 ? null : winner === 0 ? 'teamA' : 'teamB', score: room.score, teamScore: { teamA: room.score[0], teamB: room.score[1] },
+    players, matchMvpId: players[0]?.userId ?? 0, teamMvpId };
+}
 async function persist(room, e, result, now) {
   if (e.persisted || e.isBot) return; e.persisted = true;
   const s = e.stats, won = result === 'win', ranked = room.mode === 'ranked';
   const rp = ranked && result !== 'draw' ? (result === 'left' ? Math.min(-20, rpDelta(room, e, false)) : rpDelta(room, e, won)) : 0;
-  const credits = room.isPrivate ? 10 : result === 'left' ? 0 : (won ? 1000 : 500) + s.k * 25;
+  const credits = matchCredits(room, e, result);
   const reward = { result, rp_delta: rp, credits, saved: false };
   if (supabase && e.userId && !room.isPrivate && room.mode !== 'range') {
     try {
@@ -971,9 +985,9 @@ async function persist(room, e, result, now) {
 function endMatch(room, winner, now) {
   if (room.phase === 'ended') return;
   room.phase = 'ended'; room.endsAt = now + RULES.endMs; room.projs.clear();
-  emitRoom(room, 'match:end', { winner, score: room.score, players: [...room.ents.values()].map((e) => ({ id: e.id, k: e.stats.k, d: e.stats.d, a: e.stats.a, hs: e.stats.hsk, dmg: e.stats.dmg })) });
+  emitRoom(room, 'match:end', matchSummary(room, winner));
   emitPhase(room, { winner });
-  for (const e of humans(room)) persist(room, e, winner < 0 ? 'draw' : e.team === winner ? 'win' : 'loss', now);
+  for (const e of humans(room)) persist(room, e, matchResultOf(e, winner), now);
 }
 function closeMatch(room, now) {
   if (!room.isPrivate) { emitRoom(room, 'room:closed', { reason: 'MATCH_OVER' }); destroyRoom(room); return; }

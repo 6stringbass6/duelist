@@ -22,7 +22,7 @@ import {
   type AccountBundle, type DailyLoginResult, type MatchRow,
 } from './services/supabase';
 import { SKILLS, SKILL_IDS, ULTS, ULT_IDS, ULT_COST, type SkillId, type UltId } from './config/skills';
-import { GameClient, type MatchEnd, type MatchReward, type PlayerInfo, type RoomState } from './game/network';
+import { GameClient, type MatchEnd, type MatchPlayerResult, type MatchReward, type PlayerInfo, type RoomState } from './game/network';
 import { PlayerController } from './game/playerController';
 
 // ───────────────────────────── DOM 헬퍼 ─────────────────────────────
@@ -83,6 +83,8 @@ let bundle: AccountBundle | null = null;
 let lobbyTab: 'home' | 'shop' | 'inventory' | 'missions' | 'achievements' | 'stats' = 'home';
 let history: MatchRow[] = [];
 let pendingReward: MatchReward | null = null;
+/** 매치 종료 연출/결과 화면이 떠 있는 동안의 스냅샷 (방이 닫혀도 결과를 유지) */
+let matchOver: { m: MatchEnd; myId: number; myTeam: number; kind: 'win' | 'lose' | 'draw' } | null = null;
 
 function setView(v: View): void {
   view = v;
@@ -92,7 +94,7 @@ function setView(v: View): void {
   if (v !== 'game') { show('scoreboard', false); show('loadout', false); show('m-pause', false); if (document.pointerLockElement) document.exitPointerLock(); pc.releaseAll(); xctx.clearRect(0, 0, xhair.width, xhair.height); }
   pc.captureEnabled = v === 'game';
 }
-const anyPanelOpen = (): boolean => visible('tacmap') || visible('loadout') || visible('m-pause') || visible('m-settings') || visible('m-result');
+const anyPanelOpen = (): boolean => visible('tacmap') || visible('loadout') || visible('m-pause') || visible('m-settings') || visible('m-result') || !!matchOver;
 function closeModal(id: string): void { show(id, false); if (id === 'm-support') endDevMode(); if (id === 'm-settings' && view === 'game' && !visible('m-pause')) resumeGame(); }
 document.querySelectorAll<HTMLElement>('[data-close]').forEach((b) => b.addEventListener('click', () => closeModal(b.closest('.modal')!.id)));
 
@@ -361,7 +363,7 @@ function renderRoom(): void {
 
 // ───────────────────────────── 인게임 전환 ─────────────────────────────
 function enterGame(): void {
-  setView('game'); applyGraphics(); pendingReward = null; show('m-result', false);
+  setView('game'); applyGraphics(); resetMatchEnd();
   show('range-panel', net.mode === 'range'); show('hud-top', net.mode !== 'range'); show('hud-skills', true);
   setBanner('', ''); if (!TOUCH) pc.requestCapture();
   if (net.mode === 'range') toggleLoadout(true);
@@ -376,7 +378,7 @@ function onRoomState(room: RoomState): void {
 }
 net.on('joined', onRoomState); net.on('state', onRoomState);
 net.on('roster', () => { if (view === 'room') renderRoom(); if (visible('scoreboard')) renderScoreboard(); });
-net.on('closed', () => { if (view === 'game' && !visible('m-result')) void leaveAfterClose(); });
+net.on('closed', () => { if (view === 'game' && !matchOver) void leaveAfterClose(); });
 net.on('disconnect', () => { if (view === 'game' || view === 'room') { toast('서버와의 연결이 끊어졌습니다.', 'bad'); void enterLobby(); } });
 net.on('error', (code) => toast(ackMsg(code), 'bad'));
 async function leaveAfterClose(): Promise<void> { await refreshProfile(); await enterLobby(); }
@@ -391,22 +393,114 @@ net.on('phase', (p) => {
   else if (p.phase === 'live') { setBanner(round ? '전투 개시' : 'FIGHT', '', 1500); if (visible('loadout') && net.mode !== 'range') toggleLoadout(false); }
   else if (p.phase === 'roundEnd') setBanner(p.winner === undefined || p.winner < 0 ? '무승부' : p.winner === net.myTeam ? '라운드 승리' : '라운드 패배', `${p.score[net.myTeam]} : ${p.score[1 - net.myTeam]}`);
 });
-net.on('matchEnd', (m) => showResult(m));
+// ───────────────────────────── 매치 종료: 승패 시네마틱 → 결과 화면 ─────────────────────────────
+const RESULT_DELAY_MS = 2000;
+let resultTimer = 0, mfxRaf = 0, creditRaf = 0, creditShown = 0;
+net.on('matchEnd', (m) => playMatchEnd(m));
 net.on('reward', (r) => { pendingReward = r; if (visible('m-result')) fillReward(); });
-function showResult(m: MatchEnd): void {
+/** 연출/결과 화면 상태 초기화 (재입장·로비 복귀 시) */
+function resetMatchEnd(): void {
+  clearTimeout(resultTimer); cancelAnimationFrame(mfxRaf); cancelAnimationFrame(creditRaf); resultTimer = mfxRaf = creditRaf = 0;
+  matchOver = null; pendingReward = null; creditShown = 0;
+  $('match-fx').className = 'hidden'; show('m-result', false); document.body.classList.remove('mfx-lose');
+}
+function playMatchEnd(m: MatchEnd): void {
+  resetMatchEnd();
   if (document.pointerLockElement) document.exitPointerLock();
-  show('loadout', false); show('m-pause', false); show('scoreboard', false);
-  const mine = m.players.find((p) => p.id === net.you), win = m.winner === net.myTeam;
-  $('res-title').textContent = m.winner < 0 ? '무승부' : win ? '승리' : '패배';
-  $('res-title').style.color = m.winner < 0 ? '' : win ? 'var(--ok)' : 'var(--acc)';
-  $('res-body').innerHTML = `<div style="font-size:30px;font-weight:800;text-align:center">${m.score[net.myTeam]} : ${m.score[1 - net.myTeam]}</div><div class="mut" style="text-align:center">K/D/A ${mine?.k ?? 0} / ${mine?.d ?? 0} / ${mine?.a ?? 0} · 헤드샷 킬 ${mine?.hs ?? 0} · 피해 ${fmt(mine?.dmg ?? 0)}</div><div id="res-reward" class="mut" style="text-align:center;margin-top:10px">보상 정산 중…</div>`;
-  show('m-result'); fillReward();
+  show('loadout', false); show('m-pause', false); show('scoreboard', false); pc.releaseAll();
+  const myTeam = net.myTeam, kind = m.winner < 0 ? 'draw' : m.winner === myTeam ? 'win' : 'lose';
+  matchOver = { m, myId: net.you, myTeam, kind };
+  const title = $('mfx-title'), text = kind === 'win' ? 'VICTORY' : kind === 'lose' ? 'DEFEAT' : 'DRAW';
+  title.textContent = text; title.dataset.text = text;
+  $('mfx-sub').textContent = `${m.score[myTeam]} : ${m.score[1 - myTeam]}`;
+  $('match-fx').className = kind; // display:none → 표시 전환으로 CSS 애니메이션 재시작
+  document.body.classList.toggle('mfx-lose', kind === 'lose');
+  if (kind === 'win') { pc.audio.victory(); startVictoryParticles(); } else if (kind === 'lose') pc.audio.defeat();
+  resultTimer = window.setTimeout(showResult, RESULT_DELAY_MS);
+}
+/** 승리 파티클: 중앙 폭발 + 상승하는 시안/골드 불씨 (2D 캔버스, 그래픽 설정의 파티클 옵션 연동) */
+function startVictoryParticles(): void {
+  const cv = $<HTMLCanvasElement>('mfx-canvas'), ctx = cv.getContext('2d'), q = getSettings().graphics.particles;
+  const density = q === 'off' ? 0 : q === 'low' ? 0.55 : 1;
+  if (!ctx || !density) { ctx?.clearRect(0, 0, cv.width, cv.height); return; }
+  const COLORS = ['#00f5d4', '#00f5d4', '#ffd23f', '#ffd23f', '#ffffff', '#7dfbe9', '#ffb703'];
+  interface P { x: number; y: number; vx: number; vy: number; life: number; max: number; size: number; c: string; g: number }
+  const ps: P[] = [], rnd = (a: number, b: number): number => a + Math.random() * (b - a), t0 = performance.now();
+  let last = t0, acc = 0, W = 0, H = 0;
+  const fit = (): void => {
+    const dpr = Math.min(2, devicePixelRatio || 1); W = innerWidth; H = innerHeight;
+    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  };
+  fit();
+  for (let i = 0, n = Math.round(170 * density); i < n; i++) { // 중앙 폭발
+    const a = Math.random() * Math.PI * 2, sp = rnd(160, 1000), life = rnd(0.9, 2.2);
+    ps.push({ x: W / 2, y: H / 2, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.7, life, max: life, size: rnd(1.5, 4.5), c: COLORS[(Math.random() * COLORS.length) | 0], g: 260 });
+  }
+  const step = (now: number): void => {
+    if (!visible('match-fx')) return;
+    const dt = Math.min(0.05, (now - last) / 1000); last = now; fit();
+    acc += dt * (now - t0 < 2500 ? 70 : 22) * density;
+    while (acc >= 1) { // 화면 아래에서 떠오르는 불씨
+      acc--; const life = rnd(2.2, 4.5);
+      ps.push({ x: rnd(0, W), y: H + 10, vx: rnd(-30, 30), vy: rnd(-260, -90), life, max: life, size: rnd(1.2, 3.6), c: COLORS[(Math.random() * COLORS.length) | 0], g: -12 });
+    }
+    ctx.clearRect(0, 0, W, H); ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round';
+    for (let i = ps.length - 1; i >= 0; i--) {
+      const p = ps[i]; p.life -= dt;
+      if (p.life <= 0) { ps[i] = ps[ps.length - 1]; ps.pop(); continue; }
+      const drag = Math.pow(0.22, dt); p.vx *= drag; p.vy = p.vy * (p.g > 0 ? drag : 1) + p.g * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+      ctx.globalAlpha = Math.min(1, (p.life / p.max) * 1.8); ctx.strokeStyle = p.c; ctx.lineWidth = p.size;
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 0.035, p.y - p.vy * 0.035 - 0.01); ctx.stroke();
+    }
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    mfxRaf = requestAnimationFrame(step);
+  };
+  mfxRaf = requestAnimationFrame(step);
+}
+const hsPct = (p: MatchPlayerResult): number => (p.kills ? Math.round((p.headshots / p.kills) * 100) : 0);
+function showResult(): void {
+  const mo = matchOver; if (!mo) return;
+  const { m, myId, myTeam, kind } = mo, me = m.players.find((p) => p.userId === myId), mvp = m.players.find((p) => p.userId === m.matchMvpId);
+  $('match-fx').classList.add('out'); // 배너 텍스트만 퇴장, 배경 연출은 글래스 뒤에 유지
+  const scoreCell = (t: number): string => `<div class="t ${m.winner === t ? 'w' : m.winner < 0 ? '' : 'l'}"><small>${t === myTeam ? '우리 팀' : '상대 팀'}${m.winner === t ? ' · WIN' : ''}</small><b>${m.score[t]}</b></div>`;
+  const badge = (p: MatchPlayerResult): string => (p.userId === m.matchMvpId ? '<span class="bdg m">👑 MATCH MVP</span>' : m.teamMvpId[p.team] === p.userId ? '<span class="bdg t">TEAM MVP</span>' : '');
+  const team = (t: number): string => {
+    const rows = m.players.filter((p) => p.team === t).map((p, i) => `<tr class="${p.userId === myId ? 'me' : ''}"><td>${i + 1}</td><td><b>${esc(p.nickname)}</b>${p.bot ? ' <span class="mut">[BOT]</span>' : ''}${badge(p)}</td><td><b>${p.kills}</b> / ${p.deaths} / ${p.assists}</td><td>${fmt(p.damageDealt)}</td><td>${hsPct(p)}%</td><td>${fmt(p.combatScore)}</td></tr>`).join('');
+    return `<div class="res-team ${t === myTeam ? 'ally' : 'enemy'}"><h4>${t === myTeam ? '우리 팀' : '상대 팀'}${m.winner === t ? '<span class="bdg w">WIN</span>' : ''}<b>${m.score[t]}</b></h4><table><tr><th>#</th><th>닉네임</th><th>K / D / A</th><th>피해량</th><th>HS%</th><th>전투 점수</th></tr>${rows || '<tr><td colspan="6" class="mut">플레이어 없음</td></tr>'}</table></div>`;
+  };
+  const stat = (v: string | number, label: string): string => `<div><b>${v}</b><small>${label}</small></div>`;
+  $('res-body').innerHTML = `
+    <div class="res-top">
+      <div class="res-verdict ${kind}"><b>${kind === 'win' ? 'VICTORY' : kind === 'lose' ? 'DEFEAT' : 'DRAW'}</b><small>${net.room ? `${MODES[net.room.mode].name} · ${net.room.mapId.toUpperCase()}` : '매치 종료'}</small></div>
+      <div class="res-score">${scoreCell(myTeam)}<i>:</i>${scoreCell(1 - myTeam)}</div>
+      <div class="res-credit"><small>획득 크레딧</small><b id="res-credits">◈ +0</b><div id="res-reward" class="mut">보상 정산 중…</div></div>
+    </div>
+    ${mvp ? `<div class="mvp-card"><div class="mvp-crown">👑</div><div><div class="mvp-tag">MATCH MVP</div><div class="mvp-name">${esc(mvp.nickname)}${mvp.userId === myId ? ' <span class="bdg w">YOU</span>' : ''}</div><div class="mut" style="font-size:12px">${mvp.team === myTeam ? '우리 팀' : '상대 팀'} · 전투 점수 ${fmt(mvp.combatScore)}</div></div>
+      <div class="mvp-stats">${stat(`${mvp.kills} / ${mvp.deaths} / ${mvp.assists}`, 'K / D / A')}${stat(fmt(mvp.damageDealt), '총 피해량')}${stat(mvp.headshots, '헤드샷')}</div></div>` : ''}
+    <div class="res-teams">${team(myTeam)}${team(1 - myTeam)}</div>`;
+  show('m-result'); $('m-result').scrollTop = 0;
+  animateCredits(me?.earnedCredits ?? 0); fillReward();
+}
+/** 크레딧 보상 카운트업 (+1000 / +500 …) */
+function animateCredits(target: number): void {
+  const el = document.getElementById('res-credits'); if (!el) return;
+  cancelAnimationFrame(creditRaf);
+  const from = creditShown, t0 = performance.now(), dur = 1100;
+  const step = (now: number): void => {
+    const k = Math.min(1, (now - t0) / dur), v = Math.round(from + (target - from) * (1 - Math.pow(1 - k, 3)));
+    creditShown = v; el.textContent = `◈ +${fmt(v)}`;
+    if (k < 1) creditRaf = requestAnimationFrame(step); else { el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); }
+  };
+  creditRaf = requestAnimationFrame(step);
 }
 function fillReward(): void {
   const r = pendingReward, el = document.getElementById('res-reward'); if (!r || !el) return;
-  el.innerHTML = `${r.rp_delta ? `<b style="color:${r.rp_delta > 0 ? 'var(--ok)' : 'var(--acc)'}">${r.rp_delta > 0 ? '+' : ''}${r.rp_delta} RP</b> · ` : ''}◈ +${r.credits_earned ?? r.credits}${r.saved ? '' : ' <span class="mut">(저장되지 않는 경기)</span>'}${r.unlocked?.length ? `<br />🏆 업적 ${r.unlocked.length}개 달성!` : ''}`;
+  el.innerHTML = `${r.rp_delta ? `<b style="color:${r.rp_delta > 0 ? 'var(--ok)' : 'var(--acc)'}">${r.rp_delta > 0 ? '+' : ''}${r.rp_delta} RP</b>` : ''}${r.saved ? '' : `${r.rp_delta ? ' · ' : ''}저장되지 않는 경기`}${r.unlocked?.length ? `<br />🏆 업적 ${r.unlocked.length}개 달성!` : ''}`;
+  const real = r.credits_earned ?? r.credits; // DB 정산값이 예상치와 다르면 그 값으로 보정
+  if (matchOver && real !== (matchOver.m.players.find((p) => p.userId === matchOver!.myId)?.earnedCredits ?? 0)) animateCredits(real);
 }
-$('res-ok').onclick = () => { show('m-result', false); void leaveGame(); };
+$('res-ok').onclick = () => { resetMatchEnd(); void leaveGame(); };
 
 // ── 일시 메뉴 / 포인터 락
 document.addEventListener('pointerlockchange', () => { if (view === 'game' && !document.pointerLockElement && !anyPanelOpen() && !TOUCH && net.phase !== 'ended') show('m-pause'); });

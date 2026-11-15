@@ -99,6 +99,50 @@ export class AudioFX {
   /** 실명 이명 */
   flashRing(durMs: number): void { this.tone('sine', 3100, 2900, Math.max(0.3, durMs / 1000), 0.22); }
   skill(k: 'q' | 'e'): void { if (k === 'q') { this.burst(0.35, 600, 0.4, 0.6); this.tone('sine', 220, 880, 0.3, 0.3); } else { this.burst(0.25, 1600, 0.3, 1); this.tone('sawtooth', 300, 700, 0.2, 0.15); } }
+  /** 어택/릴리즈 엔벨로프를 가진 지속음 (팡파르·패배 스팅용). cutoff 지정 시 로우패스 통과 */
+  private note(type: OscillatorType, f0: number, at: number, dur: number, gain: number, o: { f1?: number; attack?: number; cutoff?: number; detune?: number } = {}): void {
+    const c = this.ensure(); if (!c || !this.master) return;
+    const osc = c.createOscillator(), g = c.createGain(), t = c.currentTime + at, a = Math.min(o.attack ?? 0.02, dur * 0.5);
+    osc.type = type; osc.frequency.setValueAtTime(f0, t); if (o.f1) osc.frequency.exponentialRampToValueAtTime(Math.max(1, o.f1), t + dur);
+    if (o.detune) osc.detune.value = o.detune;
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(gain, t + a);
+    g.gain.setValueAtTime(gain, t + dur * 0.6); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    let tail: AudioNode = osc;
+    if (o.cutoff) { const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = o.cutoff; f.Q.value = 0.7; tail = osc.connect(f); }
+    tail.connect(g).connect(this.master); osc.start(t); osc.stop(t + dur + 0.05);
+  }
+  private noiseAt(at: number, dur: number, freq: number, gain: number, type: BiquadFilterType): void {
+    const c = this.ensure(); if (!c || !this.master || !this.noise) return;
+    const src = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain(), t = c.currentTime + at;
+    src.buffer = this.noise; src.loop = true; f.type = type; f.frequency.value = freq; f.Q.value = 0.5;
+    g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.connect(f).connect(g).connect(this.master); src.start(t, Math.random() * 0.5); src.stop(t + dur + 0.02);
+  }
+  /** 승리 팡파르: 브라스풍 상승 아르페지오(G4-C5-E5-G5) → C 메이저 화음 지속 + 팀파니/심벌 */
+  victory(): void {
+    if (!this.ensure()) return;
+    const brass = (f: number, at: number, dur: number, g: number): void => {
+      this.note('sawtooth', f, at, dur, g, { cutoff: 2600, attack: 0.03 }); this.note('sawtooth', f, at, dur, g * 0.7, { cutoff: 2600, attack: 0.03, detune: 9 });
+      this.note('triangle', f * 2, at, dur, g * 0.35, { attack: 0.03 });
+    };
+    brass(392, 0, 0.16, 0.2); brass(523.25, 0.16, 0.16, 0.2); brass(659.25, 0.32, 0.16, 0.22); brass(783.99, 0.48, 0.3, 0.24);
+    for (const f of [523.25, 659.25, 783.99, 1046.5]) brass(f, 0.82, 1.9, 0.15); // 최종 화음
+    this.note('sine', 65.41, 0.82, 2.0, 0.55, { attack: 0.01 }); this.note('sine', 130.81, 0.82, 1.8, 0.3, { attack: 0.01 });
+    for (const at of [0, 0.82]) { this.note('sine', 110, at, 0.45, 0.7, { f1: 55, attack: 0.005 }); this.noiseAt(at, 0.12, 180, 0.4, 'lowpass'); } // 팀파니
+    this.noiseAt(0.82, 1.6, 6000, 0.22, 'highpass'); // 심벌
+    for (const [f, at] of [[2093, 1.0], [2637, 1.12], [3136, 1.24]]) this.note('sine', f, at, 0.6, 0.07, { attack: 0.005 }); // 반짝임
+  }
+  /** 패배 스팅: 낮고 무거운 하강 단조(D-C-Bb-A) + 서브 베이스 드롭 + 럼블 */
+  defeat(): void {
+    if (!this.ensure()) return;
+    const low = (f: number, at: number, dur: number, g: number): void => {
+      this.note('sawtooth', f, at, dur, g, { cutoff: 520, attack: 0.06 }); this.note('sawtooth', f / 2, at, dur, g, { cutoff: 380, attack: 0.06, detune: -8 });
+    };
+    low(146.83, 0, 0.5, 0.3); low(130.81, 0.45, 0.5, 0.3); low(116.54, 0.9, 0.5, 0.3); low(110, 1.35, 1.7, 0.34);
+    this.note('sawtooth', 130.81, 1.35, 1.7, 0.14, { cutoff: 600, attack: 0.1 }); this.note('sawtooth', 164.81, 1.35, 1.7, 0.1, { cutoff: 600, attack: 0.1, f1: 155.56 }); // A 단조로 꺼지는 화음
+    this.note('sine', 90, 0, 1.4, 0.8, { f1: 28, attack: 0.005 }); this.noiseAt(0, 1.2, 120, 0.7, 'lowpass');
+    this.note('sine', 55, 1.35, 1.9, 0.5, { f1: 36, attack: 0.02 }); this.noiseAt(1.35, 1.5, 90, 0.4, 'lowpass');
+  }
   slide(): void { this.burst(0.3, 350, 0.25, 0.8, 'lowpass'); }
   jump(): void { this.burst(0.05, 300, 0.12, 1, 'lowpass'); }
   dispose(): void { void this.ctx?.close(); this.ctx = null; }
