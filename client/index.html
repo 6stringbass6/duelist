@@ -59,6 +59,13 @@ table{border-collapse:collapse;width:100%}th,td{padding:6px 8px;text-align:left;
 .kb{display:grid;grid-template-columns:1fr 110px 110px;gap:6px;align-items:center;padding:3px 0}.kb button{padding:6px}.kb button.wait{border-color:var(--gold);color:var(--gold)}
 .swatch{width:26px;height:26px;border-radius:5px;border:2px solid transparent;padding:0}.swatch.on{border-color:#fff}
 #xh-preview{background:repeating-conic-gradient(#3a4a3a 0 25%,#55665a 0 50%) 0 0/40px 40px;border-radius:8px;width:100%;height:120px;image-rendering:pixelated}
+/* ── support */
+#sup-body{height:min(52vh,420px);overflow:auto;padding:4px}#sup-foot{margin-top:10px;display:flex;gap:8px}#sup-foot input{flex:1}
+.sup-msg{max-width:82%;padding:8px 12px;border-radius:10px;margin:6px 0;font-size:14px;line-height:1.45;white-space:pre-wrap;word-break:break-word}
+.sup-msg.sys{background:var(--panel2);border:1px solid var(--line)}.sup-msg.me{margin-left:auto;background:#1b2a44;border:1px solid var(--line)}
+.sup-msg small{display:block;color:var(--mut);font-size:11px;margin-top:4px}
+.tk{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px}.tk.done{opacity:.55}
+.tk .tm{white-space:pre-wrap;word-break:break-word;margin:6px 0;font-size:14px}.tk .tb{display:flex;gap:6px;justify-content:flex-end}
 /* ── gacha */
 #gacha-win{position:relative;height:120px;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:#0a0e16}
 #gacha-strip{display:flex;height:100%;will-change:transform}#gacha-strip>div{flex:0 0 120px;height:100%;border-right:1px solid #000;display:flex;align-items:flex-end;padding:6px;font-size:11px;font-weight:700}
@@ -173,7 +180,7 @@ body.left #joy-base{left:auto;right:calc(36px + env(safe-area-inset-right))}
     <div id="lobby-top">
       <div class="row"><span class="chip" id="lb-nick"></span><span class="chip" id="lb-title"></span><span class="chip" id="lb-tier"></span></div>
       <button id="btn-play">[ 플레이 ]</button>
-      <div class="row" style="justify-content:flex-end"><span class="chip" id="lb-credits"></span><span class="chip" id="lb-boxes"></span><button class="sm" id="btn-settings">설정</button><button class="sm ghost" id="btn-logout">로그아웃</button></div>
+      <div class="row" style="justify-content:flex-end"><span class="chip" id="lb-credits"></span><span class="chip" id="lb-boxes"></span><button class="sm" id="btn-support">고객센터</button><button class="sm" id="btn-settings">설정</button><button class="sm ghost" id="btn-logout">로그아웃</button></div>
     </div>
     <div id="lobby-nav" class="tabs"></div>
     <div id="lobby-body"></div>
@@ -187,6 +194,7 @@ body.left #joy-base{left:auto;right:calc(36px + env(safe-area-inset-right))}
   <div class="modal hidden" id="m-settings"><div class="card"><div class="mh"><h3>설정</h3><button class="x" data-close>✕</button></div><div class="tabs" id="set-tabs"></div><div id="set-body" style="margin-top:12px"></div></div></div>
   <div class="modal hidden" id="m-nick"><div class="card sm col"><div class="mh"><h3>닉네임 변경</h3><button class="x" data-close>✕</button></div><div class="mut" id="nick-cost"></div><input id="nick-input" maxlength="16" placeholder="새 닉네임" /><div class="err" id="nick-err"></div><button class="pri" id="nick-ok">변경</button></div></div>
   <div class="modal hidden" id="m-gacha"><div class="card"><div class="mh"><h3 id="gacha-title">랜덤 박스</h3><button class="x" data-close>✕</button></div><div id="gacha-win"><div id="gacha-strip"></div></div><div id="gacha-result"></div></div></div>
+  <div class="modal hidden" id="m-support"><div class="card"><div class="mh"><h3 id="sup-title">고객센터</h3><button class="x" data-close>✕</button></div><div id="sup-body"></div><div id="sup-foot"><input id="sup-input" maxlength="500" placeholder="불편 사항이나 건의 내용을 입력하세요" autocomplete="off" /><button class="pri" id="sup-send">전송</button></div></div></div>
   <div class="modal hidden" id="m-login"><div class="card sm col"><div class="mh"><h3>7일 연속 로그인 보상</h3><button class="x" data-close>✕</button></div><div id="login-body"></div><button class="pri" data-close>확인</button></div></div>
   <div class="modal hidden" id="m-result"><div class="card sm col"><div class="mh"><h3 id="res-title"></h3></div><div id="res-body"></div><button class="pri" id="res-ok">로비로</button></div></div>
   <div class="modal hidden" id="m-pause"><div class="card sm col"><div class="mh"><h3>일시 메뉴</h3></div><button class="pri" id="pause-resume">계속하기</button><button id="pause-load">무기 변경</button><button id="pause-settings">설정</button><button class="ghost" id="pause-leave">게임 나가기</button></div></div>

@@ -15,7 +15,7 @@ import {
 import { FEATURED_BANNER, LOOTBOXES, RARITY, SKIN_WEAPONS, buildGachaReel, featuredSkins, getSkin, lootboxOdds, skinsForWeapon, type SkinDef } from './config/skins';
 import {
   GameError, buySkin, changeNickname, claimDailyLogin, claimMission, equipSkin, equipTitle, fetchBundle, fetchMatchHistory, getNicknameChangeCost, getProfile,
-  initAuth, isSupabaseConfigured, onProfileChange, openLootbox, refreshProfile, saveLoadout, setGuestNickname, signInWithGoogle, signInWithId, signOut, signUpWithId, startGuest,
+  initAuth, isSupabaseConfigured, onProfileChange, openLootbox, patchProfile, refreshProfile, saveLoadout, setGuestNickname, signInWithGoogle, signInWithId, signOut, signUpWithId, startGuest,
   type AccountBundle, type DailyLoginResult, type MatchRow,
 } from './services/supabase';
 import { GameClient, type MatchEnd, type MatchReward, type PlayerInfo, type RoomState } from './game/network';
@@ -87,7 +87,7 @@ function setView(v: View): void {
   pc.captureEnabled = v === 'game';
 }
 const anyPanelOpen = (): boolean => visible('loadout') || visible('m-pause') || visible('m-settings') || visible('m-result');
-function closeModal(id: string): void { show(id, false); if (id === 'm-settings' && view === 'game' && !visible('m-pause')) resumeGame(); }
+function closeModal(id: string): void { show(id, false); if (id === 'm-support') endDevMode(); if (id === 'm-settings' && view === 'game' && !visible('m-pause')) resumeGame(); }
 document.querySelectorAll<HTMLElement>('[data-close]').forEach((b) => b.addEventListener('click', () => closeModal(b.closest('.modal')!.id)));
 
 // ───────────────────────────── 인증 ─────────────────────────────
@@ -541,6 +541,98 @@ function autoFireTick(): void {
 type SetTab = 'sens' | 'xhair' | 'keys' | 'gfx' | 'etc';
 let setTab: SetTab = 'sens', waitingBind: { action: Action; index: 0 | 1 } | null = null;
 $('btn-settings').onclick = () => openSettings();
+
+// ───────────────────────────── 고객센터 / 개발자 모드 ─────────────────────────────
+interface Ticket { id: number; message: string; status: 'open' | 'done'; created_at: string; user_id?: string; nickname?: string }
+interface AdminUser { id: string; nickname: string; username?: string | null; credits: number }
+const SUP_ERR: Record<string, string> = { LOGIN_REQUIRED: '로그인 후 이용할 수 있습니다.', RATE_LIMIT: '잠시 후 다시 시도해 주세요.', TICKET_LIMIT: '문의 전송 한도를 초과했습니다. 잠시 후 다시 시도해 주세요.',
+  TOO_LONG: '500자 이내로 작성해 주세요.', EMPTY: '내용을 입력해 주세요.', FORBIDDEN: '권한이 없습니다.', USER_NOT_FOUND: '해당 유저를 찾을 수 없습니다.', BAD_REQUEST: '잘못된 요청입니다.', NO_DB: '서버 DB가 연결되지 않았습니다.' };
+const supMsg = (c?: string): string => SUP_ERR[c ?? ''] ?? ackMsg(c);
+const fmtTime = (iso: string): string => new Date(iso).toLocaleString('ko-KR', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+let devMode = false, devTab: 'inbox' | 'credits' = 'inbox', adminSel: AdminUser | null = null, adminResults: AdminUser[] = [];
+net.onCredits = (c) => patchProfile({ credits: c });
+function endDevMode(): void { if (devMode) { devMode = false; adminSel = null; adminResults = []; void net.call('admin:exit'); } }
+
+async function openSupport(): Promise<void> {
+  if (getProfile()?.isGuest) { toast('고객센터는 로그인 후 이용할 수 있습니다.', 'bad'); return; }
+  if (!(await ensureConnected())) return;
+  devMode = false; show('m-support', true); await renderSupport();
+}
+async function renderSupport(): Promise<void> { if (devMode) renderDev(); else await renderChat(); }
+async function renderChat(): Promise<void> {
+  $('sup-title').textContent = '고객센터'; show('sup-foot', true);
+  const r = await net.call<{ items: Ticket[] }>('support:list');
+  if (!r.ok) { $('sup-body').innerHTML = `<div class="mut">${esc(supMsg(r.error))}</div>`; return; }
+  $('sup-body').innerHTML = `<div class="sup-msg sys">안녕하세요, DUELIST 고객센터입니다.<br>불편 사항이나 건의 내용을 남겨 주시면 확인 후 반영하겠습니다.</div>`
+    + (r.items ?? []).map((t) => `<div class="sup-msg me"><div>${esc(t.message)}</div><small>${fmtTime(t.created_at)} · ${t.status === 'done' ? '처리 완료' : '접수됨'}</small></div>`).join('');
+  $('sup-body').scrollTop = $('sup-body').scrollHeight;
+}
+async function sendSupport(): Promise<void> {
+  const inp = $<HTMLInputElement>('sup-input'), msg = inp.value.trim(); if (!msg) return;
+  inp.value = '';
+  const r = await net.call<{ dev: boolean }>('support:send', { message: msg });
+  if (!r.ok) { toast(supMsg(r.error), 'bad'); return; }
+  if (r.dev) { devMode = true; devTab = 'inbox'; toast('개발자 모드', 'good'); await renderSupport(); return; }
+  await renderChat();
+}
+$('btn-support').onclick = () => void openSupport();
+$('sup-send').onclick = () => void sendSupport();
+$('sup-input').addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter' && !(e as KeyboardEvent).isComposing) void sendSupport(); });
+
+function renderDev(): void {
+  $('sup-title').textContent = '개발자 모드'; show('sup-foot', false);
+  $('sup-body').innerHTML = `<div class="tabs"><button data-dt="inbox" class="${devTab === 'inbox' ? 'on' : ''}">전체 문의함</button><button data-dt="credits" class="${devTab === 'credits' ? 'on' : ''}">크레딧 관리</button><button class="sm ghost" id="dev-exit" style="margin-left:auto">개발자 모드 종료</button></div><div id="dev-pane" style="margin-top:12px"></div>`;
+  $('sup-body').querySelectorAll<HTMLElement>('[data-dt]').forEach((b) => (b.onclick = () => { devTab = b.dataset.dt as typeof devTab; renderDev(); }));
+  $('dev-exit').onclick = () => { endDevMode(); void renderSupport(); };
+  if (devTab === 'inbox') void renderInbox(); else renderCredits();
+}
+async function renderInbox(): Promise<void> {
+  const pane = $('dev-pane'); pane.innerHTML = '<div class="mut">불러오는 중…</div>';
+  const r = await net.call<{ items: Ticket[] }>('admin:tickets');
+  if (!r.ok) { pane.innerHTML = `<div class="mut">${esc(supMsg(r.error))}</div>`; return; }
+  const items = r.items ?? [];
+  pane.innerHTML = (items.length ? `<div class="mut" style="margin-bottom:8px">총 ${items.length}건 (최신순)</div>` : '<div class="mut">접수된 문의가 없습니다.</div>')
+    + items.map((t) => `<div class="tk ${t.status === 'done' ? 'done' : ''}"><div class="row"><b>${esc(t.nickname)}</b><span class="mut" style="font-size:11px;margin-left:8px">${esc(t.user_id)}</span><span class="right mut" style="font-size:12px">${fmtTime(t.created_at)}${t.status === 'done' ? ' · 완료' : ''}</span></div>
+      <div class="tm">${esc(t.message)}</div><div class="tb"><button class="sm" data-tid="${t.id}" data-act="${t.status === 'done' ? 'open' : 'done'}">${t.status === 'done' ? '되돌리기' : '완료 처리'}</button><button class="sm ghost" data-tid="${t.id}" data-act="delete">삭제</button></div></div>`).join('');
+  pane.querySelectorAll<HTMLElement>('[data-tid]').forEach((b) => (b.onclick = async () => {
+    if (b.dataset.act === 'delete' && !confirm('이 문의를 삭제할까요?')) return;
+    const a = await net.call('admin:ticket', { id: +b.dataset.tid!, action: b.dataset.act });
+    if (!a.ok) toast(supMsg(a.error), 'bad'); else void renderInbox();
+  }));
+}
+function renderCredits(): void {
+  const pane = $('dev-pane');
+  pane.innerHTML = `<div class="row" style="gap:8px"><input id="adm-q" placeholder="닉네임 또는 계정 ID(UUID)" style="flex:1" autocomplete="off" /><button class="pri" id="adm-search">검색</button></div>
+    <div id="adm-results" style="margin-top:10px"></div><div id="adm-sel" style="margin-top:10px"></div>`;
+  const drawResults = (): void => {
+    $('adm-results').innerHTML = adminResults.map((u) => `<div class="tk row" style="gap:8px"><b>${esc(u.nickname)}</b><span class="mut" style="font-size:11px">${esc(u.id)}</span><span class="right">◈ ${fmt(u.credits)}</span><button class="sm" data-uid="${esc(u.id)}">선택</button></div>`).join('');
+    $('adm-results').querySelectorAll<HTMLElement>('[data-uid]').forEach((b) => (b.onclick = () => { adminSel = adminResults.find((u) => u.id === b.dataset.uid) ?? null; drawSel(); }));
+  };
+  const drawSel = (): void => {
+    const u = adminSel, box = $('adm-sel');
+    if (!u) { box.innerHTML = ''; return; }
+    box.innerHTML = `<div class="tk"><div class="row"><b>${esc(u.nickname)}</b><span class="mut" style="font-size:11px;margin-left:8px">${esc(u.id)}</span></div>
+      <div style="margin:8px 0;font-size:18px">현재 크레딧 ◈ <b>${fmt(u.credits)}</b></div>
+      <div class="row" style="gap:8px"><input id="adm-amt" type="number" min="1" max="1000000000" placeholder="수량" style="flex:1" /><button class="pri" id="adm-add">+ 지급</button><button id="adm-sub">− 차감</button></div></div>`;
+    const apply = async (sign: 1 | -1): Promise<void> => {
+      const n = Math.floor(Number($<HTMLInputElement>('adm-amt').value));
+      if (!Number.isFinite(n) || n <= 0) { toast('1 이상의 수량을 입력하세요.', 'bad'); return; }
+      const r = await net.call<{ before: number; after: number }>('admin:credits', { id: u.id, delta: sign * n });
+      if (!r.ok) { toast(supMsg(r.error), 'bad'); return; }
+      u.credits = r.after ?? u.credits; toast(`${u.nickname}: ◈ ${fmt(r.before ?? 0)} → ${fmt(r.after ?? 0)}`, 'good'); drawResults(); drawSel();
+    };
+    $('adm-add').onclick = () => void apply(1); $('adm-sub').onclick = () => void apply(-1);
+  };
+  const search = async (): Promise<void> => {
+    const r = await net.call<{ items: AdminUser[] }>('admin:search', { q: $<HTMLInputElement>('adm-q').value });
+    if (!r.ok) { toast(supMsg(r.error), 'bad'); return; }
+    adminResults = r.items ?? []; adminSel = null; drawSel(); drawResults();
+    if (!adminResults.length) $('adm-results').innerHTML = '<div class="mut">검색 결과가 없습니다.</div>';
+  };
+  $('adm-search').onclick = () => void search();
+  $('adm-q').addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter' && !(e as KeyboardEvent).isComposing) void search(); });
+  drawResults(); drawSel();
+}
 function openSettings(): void { show('m-pause', false); if (document.pointerLockElement) document.exitPointerLock(); renderSettings(); show('m-settings'); }
 const SET_TABS: [SetTab, string][] = [['sens', '감도 · FOV'], ['xhair', '조준선'], ['keys', '키 설정'], ['gfx', '그래픽'], ['etc', '모바일 · 사운드']];
 

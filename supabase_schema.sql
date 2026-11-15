@@ -576,3 +576,32 @@ insert into public.mission_pool (mission_id, description, stat_key, target, rewa
   ('m_tdm_20','팀 데스매치에서 20킬','tdm_kills',20,'credits',250)
 on conflict (mission_id) do update set description = excluded.description, stat_key = excluded.stat_key, target = excluded.target,
   reward_type = excluded.reward_type, reward_amount = excluded.reward_amount;
+
+-- ---------------------------------------------------------------- 고객센터 / 개발자 모드
+-- 서버(service_role)만 접근. 클라이언트 직접 접근(anon/authenticated) 차단.
+create table if not exists public.support_tickets (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  nickname text not null,
+  message text not null check (char_length(message) between 1 and 500),
+  status text not null default 'open' check (status in ('open','done')),
+  created_at timestamptz not null default now()
+);
+create index if not exists support_tickets_created_idx on public.support_tickets (created_at desc);
+create index if not exists support_tickets_user_idx on public.support_tickets (user_id, created_at);
+alter table public.support_tickets enable row level security;
+revoke all on public.support_tickets from anon, authenticated;
+
+-- 크레딧 증감 (원자적, 0 미만/20억 초과는 클램프). service_role 전용.
+create or replace function public.admin_adjust_credits(p_user uuid, p_delta int) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare v_before int; v_after int;
+begin
+  select credits into v_before from profiles where id = p_user for update;
+  if not found then raise exception 'USER_NOT_FOUND'; end if;
+  v_after := least(greatest(v_before::bigint + p_delta, 0), 2000000000);
+  update profiles set credits = v_after where id = p_user;
+  return jsonb_build_object('before', v_before, 'after', v_after);
+end $$;
+revoke all on function public.admin_adjust_credits(uuid, int) from public, anon, authenticated;
+grant execute on function public.admin_adjust_credits(uuid, int) to service_role;

@@ -3,6 +3,7 @@
 // env: PORT, CLIENT_ORIGIN(쉼표 구분), SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 // 좌표계: y-up, yaw=0 → -Z 방향. forward = (-sin(yaw)cos(p), sin(p), -cos(yaw)cos(p))
 // =====================================================================
+import crypto from 'node:crypto';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +19,12 @@ const supabase = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_K
   : null;
 
 export const clock = { now: () => Date.now() };
+
+// 개발자 인증 코드 — 서버 환경변수로만 보관(클라이언트에 노출 금지). 해시 후 상수시간 비교.
+const DEV_SECRET = process.env.DEV_SECRET_CODE || '';
+const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest();
+const isDevCode = (s) => !!DEV_SECRET && crypto.timingSafeEqual(sha256(s), sha256(DEV_SECRET));
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // ───────────────────────────── 1. 규칙 / 상수 ─────────────────────────────
 export const RULES = {
@@ -1047,6 +1054,78 @@ on('room:config', 4, inGame((room, e, m) => {
     }));
     on('reload', 5, inGame((room, e, m, now) => { if (e.alive) startReload(room, e, now); }));
     on('skill', 6, inGame((room, e, m, now) => { if (!canAct(room, e)) return { ok: false }; return { ok: useSkill(room, e, m.k, now) }; }));
+
+    // ───── 고객센터 / 개발자 모드 (async 핸들러). 개발자 권한은 이 소켓 연결에만 유효.
+    const onA = (ev, max, fn) => socket.on(ev, async (m, ack) => {
+      if (typeof m === 'function') { ack = m; m = {}; }
+      const reply = (r) => { if (typeof ack === 'function') ack(r); };
+      if (!allow(socket, ev, max)) return reply({ ok: false, error: 'RATE_LIMIT' });
+      try { reply(await fn(m && typeof m === 'object' ? m : {}, clock.now())); }
+      catch (err) { console.error('[evt]', ev, err); reply({ ok: false, error: 'SERVER_ERROR' }); }
+    });
+    const needUser = () => (!supabase ? 'NO_DB' : !sess.userId ? 'LOGIN_REQUIRED' : null);
+    const needDev = () => (socket.data.dev === true && sess.userId ? null : 'FORBIDDEN');
+    sess.ticketTimes = [];
+
+    onA('support:list', 2, async () => {
+      const e = needUser(); if (e) return { ok: false, error: e };
+      const { data, error } = await supabase.from('support_tickets').select('id,message,status,created_at').eq('user_id', sess.userId).order('created_at', { ascending: false }).limit(50);
+      if (error) throw error;
+      return { ok: true, items: data.reverse() };
+    });
+    // 문의 전송. 메시지가 개발자 코드와 정확히 일치하면 저장하지 않고 개발자 인증으로 처리.
+    onA('support:send', 3, async (m, now) => {
+      const e = needUser(); if (e) return { ok: false, error: e };
+      const msg = String(m.message ?? '').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').trim();
+      if (!msg) return { ok: false, error: 'EMPTY' };
+      if (msg.length > 500) return { ok: false, error: 'TOO_LONG' };
+      sess.ticketTimes = sess.ticketTimes.filter((t) => now - t < 3600000);
+      if (sess.ticketTimes.length && now - sess.ticketTimes[sess.ticketTimes.length - 1] < 2000) return { ok: false, error: 'RATE_LIMIT' };
+      if (sess.ticketTimes.length >= 20) return { ok: false, error: 'TICKET_LIMIT' };
+      sess.ticketTimes.push(now);
+      if (isDevCode(msg)) { socket.data.dev = true; console.log(`[admin] dev mode ON user=${sess.userId}`); return { ok: true, dev: true }; }
+      const { data, error } = await supabase.from('support_tickets').insert({ user_id: sess.userId, nickname: sess.name, message: msg }).select('id,message,status,created_at').single();
+      if (error) throw error;
+      return { ok: true, item: data };
+    });
+    onA('admin:exit', 2, async () => { socket.data.dev = false; return { ok: true }; });
+    onA('admin:tickets', 4, async () => {
+      const e = needDev(); if (e) return { ok: false, error: e };
+      const { data, error } = await supabase.from('support_tickets').select('id,user_id,nickname,message,status,created_at').order('created_at', { ascending: false }).limit(300);
+      if (error) throw error;
+      return { ok: true, items: data };
+    });
+    onA('admin:ticket', 10, async (m) => {
+      const e = needDev(); if (e) return { ok: false, error: e };
+      const id = Number(m.id); if (!Number.isInteger(id) || id <= 0) return { ok: false, error: 'BAD_REQUEST' };
+      const q = supabase.from('support_tickets');
+      const r = m.action === 'delete' ? await q.delete().eq('id', id) : m.action === 'done' || m.action === 'open' ? await q.update({ status: m.action }).eq('id', id) : { error: { message: 'BAD_ACTION' } };
+      if (r.error) return { ok: false, error: 'BAD_REQUEST' };
+      console.log(`[admin] ticket ${m.action} id=${id} by=${sess.userId}`);
+      return { ok: true };
+    });
+    onA('admin:search', 6, async (m) => {
+      const e = needDev(); if (e) return { ok: false, error: e };
+      const raw = String(m.q ?? '').trim().slice(0, 40);
+      if (!raw) return { ok: true, items: [] };
+      let query = supabase.from('profiles').select('id,nickname,username,credits').limit(10);
+      if (UUID_RE.test(raw)) query = query.eq('id', raw.toLowerCase());
+      else { const q = raw.replace(/[^A-Za-z0-9가-힣_.-]/g, ''); if (!q) return { ok: true, items: [] }; query = query.or(`nickname.ilike.%${q}%,username.ilike.%${q}%`); }
+      const { data, error } = await query;
+      if (error) throw error;
+      return { ok: true, items: data };
+    });
+    // 크레딧 증감: {id:uuid, delta:int(±)} → DB 원자 갱신, 접속 중이면 즉시 클라이언트 반영
+    onA('admin:credits', 6, async (m) => {
+      const e = needDev(); if (e) return { ok: false, error: e };
+      const delta = Number(m.delta), id = String(m.id ?? '').toLowerCase();
+      if (!UUID_RE.test(id) || !Number.isInteger(delta) || delta === 0 || Math.abs(delta) > 1e9) return { ok: false, error: 'BAD_REQUEST' };
+      const { data, error } = await supabase.rpc('admin_adjust_credits', { p_user: id, p_delta: delta });
+      if (error) return { ok: false, error: /USER_NOT_FOUND/.test(error.message) ? 'USER_NOT_FOUND' : 'SERVER_ERROR' };
+      console.log(`[admin] credits ${delta >= 0 ? '+' : ''}${delta} target=${id} ${data.before}->${data.after} by=${sess.userId}`);
+      const t = online.get(id); if (t) t.emit('credits:update', { credits: data.after });
+      return { ok: true, before: data.before, after: data.after };
+    });
 
     socket.on('disconnect', () => {
       try { removeHuman(sess, clock.now()); } catch (err) { console.error('[disconnect]', err); }

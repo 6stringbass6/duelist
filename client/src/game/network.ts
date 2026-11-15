@@ -309,6 +309,10 @@ export class GameClient {
       if (rtt <= this.bestRtt + 15) { this.bestRtt = Math.min(this.bestRtt, rtt); this.timeOffset = r.s + rtt / 2 - now; }
     });
   }
+  /** 고객센터/관리자 등 임의 이벤트 요청 (ack 에 추가 필드 포함) */
+  call<T extends object = object>(ev: string, data: object = {}): Promise<Ack & Partial<T>> { return this.req(ev, data) as Promise<Ack & Partial<T>>; }
+  /** 서버가 크레딧을 갱신했을 때(관리자 지급 등) 호출 */
+  onCredits: ((credits: number) => void) | null = null;
   private req(ev: string, data: object = {}): Promise<Ack> {
     return new Promise((resolve) => {
       if (!this.socket?.connected) return resolve({ ok: false, error: 'NOT_CONNECTED' });
@@ -346,6 +350,7 @@ export class GameClient {
     s.on('connect_error', (e: Error) => this.emit('error', e.message));
     s.on('kicked', (m: { reason: string }) => this.emit('error', m.reason));
     s.on('server:shutdown', () => this.emit('error', 'SERVER_SHUTDOWN'));
+    s.on('credits:update', (m: { credits: number }) => this.onCredits?.(m.credits));
     s.on('hello', (h: HelloInfo) => { this.hello = h; this.timeOffset = h.serverTime - Date.now(); this.emit('hello', h); });
 
     s.on('room:joined', (m: { you: number; room: RoomState; map: MapData; serverTime: number; spawn: SpawnTuple | null }) => {
