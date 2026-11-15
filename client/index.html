@@ -88,6 +88,17 @@ table{border-collapse:collapse;width:100%}th,td{padding:6px 8px;text-align:left;
 #hud-skills{position:absolute;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));transform:translateX(-50%);display:flex;gap:10px}
 .sk{position:relative;width:54px;height:54px;border-radius:8px;background:rgba(10,14,22,.65);border:1px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800;overflow:hidden}
 .sk small{font-size:10px;font-weight:500;color:var(--mut)}.sk i{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.72)}.sk.act{border-color:var(--acc2);box-shadow:0 0 10px var(--acc2)}
+#killbanner{position:absolute;left:50%;top:68%;transform:translateX(-50%);pointer-events:none;display:flex;flex-direction:column;align-items:center}
+#killbanner .kb{display:flex;flex-direction:column;align-items:center;animation:kbpop .15s ease-out,kbfade .4s ease-in 2.1s forwards;filter:drop-shadow(0 0 8px var(--kc))}
+#killbanner .kb svg{width:190px;height:78px;overflow:visible}
+#killbanner .kb b{font:800 13px/1 sans-serif;letter-spacing:.2em;color:var(--kc);margin-top:-2px;text-shadow:0 0 6px #000}
+#killbanner .kb.hs{--kc:#ff3b4a}
+#killbanner .kb.hs svg{animation:kbshake .25s}
+#killbanner .kb.ace svg{animation:kbglow 1s ease-in-out infinite alternate}
+@keyframes kbpop{0%{transform:scale(.5);opacity:0}70%{transform:scale(1.25);opacity:1}100%{transform:scale(1)}}
+@keyframes kbfade{to{opacity:0;transform:translateY(8px)}}
+@keyframes kbshake{0%,100%{transform:translateX(0)}25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
+@keyframes kbglow{to{filter:brightness(1.6) drop-shadow(0 0 10px #ffd34d)}}
 #hitmarker{position:absolute;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;opacity:0;background:linear-gradient(45deg,transparent 46%,#fff 46% 54%,transparent 54%),linear-gradient(-45deg,transparent 46%,#fff 46% 54%,transparent 54%);-webkit-mask:radial-gradient(circle,transparent 5px,#000 6px);mask:radial-gradient(circle,transparent 5px,#000 6px)}
 #hitmarker.hs{filter:drop-shadow(0 0 3px var(--acc)) hue-rotate(0);background:linear-gradient(45deg,transparent 44%,var(--acc) 44% 56%,transparent 56%),linear-gradient(-45deg,transparent 44%,var(--acc) 44% 56%,transparent 56%)}
 #hud-fps{position:absolute;left:calc(8px + env(safe-area-inset-left));top:calc(6px + env(safe-area-inset-top));font-size:12px;color:var(--ok)}
@@ -135,6 +146,7 @@ body.left #joy-base{left:auto;right:calc(36px + env(safe-area-inset-right))}
     <div id="killfeed"></div>
     <div id="hud-banner"></div>
     <div id="hitmarker"></div>
+    <div id="killbanner"></div>
     <div id="hud-dead" class="hidden">사망 — 다음 스폰을 기다리는 중</div>
     <div id="hud-hint" class="hidden"></div>
     <div id="hud-bl"><div><div id="hud-hp">150</div><div id="hud-hpbar"><i></i></div></div></div>

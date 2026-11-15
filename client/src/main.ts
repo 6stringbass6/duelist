@@ -448,6 +448,35 @@ function renderScoreboard(): void {
 let hitUntil = 0, kfSig = '', fpsFrames = 0, fpsAt = performance.now();
 net.on('hit', (h) => { hitUntil = performance.now() + (h.k ? 320 : 160); $('hitmarker').classList.toggle('hs', h.z === 'head' || h.k); });
 net.on('kill', () => { if (visible('scoreboard')) renderScoreboard(); });
+// ── 킬 배너 / 연속 킬 (라운드 내 누적, 라운드 시작·사망 시 초기화)
+let killStreak = 0, kbTimer = 0;
+function killBannerSvg(n: number, hs: boolean): string {
+  const col = n >= 5 ? '#ffd34d' : n >= 3 ? '#ff9f3b' : n === 2 ? '#fff' : '#5ef0ff', acc = hs ? '#ff3b4a' : col;
+  const wing = (dir: number) => {
+    let d = '';
+    for (let i = 0; i < Math.min(n, 5); i++) d += `<path d="M${95 + dir * (22 + i * 13)} ${39 - 6 - i * 2} l${dir * 10} ${-3 - i} l${-dir * 4} ${9 + i * 2} z" fill="${col}" opacity="${0.55 + i * 0.1}"/>`;
+    return d;
+  };
+  const core = `<path d="M95 8 L122 39 L95 70 L68 39 Z" fill="#0b0f16" stroke="${acc}" stroke-width="3"/><path d="M95 18 L113 39 L95 60 L77 39 Z" fill="none" stroke="${col}" stroke-width="1.5" opacity=".8"/>`;
+  const mid = hs
+    ? `<circle cx="95" cy="39" r="11" fill="none" stroke="#ff3b4a" stroke-width="2.5"/><circle cx="95" cy="39" r="5" fill="#ff3b4a"/><path d="M95 22v10M95 46v10M78 39h10M102 39h10" stroke="#ff3b4a" stroke-width="2.5"/>`
+    : `<text x="95" y="48" text-anchor="middle" font-family="sans-serif" font-weight="900" font-size="26" fill="${col}">${n >= 5 ? '★' : n}</text>`;
+  const crown = n >= 5 ? `<path d="M80 6 l8 -8 l7 8 l7 -8 l8 8" fill="none" stroke="#ffd34d" stroke-width="3"/>` : '';
+  return `<svg viewBox="0 0 190 78">${wing(1)}${wing(-1)}${core}${mid}${crown}</svg>`;
+}
+function showKillBanner(n: number, hs: boolean): void {
+  const el = $('killbanner'), label = n >= 5 ? 'ACE' : `${n} KILL`;
+  el.innerHTML = `<div class="kb ${hs ? 'hs' : ''} ${n >= 5 ? 'ace' : ''}" style="--kc:${n >= 5 ? '#ffd34d' : n >= 3 ? '#ff9f3b' : n === 2 ? '#fff' : '#5ef0ff'}">${killBannerSvg(n, hs)}<b>${hs ? 'HEADSHOT · ' : ''}${label}</b></div>`;
+  clearTimeout(kbTimer); kbTimer = window.setTimeout(() => { el.innerHTML = ''; }, 2550);
+}
+net.on('kill', (k, raw) => {
+  if (raw.v === net.you) { killStreak = 0; return; }
+  if (raw.k !== net.you || k.suicide) return;
+  killStreak++;
+  showKillBanner(killStreak, k.hs); pc.audio.killStreak(killStreak, k.hs);
+});
+net.on('phase', (p) => { if (p.phase === 'buy' || p.phase === 'live') { killStreak = 0; $('killbanner').innerHTML = ''; } });
+
 $('hud-slots').querySelectorAll<HTMLElement>('[data-slot]').forEach((d) => d.addEventListener('pointerdown', () => pc.switchSlot(+d.dataset.slot! as 1 | 2 | 3 | 4)));
 
 function updateHud(now: number): void {

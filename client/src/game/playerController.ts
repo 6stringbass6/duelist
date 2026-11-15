@@ -72,6 +72,17 @@ export class AudioFX {
   swing(heavy: boolean, vol = 1): void { this.burst(heavy ? 0.25 : 0.12, heavy ? 500 : 1400, 0.35 * vol, 2); }
   hit(head: boolean): void { if (head) { this.tone('triangle', 1900, 2400, 0.09, 0.5); this.tone('sine', 3200, 2800, 0.12, 0.25, 0.02); } else this.tone('square', 900, 600, 0.05, 0.22); }
   kill(): void { this.tone('triangle', 660, 660, 0.09, 0.4); this.tone('triangle', 990, 990, 0.16, 0.4, 0.08); }
+  /** 연속 킬 사운드: 킬 수가 오를수록 피치 상승, 5킬(ACE)은 웅장한 화음. 헤드샷은 금속성 딩 레이어. 볼륨은 master*sfx 연동 */
+  killStreak(n: number, head: boolean): void {
+    const c = this.ensure(); if (!c) return;
+    const k = Math.max(1, Math.min(5, n));
+    const root = 392 * Math.pow(2, [0, 2, 4, 7, 9][k - 1] / 12); // G4 기준 펜타토닉 상승
+    this.tone('triangle', root, root, 0.22, 0.4); this.tone('sine', root / 2, root / 2, 0.3, 0.45);
+    this.tone('triangle', root * 1.5, root * 1.5, 0.2, 0.3, 0.07);
+    if (k >= 3) this.tone('triangle', root * 2, root * 2, 0.25, 0.3, 0.12);
+    if (k >= 5) { for (const [m, d] of [[1.25, 0.1], [1.5, 0.16], [2, 0.22], [3, 0.28]]) this.tone('sawtooth', root * m, root * m, 0.7, 0.18, d); this.tone('sine', root / 4, root / 4, 0.9, 0.6); this.burst(0.5, 5000, 0.25, 0.5, 'highpass'); }
+    if (head) { this.tone('sine', 3400, 3300, 0.3, 0.35); this.tone('square', 5100, 5000, 0.08, 0.1); this.tone('sine', 2300, 2250, 0.4, 0.2, 0.01); }
+  }
   hurt(): void { this.tone('sine', 140, 60, 0.18, 0.7); this.burst(0.08, 400, 0.3, 1); }
   empty(): void { this.tone('square', 1500, 1200, 0.03, 0.15); }
   reload(): void { this.burst(0.04, 3000, 0.3, 3); this.tone('square', 700, 500, 0.04, 0.12, 0.18); this.burst(0.05, 2200, 0.35, 3); }
@@ -235,7 +246,7 @@ export class PlayerController {
       }),
       n.on('correct', (x, y, z, seq) => { if (seq === this.spawnSeq) { this.pos.set(x, y, z); this.vel.set(0, 0, 0); } }),
       n.on('ammo', (a) => { this.localAmmo.secondary = a.secondary; this.localAmmo.primary = a.primary; this.localAmmo.charges = a.charges; }),
-      n.on('hit', (h) => { this.audio.hit(h.z === 'head'); if (h.k) this.audio.kill(); }),
+      n.on('hit', (h) => { this.audio.hit(h.z === 'head'); }),
       n.on('hurt', (h) => { this.hp = h.hp; this.hurtA = Math.min(1, this.hurtA + 0.35 + h.d / 120); this.audio.hurt(); }),
       n.on('flash', (f) => { // 케이오식 섬광: 정면으로 볼수록 길고 강하게
         const now = performance.now(); this.flashDur = f.dur; this.flashUntil = now + f.dur; this.flashPeak = f.full ? 1 : 0.75;
