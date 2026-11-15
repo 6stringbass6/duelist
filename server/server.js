@@ -1102,10 +1102,10 @@ async function loadProfile(sess) {
       console.error('[profile] rpc create_profile_for failed:', r.error.message);
       const base = (sess.meta?.nickname || sess.meta?.full_name || sess.meta?.name || 'Player').toString().replace(/[^A-Za-z0-9가-힣_]/g, '').slice(0, 12);
       let nick = base.length >= 2 ? base : 'Player';
-      for (let i = 0; i < 5; i++) {
-        const ins = await supabase.from('profiles').insert({ id: sess.userId, nickname: nick });
-        if (!ins.error || ins.error.code === '23505' && /profiles_pkey/.test(ins.error.message)) break;
-        console.error('[profile] direct insert failed:', ins.error.message);
+      for (let i = 0; i < 8; i++) { // 닉네임 중복(unique) 시 숫자 접미사로 재시도
+        const up = await supabase.from('profiles').upsert({ id: sess.userId, nickname: nick }, { onConflict: 'id', ignoreDuplicates: true });
+        if (!up.error) break;
+        console.error('[profile] direct upsert failed:', up.error.message);
         nick = (base.length >= 2 ? base : 'Player') + randInt(1000, 9999);
       }
     }

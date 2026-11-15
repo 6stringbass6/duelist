@@ -256,6 +256,8 @@ begin
   end loop;
   insert into profiles (id, username, nickname) values (p_id, v_user, v_nick) on conflict do nothing;
 end $$;
+revoke execute on function public.create_profile_for(uuid) from public, anon, authenticated;
+grant execute on function public.create_profile_for(uuid) to service_role;
 
 create or replace function public.handle_new_user() returns trigger
 language plpgsql security definer set search_path = public as $$
