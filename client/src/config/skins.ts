@@ -1,5 +1,7 @@
 // =====================================================================
 // 스킨 데이터(외형/재질/발광)와 랜덤박스 확률표를 분리 설계.
+//  - 등급: 셀렉트 < 디럭스 < 프리미엄 < 익스클루시브 < 울트라 (TIERS)
+//    구버전 등급/ID 는 normalizeTier / resolveSkinId 가 자동 매핑 (DB·소켓·로컬 어디서 와도 동작)
 //  - 신규 스킨: COLLECTIONS 에 컬렉션 추가 or EXTRA_SKINS 에 단품 추가
 //  - 확률 수정: LOOTBOXES 만 수정
 //  - 수정 후 `npm run gen:skin-seed` → 출력된 SQL 을 Supabase SQL Editor 에서 실행 (가격/확률의 서버 권위 = DB)
@@ -7,30 +9,60 @@
 // =====================================================================
 import type { WeaponId } from './weapons';
 
-export type Rarity = 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
+/** 5단계 에디션 등급 (낮음 → 높음) */
+export type Tier = 'select' | 'deluxe' | 'premium' | 'exclusive' | 'ultra';
 export type SkinWeaponId = Exclude<WeaponId, 'fists' | 'grenade' | 'flash'>;
-export type SkinPattern = 'solid' | 'gradient' | 'stripes' | 'hex' | 'carbon' | 'wave' | 'circuit' | 'petals' | 'cracks' | 'stars';
+/** 프로시저럴 텍스처 스타일 (game/skinTextures.ts 의 페인터와 1:1) */
+export type SkinStyle = 'solid' | 'matte' | 'digicamo' | 'steel' | 'anodized' | 'hex' | 'racing' | 'circuit' | 'glitch' | 'gloss' | 'energy' | 'solar' | 'abyss';
 export type ModelVariant = 'default' | 'angular' | 'sleek' | 'heavy' | 'ornate';
+/** 등급 전용 부착 파츠: wings = 홀로그램 윙(익스클루시브), rings = 에너지 코어 링(울트라) */
+export type SkinAttachment = 'none' | 'wings' | 'rings';
 
 export interface SkinMaterial {
-  baseColor: number; accentColor: number; metalness: number; roughness: number;
-  pattern: SkinPattern; patternColor: number; patternScale: number; clearcoat?: number;
+  style: SkinStyle; baseColor: number; accentColor: number; patternColor: number;
+  metalness: number; roughness: number; clearcoat?: number; clearcoatRoughness?: number;
 }
-export interface SkinEmissive { color: number; intensity: number; mode: 'none' | 'static' | 'pulse' | 'flow'; speed?: number }
+/** mode: energy = 표면을 따라 흐르는 에너지(셰이더), plasma = 용암/성운 유동(셰이더). ambient = 마스크 밖 표면 전체에 깔리는 유동광 비율 */
+export interface SkinEmissive { color: number; color2?: number; intensity: number; mode: 'none' | 'static' | 'pulse' | 'flow' | 'energy' | 'plasma'; speed?: number; ambient?: number }
 export interface SkinVfx { tracerColor?: number; muzzleColor?: number; killEffect?: 'none' | 'shatter' | 'burn' | 'freeze' | 'void' | 'gold' | 'nova'; trail?: boolean }
 export interface SkinDef {
-  id: string; collection: string; weaponId: SkinWeaponId; name: string; rarity: Rarity; price: number;
-  featured: boolean; inDaily: boolean; inBox: boolean; sort: number;
+  id: string; collection: string; weaponId: SkinWeaponId; name: string; tier: Tier; price: number;
+  featured: boolean; inDaily: boolean; inBox: boolean; sort: number; blurb: string;
   model: ModelVariant; material: SkinMaterial; emissive: SkinEmissive; vfx: SkinVfx;
 }
 
-export const RARITY: Record<Rarity, { name: string; color: string; order: number }> = {
-  common: { name: '일반', color: '#9aa4b1', order: 0 },
-  rare: { name: '희귀', color: '#4aa3ff', order: 1 },
-  epic: { name: '영웅', color: '#b06bff', order: 2 },
-  legendary: { name: '전설', color: '#ffb23e', order: 3 },
-  mythic: { name: '신화', color: '#ff4d6d', order: 4 },
+export type TierEmblem = 'circle' | 'diamond' | 'pentagon' | 'triangle' | 'crown';
+export interface TierInfo { name: string; en: string; color: string; price: number; order: number; emblem: TierEmblem; perks: string[] }
+/** 가격 기준: 5판 기준 매치 보상(승리 1000 / 패배 500 크레딧)에 비례 */
+export const TIERS: Record<Tier, TierInfo> = {
+  select: { name: '셀렉트', en: 'SELECT', color: '#5a9fd4', price: 600, order: 0, emblem: 'circle', perks: ['전술 도색', 'PBR 재질'] },
+  deluxe: { name: '디럭스', en: 'DELUXE', color: '#00b894', price: 1200, order: 1, emblem: 'diamond', perks: ['메탈릭 마감', '입체 패턴'] },
+  premium: { name: '프리미엄', en: 'PREMIUM', color: '#e84393', price: 2200, order: 2, emblem: 'pentagon', perks: ['네온 발광', '클리어코트 유광'] },
+  exclusive: { name: '익스클루시브', en: 'EXCLUSIVE', color: '#ff7675', price: 3200, order: 3, emblem: 'triangle', perks: ['흐르는 에너지 텍스처', '홀로그램 윙'] },
+  ultra: { name: '울트라', en: 'ULTRA', color: '#fdcb6e', price: 4500, order: 4, emblem: 'crown', perks: ['동적 용암/성운 텍스처', '에너지 코어 링', '사격 시 발광 폭증', '전용 총구 섬광'] },
 };
+export const TIER_ORDER = (Object.keys(TIERS) as Tier[]).sort((a, b) => TIERS[a].order - TIERS[b].order);
+
+/** 구버전 등급 → 5단계 등급 (DB/로컬에 남아 있는 값 자동 호환) */
+const LEGACY_TIER: Record<string, Tier> = { common: 'select', uncommon: 'select', rare: 'deluxe', epic: 'premium', legendary: 'exclusive', mythic: 'ultra' };
+export function normalizeTier(t: string | null | undefined): Tier {
+  const k = String(t ?? '').toLowerCase();
+  return Object.prototype.hasOwnProperty.call(TIERS, k) ? (k as Tier) : LEGACY_TIER[k] ?? 'select';
+}
+export const tierOf = (t: string | null | undefined): TierInfo => TIERS[normalizeTier(t)];
+
+/** 등급 엠블럼 (인라인 SVG): 원형 / 마름모 / 오각형 / 역삼각형 / 왕관 */
+export function tierEmblemSvg(tier: string | null | undefined, size = 18): string {
+  const t = tierOf(tier), c = t.color, cut = 'fill="#0b0f18" opacity=".55"';
+  const shape: Record<TierEmblem, string> = {
+    circle: `<circle cx="12" cy="12" r="9" fill="${c}"/><circle cx="12" cy="12" r="4.2" ${cut}/>`,
+    diamond: `<path d="M12 1.8 21.5 12 12 22.2 2.5 12Z" fill="${c}"/><path d="M12 7.2 16.4 12 12 16.8 7.6 12Z" ${cut}/>`,
+    pentagon: `<path d="M12 2 22 9.4 18.2 21.2H5.8L2 9.4Z" fill="${c}"/><path d="M12 7.4 16.6 10.8 14.8 16.2H9.2L7.4 10.8Z" ${cut}/>`,
+    triangle: `<path d="M2 3.5H22L12 21.8Z" fill="${c}"/><path d="M8 7.2H16L12 14.6Z" ${cut}/>`,
+    crown: `<path d="M2.5 7.5 7.4 12 12 3.6 16.6 12 21.5 7.5 19.4 19.4H4.6Z" fill="${c}"/><path d="M5 21.4H19" stroke="${c}" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="14.2" r="2.1" ${cut}/>`,
+  };
+  return `<svg class="emb" viewBox="0 0 24 24" width="${size}" height="${size}" role="img" aria-label="${t.name}">${shape[t.emblem]}</svg>`;
+}
 
 export const SKIN_WEAPONS: { id: SkinWeaponId; name: string }[] = [
   { id: 'dagger', name: '단검' }, { id: 'sword', name: '장검' },
@@ -41,39 +73,57 @@ const ALL_WEAPONS = SKIN_WEAPONS.map((w) => w.id);
 
 // ───────────────────────────── 1) 스킨 컬렉션 (외형/재질/발광) ─────────────────────────────
 interface CollectionDef {
-  id: string; name: string; rarity: Rarity; price: number; featured?: boolean; sort: number;
+  id: string; name: string; tier: Tier; price?: number; featured?: boolean; sort: number;
   weapons?: SkinWeaponId[]; model: ModelVariant; material: SkinMaterial; emissive: SkinEmissive; vfx: SkinVfx;
   blurb: string;
 }
+const NO_GLOW: SkinEmissive = { color: 0x000000, intensity: 0, mode: 'none' };
 
 export const COLLECTIONS: CollectionDef[] = [
-  { id: 'carbon', name: '카본', rarity: 'common', price: 800, sort: 1, model: 'default', blurb: '무광 카본 파이버 마감.',
-    material: { baseColor: 0x1b1d21, accentColor: 0x3a3f47, metalness: 0.35, roughness: 0.55, pattern: 'carbon', patternColor: 0x2a2e35, patternScale: 12 },
-    emissive: { color: 0x000000, intensity: 0, mode: 'none' }, vfx: {} },
-  { id: 'tundra', name: '툰드라', rarity: 'common', price: 800, sort: 2, model: 'default', blurb: '설원 위장 도색.',
-    material: { baseColor: 0xdfe6ec, accentColor: 0x8fa1b3, metalness: 0.1, roughness: 0.8, pattern: 'stripes', patternColor: 0xaab8c5, patternScale: 5 },
-    emissive: { color: 0x000000, intensity: 0, mode: 'none' }, vfx: { tracerColor: 0xe8f4ff } },
-  { id: 'neon', name: '네온 서킷', rarity: 'rare', price: 1500, sort: 3, model: 'angular', blurb: '회로 패턴을 따라 흐르는 네온.',
-    material: { baseColor: 0x0d1020, accentColor: 0x1b2340, metalness: 0.6, roughness: 0.35, pattern: 'circuit', patternColor: 0x00f0ff, patternScale: 8 },
-    emissive: { color: 0x00f0ff, intensity: 1.4, mode: 'flow', speed: 0.6 }, vfx: { tracerColor: 0x00f0ff, muzzleColor: 0x66f7ff } },
-  { id: 'sakura', name: '사쿠라', rarity: 'rare', price: 1500, sort: 4, model: 'sleek', blurb: '흩날리는 벚꽃잎 자개 마감.',
-    material: { baseColor: 0xfff0f5, accentColor: 0xff8fb3, metalness: 0.25, roughness: 0.4, pattern: 'petals', patternColor: 0xff6f9f, patternScale: 6, clearcoat: 0.6 },
-    emissive: { color: 0xff9fc0, intensity: 0.5, mode: 'static' }, vfx: { tracerColor: 0xffb7d0, killEffect: 'shatter' } },
-  { id: 'magma', name: '마그마', rarity: 'epic', price: 2200, sort: 5, model: 'heavy', blurb: '균열 사이로 용암이 맥동한다.',
-    material: { baseColor: 0x17110f, accentColor: 0x3a1c12, metalness: 0.3, roughness: 0.7, pattern: 'cracks', patternColor: 0xff5a1f, patternScale: 7 },
-    emissive: { color: 0xff4a10, intensity: 2.0, mode: 'pulse', speed: 0.8 }, vfx: { tracerColor: 0xff7a30, muzzleColor: 0xffa040, killEffect: 'burn' } },
-  { id: 'glacier', name: '글래시어', rarity: 'epic', price: 2200, sort: 6, model: 'angular', blurb: '반투명 빙결 크리스털.',
-    material: { baseColor: 0xbfe9ff, accentColor: 0x5fb8e8, metalness: 0.15, roughness: 0.12, pattern: 'gradient', patternColor: 0xffffff, patternScale: 3, clearcoat: 1 },
-    emissive: { color: 0x7fd8ff, intensity: 1.1, mode: 'static' }, vfx: { tracerColor: 0x9fe4ff, killEffect: 'freeze' } },
-  { id: 'void', name: '보이드', rarity: 'legendary', price: 3000, sort: 7, model: 'sleek', blurb: '공허의 별빛이 표면을 유영한다.',
-    material: { baseColor: 0x07040f, accentColor: 0x2a0f55, metalness: 0.8, roughness: 0.2, pattern: 'stars', patternColor: 0xb48cff, patternScale: 10, clearcoat: 0.8 },
-    emissive: { color: 0x9a5cff, intensity: 2.2, mode: 'flow', speed: 0.35 }, vfx: { tracerColor: 0xa070ff, muzzleColor: 0xc8a8ff, killEffect: 'void', trail: true } },
-  { id: 'aurum', name: '아우룸', rarity: 'legendary', price: 3000, sort: 8, model: 'ornate', blurb: '순금 세공과 흑요석 인레이.',
-    material: { baseColor: 0xd9a520, accentColor: 0x15120c, metalness: 1.0, roughness: 0.18, pattern: 'hex', patternColor: 0xfff0a8, patternScale: 9, clearcoat: 0.5 },
-    emissive: { color: 0xffd45a, intensity: 0.8, mode: 'pulse', speed: 0.4 }, vfx: { tracerColor: 0xffd86a, killEffect: 'gold', trail: true } },
-  { id: 'singularity', name: '싱귤래리티', rarity: 'mythic', price: 4000, featured: true, sort: 9, model: 'angular', blurb: '신규 출시 — 사건의 지평선을 두른 무기.',
-    material: { baseColor: 0x050508, accentColor: 0xff2d6a, metalness: 0.9, roughness: 0.1, pattern: 'wave', patternColor: 0x3df2ff, patternScale: 4, clearcoat: 1 },
-    emissive: { color: 0xff2d6a, intensity: 3.0, mode: 'flow', speed: 1.0 }, vfx: { tracerColor: 0xff4d8a, muzzleColor: 0x3df2ff, killEffect: 'nova', trail: true } },
+  // ── 셀렉트: 전술 매트 코팅 / 디지털 카모 / 브러시드 스틸
+  { id: 'matte', name: '택티컬 매트', tier: 'select', sort: 1, model: 'default', blurb: '반사를 죽인 전술 세라믹 매트 코팅.',
+    material: { style: 'matte', baseColor: 0x2c3136, accentColor: 0x474e56, patternColor: 0xc9a227, metalness: 0.2, roughness: 0.86 },
+    emissive: NO_GLOW, vfx: {} },
+  { id: 'digicamo', name: '디지털 카모', tier: 'select', sort: 2, model: 'default', blurb: '픽셀 단위로 쪼갠 디지털 위장 도색.',
+    material: { style: 'digicamo', baseColor: 0x5d6852, accentColor: 0x38412f, patternColor: 0x929b7e, metalness: 0.1, roughness: 0.82 },
+    emissive: NO_GLOW, vfx: {} },
+  { id: 'steel', name: '브러시드 스틸', tier: 'select', sort: 3, model: 'default', blurb: '헤어라인 가공한 스테인리스 스틸.',
+    material: { style: 'steel', baseColor: 0xaeb6bf, accentColor: 0x6a747e, patternColor: 0xe6edf4, metalness: 1.0, roughness: 0.42 },
+    emissive: NO_GLOW, vfx: { tracerColor: 0xe8f4ff } },
+  // ── 디럭스: 아노다이징 메탈릭 / 헥사곤 아머 / 투톤 레이싱
+  { id: 'anodized', name: '아노다이즈', tier: 'deluxe', sort: 4, model: 'sleek', blurb: '코발트에서 바이올렛으로 물드는 아노다이징 메탈.',
+    material: { style: 'anodized', baseColor: 0x1668d8, accentColor: 0x7a2be0, patternColor: 0x9fd0ff, metalness: 1.0, roughness: 0.3, clearcoat: 0.35, clearcoatRoughness: 0.2 },
+    emissive: NO_GLOW, vfx: { tracerColor: 0x7fb4ff } },
+  { id: 'hexarmor', name: '헥사 아머', tier: 'deluxe', sort: 5, model: 'angular', blurb: '벌집 구조의 입체 장갑 플레이트.',
+    material: { style: 'hex', baseColor: 0x143a33, accentColor: 0x08191a, patternColor: 0x00d9a6, metalness: 0.75, roughness: 0.42, clearcoat: 0.25 },
+    emissive: { color: 0x00d9a6, intensity: 0.7, mode: 'static' }, vfx: { tracerColor: 0x4dffd0 } },
+  { id: 'racing', name: '투톤 레이싱', tier: 'deluxe', sort: 6, model: 'sleek', blurb: '서킷 리버리를 두른 투톤 유광 도장.',
+    material: { style: 'racing', baseColor: 0xd41f2b, accentColor: 0xf1f1ee, patternColor: 0x111317, metalness: 0.45, roughness: 0.3, clearcoat: 0.7, clearcoatRoughness: 0.12 },
+    emissive: NO_GLOW, vfx: { tracerColor: 0xff6a6a } },
+  // ── 프리미엄: 네온 사이버 회로 / 글리치 / 클리어코트 유광
+  { id: 'circuit', name: '네온 서킷', tier: 'premium', sort: 7, model: 'angular', blurb: '회로 패턴을 따라 흐르는 네온 신호.',
+    material: { style: 'circuit', baseColor: 0x0a0d1c, accentColor: 0xff2bd0, patternColor: 0x00f0ff, metalness: 0.75, roughness: 0.3, clearcoat: 0.9, clearcoatRoughness: 0.08 },
+    emissive: { color: 0xffffff, intensity: 1.15, mode: 'flow', speed: 0.6 }, vfx: { tracerColor: 0x00f0ff, muzzleColor: 0x66f7ff } },
+  { id: 'glitch', name: '글리치 버스트', tier: 'premium', sort: 8, model: 'angular', blurb: '깨진 신호가 표면 위에서 튀어 오른다.',
+    material: { style: 'glitch', baseColor: 0x14101f, accentColor: 0xff3d9a, patternColor: 0x36f5e0, metalness: 0.55, roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.06 },
+    emissive: { color: 0xffffff, intensity: 1.4, mode: 'pulse', speed: 0.9 }, vfx: { tracerColor: 0xff5fb0, muzzleColor: 0x36f5e0, killEffect: 'shatter' } },
+  { id: 'gloss', name: '캔디 크롬', tier: 'premium', sort: 9, model: 'sleek', blurb: '메탈 플레이크 위에 올린 깊은 클리어코트.',
+    material: { style: 'gloss', baseColor: 0xd0145f, accentColor: 0x5a17e6, patternColor: 0xffd0ec, metalness: 0.9, roughness: 0.16, clearcoat: 1, clearcoatRoughness: 0.03 },
+    emissive: { color: 0xff5fb0, intensity: 0.5, mode: 'static' }, vfx: { tracerColor: 0xff8fd0 } },
+  // ── 익스클루시브: 흐르는 에너지 텍스처 + 홀로그램 윙
+  { id: 'flux', name: '플럭스', tier: 'exclusive', sort: 10, model: 'angular', blurb: '장갑 틈새로 에너지가 흐르고, 홀로그램 윙이 떠오른다.',
+    material: { style: 'energy', baseColor: 0x11141d, accentColor: 0x2a2f3d, patternColor: 0xff7a59, metalness: 0.85, roughness: 0.28, clearcoat: 0.8, clearcoatRoughness: 0.1 },
+    emissive: { color: 0xff5a36, color2: 0xffd27a, intensity: 2.4, mode: 'energy', speed: 0.55 }, vfx: { tracerColor: 0xff8a5c, muzzleColor: 0xffb070, killEffect: 'burn', trail: true } },
+  { id: 'aurora', name: '오로라', tier: 'exclusive', sort: 11, model: 'sleek', blurb: '극광이 표면을 유영하는 홀로그램 윙 에디션.',
+    material: { style: 'energy', baseColor: 0x071821, accentColor: 0x12323c, patternColor: 0x31e8c0, metalness: 0.85, roughness: 0.25, clearcoat: 0.9, clearcoatRoughness: 0.08 },
+    emissive: { color: 0x22ffc8, color2: 0x9d7bff, intensity: 2.2, mode: 'energy', speed: 0.4 }, vfx: { tracerColor: 0x7dffe0, muzzleColor: 0xb9a2ff, killEffect: 'freeze', trail: true } },
+  // ── 울트라: 솔라 프라임(화이트/골드) / 어비스 코어(다크 퍼플/크림슨)
+  { id: 'solar', name: '솔라 프라임', tier: 'ultra', featured: true, sort: 12, model: 'ornate', blurb: '신규 출시 — 백색 세라믹과 황금 인레이 사이로 태양의 용암이 흐른다.',
+    material: { style: 'solar', baseColor: 0xf3efe4, accentColor: 0xd9a520, patternColor: 0xfff2b0, metalness: 0.7, roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.05 },
+    emissive: { color: 0xff9a14, color2: 0xfff3c0, intensity: 2.0, mode: 'plasma', speed: 0.5, ambient: 0.04 }, vfx: { tracerColor: 0xffd86a, muzzleColor: 0xffc23a, killEffect: 'gold', trail: true } },
+  { id: 'abyss', name: '어비스 코어', tier: 'ultra', sort: 13, model: 'angular', blurb: '심연의 성운이 균열 사이에서 맥동하는 흑요석 코어.',
+    material: { style: 'abyss', baseColor: 0x0c0616, accentColor: 0x3a0f5c, patternColor: 0xff1f4b, metalness: 0.9, roughness: 0.18, clearcoat: 1, clearcoatRoughness: 0.06 },
+    emissive: { color: 0xff1f4b, color2: 0xa24dff, intensity: 1.7, mode: 'plasma', speed: 0.35, ambient: 0.1 }, vfx: { tracerColor: 0xff4d7a, muzzleColor: 0xff2d5a, killEffect: 'void', trail: true } },
 ];
 
 /** 컬렉션에 속하지 않는 단품 스킨은 여기에 추가 */
@@ -84,47 +134,58 @@ const weaponName = (id: SkinWeaponId): string => SKIN_WEAPONS.find((w) => w.id =
 export const SKINS: SkinDef[] = [
   ...COLLECTIONS.flatMap((c) =>
     (c.weapons ?? ALL_WEAPONS).map<SkinDef>((w) => ({
-      id: `${c.id}_${w}`, collection: c.id, weaponId: w, name: `${c.name} ${weaponName(w)}`, rarity: c.rarity, price: c.price,
-      featured: !!c.featured, inDaily: !c.featured, inBox: !c.featured, sort: c.sort,
+      id: `${c.id}_${w}`, collection: c.id, weaponId: w, name: `${c.name} ${weaponName(w)}`, tier: c.tier, price: c.price ?? TIERS[c.tier].price,
+      featured: !!c.featured, inDaily: !c.featured, inBox: !c.featured, sort: c.sort, blurb: c.blurb,
       model: c.model, material: c.material, emissive: c.emissive, vfx: c.vfx,
     })),
   ),
   ...EXTRA_SKINS,
 ];
 
+/** 구버전 컬렉션 → 신규 컬렉션 (같은 등급대로 승계). DB/소켓/로컬에 남은 구 skin_id 를 그대로 받아도 동작 */
+export const LEGACY_COLLECTIONS: Record<string, string> = {
+  carbon: 'matte', tundra: 'digicamo', neon: 'hexarmor', sakura: 'anodized', magma: 'glitch', glacier: 'gloss', void: 'aurora', aurum: 'flux', singularity: 'abyss',
+};
 const SKIN_MAP = new Map(SKINS.map((s) => [s.id, s]));
-export const getSkin = (id: string | null | undefined): SkinDef | null => (id ? SKIN_MAP.get(id) ?? null : null);
+/** 구 skin_id → 현행 skin_id (이미 현행이거나 알 수 없으면 그대로) */
+export function resolveSkinId(id: string | null | undefined): string {
+  if (!id || SKIN_MAP.has(id)) return id ?? '';
+  const cut = id.indexOf('_'), next = cut > 0 ? LEGACY_COLLECTIONS[id.slice(0, cut)] : undefined;
+  return next ? next + id.slice(cut) : id;
+}
+export const getSkin = (id: string | null | undefined): SkinDef | null => (id ? SKIN_MAP.get(id) ?? SKIN_MAP.get(resolveSkinId(id)) ?? null : null);
 export const skinsForWeapon = (weaponId: string): SkinDef[] => SKINS.filter((s) => s.weaponId === weaponId);
 export const featuredSkins = (): SkinDef[] => SKINS.filter((s) => s.featured);
-export const getCollection = (id: string): CollectionDef | undefined => COLLECTIONS.find((c) => c.id === id);
+export const getCollection = (id: string): CollectionDef | undefined => COLLECTIONS.find((c) => c.id === (LEGACY_COLLECTIONS[id] ?? id));
+export const skinAttachment = (s: Pick<SkinDef, 'tier'> | null | undefined): SkinAttachment => (s?.tier === 'ultra' ? 'rings' : s?.tier === 'exclusive' ? 'wings' : 'none');
 /** 상점 메인 Featured 배너 데이터 */
 export const FEATURED_BANNER = (() => {
   const c = COLLECTIONS.find((x) => x.featured);
-  return c ? { collectionId: c.id, title: c.name, blurb: c.blurb, rarity: c.rarity, price: c.price, accent: c.emissive.color } : null;
+  return c ? { collectionId: c.id, title: c.name, blurb: c.blurb, tier: c.tier, price: c.price ?? TIERS[c.tier].price, accent: c.emissive.mode === 'none' ? c.material.baseColor : c.emissive.color } : null;
 })();
 
 /** 스킨 미장착 시 기본 외형 */
 export const DEFAULT_SKIN: Pick<SkinDef, 'model' | 'material' | 'emissive' | 'vfx'> = {
   model: 'default',
-  material: { baseColor: 0x2b2f36, accentColor: 0x4b525c, metalness: 0.55, roughness: 0.45, pattern: 'solid', patternColor: 0x2b2f36, patternScale: 1 },
-  emissive: { color: 0x000000, intensity: 0, mode: 'none' },
+  material: { style: 'solid', baseColor: 0x2b2f36, accentColor: 0x4b525c, patternColor: 0x2b2f36, metalness: 0.55, roughness: 0.45 },
+  emissive: NO_GLOW,
   vfx: {},
 };
 
 // ───────────────────────────── 2) 랜덤박스 확률표 (스킨 데이터와 독립) ─────────────────────────────
-export interface LootboxDef { id: string; name: string; price: number; rates: Record<Rarity, number> }
+export interface LootboxDef { id: string; name: string; price: number; rates: Record<Tier, number> }
 export const LOOTBOXES: Record<string, LootboxDef> = {
-  standard: { id: 'standard', name: '스탠다드 박스', price: 1000, rates: { common: 55, rare: 28, epic: 12, legendary: 4.2, mythic: 0.8 } },
-  premium: { id: 'premium', name: '프리미엄 박스', price: 2000, rates: { common: 20, rare: 40, epic: 27, legendary: 10, mythic: 3 } },
+  standard: { id: 'standard', name: '스탠다드 박스', price: 1000, rates: { select: 55, deluxe: 28, premium: 12, exclusive: 4.2, ultra: 0.8 } },
+  premium: { id: 'premium', name: '프리미엄 박스', price: 2000, rates: { select: 20, deluxe: 40, premium: 27, exclusive: 10, ultra: 3 } },
 };
-/** 중복 획득 시 크레딧 환급액 */
-export const DUP_REFUND: Record<Rarity, number> = { common: 200, rare: 375, epic: 550, legendary: 750, mythic: 1000 };
+/** 중복 획득 시 크레딧 환급액 (등급 가격의 25%) */
+export const DUP_REFUND: Record<Tier, number> = { select: 150, deluxe: 300, premium: 550, exclusive: 800, ultra: 1125 };
 
 /** 확률표(%)로 정규화 — 상점의 확률 공개 UI용 */
-export function lootboxOdds(boxId: string): { rarity: Rarity; percent: number }[] {
+export function lootboxOdds(boxId: string): { tier: Tier; percent: number }[] {
   const box = LOOTBOXES[boxId]; if (!box) return [];
   const total = Object.values(box.rates).reduce((a, b) => a + b, 0);
-  return (Object.keys(box.rates) as Rarity[]).map((r) => ({ rarity: r, percent: Math.round((box.rates[r] / total) * 10000) / 100 }));
+  return TIER_ORDER.map((r) => ({ tier: r, percent: Math.round((box.rates[r] / total) * 10000) / 100 }));
 }
 /** 가챠 연출용 릴(실제 결과는 서버 open_lootbox 가 결정). 마지막에서 4번째 칸에 결과가 오도록 구성 */
 export function buildGachaReel(resultSkinId: string, length = 40): SkinDef[] {
@@ -135,11 +196,12 @@ export function buildGachaReel(resultSkinId: string, length = 40): SkinDef[] {
 }
 
 // ───────────────────────────── 3) DB 시드 생성 (skin_catalog / lootboxes / lootbox_rates) ─────────────────────────────
+// 구버전 등급 제약·보유 스킨 ID 이관은 supabase_schema.sql 의 "5단계 등급 마이그레이션" 블록이 담당 (이 시드보다 먼저 1회 실행)
 const q = (s: string): string => `'${s.replace(/'/g, "''")}'`;
 export function catalogSeedSql(): string {
-  const skins = SKINS.map((s) => `  (${q(s.id)}, ${q(s.weaponId)}, ${q(s.name)}, ${q(s.rarity)}, ${s.price}, ${s.featured}, ${s.inDaily}, ${s.inBox}, ${s.sort})`).join(',\n');
+  const skins = SKINS.map((s) => `  (${q(s.id)}, ${q(s.weaponId)}, ${q(s.name)}, ${q(s.tier)}, ${s.price}, ${s.featured}, ${s.inDaily}, ${s.inBox}, ${s.sort})`).join(',\n');
   const boxes = Object.values(LOOTBOXES).map((b) => `  (${q(b.id)}, ${q(b.name)}, ${b.price})`).join(',\n');
-  const rates = Object.values(LOOTBOXES).flatMap((b) => (Object.keys(b.rates) as Rarity[]).map((r) => `  (${q(b.id)}, ${q(r)}, ${b.rates[r]}, ${DUP_REFUND[r]})`)).join(',\n');
+  const rates = Object.values(LOOTBOXES).flatMap((b) => TIER_ORDER.map((r) => `  (${q(b.id)}, ${q(r)}, ${b.rates[r]}, ${DUP_REFUND[r]})`)).join(',\n');
   const ids = SKINS.map((s) => q(s.id)).join(', ');
   return [
     'insert into public.skin_catalog (skin_id, weapon_id, name, rarity, price, featured, in_daily, in_box, sort) values',
@@ -150,6 +212,7 @@ export function catalogSeedSql(): string {
     'insert into public.lootboxes (box_id, name, price) values',
     boxes,
     'on conflict (box_id) do update set name = excluded.name, price = excluded.price;',
+    `delete from public.lootbox_rates where rarity not in (${TIER_ORDER.map(q).join(', ')});`,
     'insert into public.lootbox_rates (box_id, rarity, weight, dup_refund) values',
     rates,
     'on conflict (box_id, rarity) do update set weight = excluded.weight, dup_refund = excluded.dup_refund;',

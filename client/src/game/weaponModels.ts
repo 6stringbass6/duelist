@@ -100,10 +100,10 @@ export function attachFbxModel(g: THREE.Group, weaponId: WeaponId, skin: SkinSet
     const model = build(src, skin);
     model.traverse((o) => { if ((o as THREE.Mesh).isMesh) { o.castShadow = !viewmodel; if (viewmodel) { o.frustumCulled = false; o.renderOrder = 10; } } });
     const mz = g.userData.muzzle as THREE.Object3D;
-    for (const c of [...g.children]) if (c !== mz) c.removeFromParent();
+    for (const c of [...g.children]) if (c !== mz && !c.userData.keep) c.removeFromParent(); // 등급 파츠(userData.keep)는 유지
     g.add(model);
     mz.position.copy(src.muzzle).add(src.offset).multiplyScalar(src.scale).applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
-    g.userData.fbx = true;
+    g.userData.fbx = true; (g.userData.onModel as (() => void) | undefined)?.(); // 총구 위치 확정 → 등급 파츠 재배치
   };
   const hit = ready.get(def.file); if (hit) { apply(hit); return; }
   void load(weaponId).then((s) => { if (s) apply(s); });

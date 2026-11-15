@@ -15,7 +15,8 @@ import {
 } from './config/weapons';
 import { preloadWeaponModels } from './game/weaponModels';
 import { skinSwatchUrl } from './game/skinTextures';
-import { FEATURED_BANNER, LOOTBOXES, RARITY, SKIN_WEAPONS, buildGachaReel, featuredSkins, getSkin, lootboxOdds, skinsForWeapon, type SkinDef } from './config/skins';
+import { FEATURED_BANNER, LOOTBOXES, SKIN_WEAPONS, TIERS, TIER_ORDER, buildGachaReel, featuredSkins, getSkin, lootboxOdds, normalizeTier, resolveSkinId, skinsForWeapon, tierEmblemSvg, type SkinDef } from './config/skins';
+import { SkinPreview } from './game/skinPreview';
 import {
   GameError, buySkin, changeNickname, claimDailyLogin, claimMission, equipSkin, equipTitle, fetchBundle, fetchMatchHistory, getNicknameChangeCost, getProfile,
   initAuth, isSupabaseConfigured, onProfileChange, openLootbox, patchProfile, refreshProfile, saveLoadout, setGuestNickname, signInWithGoogle, signInWithId, signOut, signUpWithId, startGuest,
@@ -155,15 +156,36 @@ function renderLobby(): void {
   const body = $('lobby-body'), p = getProfile();
   if (!p) return;
   if (p.isGuest && lobbyTab !== 'home') { body.innerHTML = `<div class="card" style="margin-top:20px">게스트는 전적·상점·미션이 저장되지 않습니다. 로그인하면 클라우드에 모두 저장됩니다.</div>`; return; }
+  pvTarget = null;
   body.innerHTML = { home: htmlHome, shop: htmlShop, inventory: htmlInventory, missions: htmlMissions, achievements: htmlAchievements, stats: htmlStats }[lobbyTab]();
-  bindLobbyBody();
+  bindLobbyBody(); mountPreview();
 }
 const swatch = (s: SkinDef): string => { const u = skinSwatchUrl(s); return u ? `background:url(${u}) center/cover` : `background:linear-gradient(120deg,${hex(s.material.baseColor)} 0%,${hex(s.material.accentColor)} 55%,${hex(s.emissive.mode === 'none' ? s.material.patternColor : s.emissive.color)} 100%)`; };
-function skinCard(s: SkinDef, foot: string): string {
-  const r = RARITY[s.rarity];
-  return `<div class="skin"><div class="sw" style="${swatch(s)}"></div><div class="inf"><span class="rar" style="color:${r.color}">${r.name}</span><span class="nm">${esc(s.name)}</span>${foot}</div></div>`;
+/** 스킨 카드: 등급 엠블럼 배지 + 등급색 그라데이션 테두리. 카드를 누르면 3D 미리보기에 올라간다 */
+function skinCard(s: SkinDef, foot: string, selected = false): string {
+  const t = TIERS[s.tier];
+  return `<div class="skin t-${s.tier}${selected ? ' sel' : ''}" style="--tc:${t.color}" data-pv="${s.id}"><div class="sw" style="${swatch(s)}"><span class="badge">${tierEmblemSvg(s.tier, 16)}${t.name}</span></div><div class="inf"><span class="rar" style="color:${t.color}">${t.en} EDITION</span><span class="nm">${esc(s.name)}</span>${foot}</div></div>`;
 }
-const owned = (id: string): boolean => !!bundle?.skins.some((s) => s.skin_id === id);
+/** 보유 여부 — 구버전 skin_id 로 보유 중이어도 현행 ID 로 환산해 판정 */
+const owned = (id: string): boolean => !!bundle?.skins.some((s) => resolveSkinId(s.skin_id) === id);
+
+// ── 3D 미리보기 패널 (상점/보관함 공용)
+const preview = new SkinPreview();
+let pvShop: string | null = null, pvInv: string | null = null;
+let pvTarget: { weapon: WeaponId; skin: string | null } | null = null;
+function htmlPreview(s: SkinDef | null, weaponName: string, foot: string): string {
+  const t = s ? TIERS[s.tier] : null;
+  const ladder = TIER_ORDER.map((k) => `<span class="${t && TIERS[k].order <= t.order ? 'on' : ''}" title="${TIERS[k].name} · ◈ ${fmt(TIERS[k].price)}">${tierEmblemSvg(k, 18)}</span>`).join('');
+  return `<div class="pv ${s ? 't-' + s.tier : 't-none'}" style="--tc:${t?.color ?? '#8b97ab'}"><div id="pv-slot"></div><div class="pv-info">
+    <div class="pv-tier">${s ? tierEmblemSvg(s.tier, 34) : ''}<div><b>${t ? t.en + ' EDITION' : 'STANDARD'}</b><span>${t ? t.name + ' 에디션' : '기본 외형'}</span></div></div>
+    <div class="pv-name">${esc(s?.name ?? weaponName + ' 기본 외형')}</div><div class="mut">${esc(s?.blurb ?? '스킨을 장착하지 않은 순정 상태입니다.')}</div>
+    <div class="pv-perks">${(t?.perks ?? []).map((k) => `<span>${esc(k)}</span>`).join('')}</div>
+    <div class="pv-ladder">${ladder}</div><div class="row">${foot}</div><div class="mut" style="font-size:11px">드래그로 회전 · 카드를 눌러 미리보기</div></div></div>`;
+}
+function mountPreview(): void {
+  const slot = document.getElementById('pv-slot'); if (!slot || !pvTarget) return;
+  slot.appendChild(preview.el); preview.show(pvTarget.weapon, pvTarget.skin);
+}
 
 function htmlHome(): string {
   const p = getProfile()!, st = bundle?.stats, tp = tierProgress(p.rank_points), t = tierInfo(tierLevel(p.rank_points));
@@ -179,11 +201,21 @@ function htmlHome(): string {
 }
 function htmlShop(): string {
   const fb = FEATURED_BANNER, p = getProfile()!;
-  const feat = featuredSkins().map((s) => skinCard(s, owned(s.id) ? `<span class="mut">보유 중</span>` : `<button class="sm pri" data-buy="${s.id}">◈ ${fmt(s.price)}</button>`)).join('');
-  const daily = (bundle?.shop ?? []).map((it) => { const s = getSkin(it.skin_id); return s ? skinCard(s, it.owned || owned(s.id) ? `<span class="mut">보유 중</span>` : `<button class="sm pri" data-buy="${s.id}">◈ ${fmt(it.price)}</button>`) : ''; }).join('');
-  const boxes = Object.values(LOOTBOXES).map((b) => `<div class="card col"><h3>🎁 ${esc(b.name)}</h3><div class="mut" style="font-size:12px">${lootboxOdds(b.id).map((o) => `<span style="color:${RARITY[o.rarity].color}">${RARITY[o.rarity].name} ${o.percent}%</span>`).join(' · ')}</div><div class="mut" style="font-size:12px">중복 획득 시 크레딧으로 환급됩니다.</div><div class="row"><button class="pri" data-box="${b.id}">◈ ${fmt(b.price)} 개봉</button>${b.id === 'standard' ? `<button data-box="${b.id}" data-owned="1" ${p.lootboxes < 1 ? 'disabled' : ''}>보유 박스 사용 (${p.lootboxes})</button>` : ''}</div></div>`).join('');
+  const buyFoot = (s: SkinDef, price: number, has: boolean): string => (has ? `<span class="mut">보유 중</span>` : `<button class="sm pri" data-buy="${s.id}">◈ ${fmt(price)}</button>`);
+  const dailyItems: { price: number; has: boolean; s: SkinDef }[] = [];
+  for (const it of bundle?.shop ?? []) { const s = getSkin(it.skin_id); if (s) dailyItems.push({ price: it.price, has: it.owned || owned(s.id), s }); }
+  const cur = getSkin(pvShop) ?? featuredSkins().find((s) => s.weaponId === 'vandal') ?? featuredSkins()[0] ?? dailyItems[0]?.s ?? null;
+  pvTarget = cur ? { weapon: cur.weaponId, skin: cur.id } : null;
+  const feat = featuredSkins().map((s) => skinCard(s, buyFoot(s, s.price, owned(s.id)), s.id === cur?.id)).join('');
+  const daily = dailyItems.map((d) => skinCard(d.s, buyFoot(d.s, d.price, d.has), d.s.id === cur?.id)).join('');
+  const curDaily = dailyItems.find((d) => d.s.id === cur?.id);
+  const pvFoot = !cur ? '' : owned(cur.id) || curDaily?.has ? `<span class="mut">보유 중</span>` : curDaily ? buyFoot(cur, curDaily.price, false) : cur.featured ? buyFoot(cur, cur.price, false) : `<span class="mut">일일 상점 · 랜덤 박스에서 획득</span>`;
+  const boxes = Object.values(LOOTBOXES).map((b) => `<div class="card col"><h3>🎁 ${esc(b.name)}</h3><div class="odds">${lootboxOdds(b.id).map((o) => `<span style="color:${TIERS[o.tier].color}">${tierEmblemSvg(o.tier, 13)}${TIERS[o.tier].name} ${o.percent}%</span>`).join('')}</div><div class="mut" style="font-size:12px">중복 획득 시 크레딧으로 환급됩니다.</div><div class="row"><button class="pri" data-box="${b.id}">◈ ${fmt(b.price)} 개봉</button>${b.id === 'standard' ? `<button data-box="${b.id}" data-owned="1" ${p.lootboxes < 1 ? 'disabled' : ''}>보유 박스 사용 (${p.lootboxes})</button>` : ''}</div></div>`).join('');
+  const tiers = TIER_ORDER.map((k) => `<span class="tierchip" style="--tc:${TIERS[k].color}">${tierEmblemSvg(k, 16)}<b>${TIERS[k].name}</b>◈ ${fmt(TIERS[k].price)}</span>`).join('');
   return `
-  ${fb ? `<div class="banner" style="margin-top:14px;background:linear-gradient(110deg,#07070c,${hex(fb.accent)}55 70%,${hex(fb.accent)}aa)"><div class="tag">NEW · FEATURED</div><h3>${esc(fb.title)}</h3><div class="mut">${esc(fb.blurb)}</div></div><h2>신규 스킨</h2><div class="grid">${feat}</div>` : ''}
+  ${cur ? htmlPreview(cur, '', pvFoot) : ''}
+  <div class="tierrow">${tiers}</div>
+  ${fb ? `<h2>신규 스킨 <small class="mut">${esc(fb.title)} 컬렉션 · ${TIERS[fb.tier].name} 에디션</small></h2><div class="grid">${feat}</div>` : ''}
   <h2>일일 상점 <small class="mut">매일 자정(KST) 갱신</small></h2><div class="grid">${daily || '<div class="mut">상점 정보를 불러오지 못했습니다.</div>'}</div>
   <h2>랜덤 박스</h2><div class="grid wide">${boxes}</div>`;
 }
@@ -203,10 +235,19 @@ function htmlSkillLoadout(): string {
 }
 function htmlInventory(): string {
   const chips = SKIN_WEAPONS.map((w) => `<button class="sm ${w.id === invWeapon ? 'on' : ''}" data-invw="${w.id}">${w.name}</button>`).join('');
-  const mine = (bundle?.skins ?? []).filter((s) => s.weapon_id === invWeapon), equipped = mine.find((s) => s.equipped)?.skin_id ?? null;
-  const cards = [`<div class="skin"><div class="sw" style="background:linear-gradient(120deg,#2b2f36,#4b525c)"></div><div class="inf"><span class="rar mut">기본</span><span class="nm">기본 외형</span>${equipped ? `<button class="sm" data-equip="">장착</button>` : `<span style="color:var(--ok)">장착 중</span>`}</div></div>`,
-    ...mine.map((o) => { const s = getSkin(o.skin_id); return s ? skinCard(s, o.equipped ? `<span style="color:var(--ok)">장착 중</span>` : `<button class="sm" data-equip="${s.id}">장착</button>`) : ''; })].join('');
-  return `${htmlSkillLoadout()}<h2>보관함</h2><div class="row" style="flex-wrap:wrap">${chips}</div><div class="grid" style="margin-top:12px">${cards}</div><div class="mut" style="margin-top:10px">전체 스킨 ${skinsForWeapon(invWeapon).length}종 중 ${mine.length}종 보유</div>`;
+  // 보유 목록: 구버전 skin_id 는 현행 스킨으로 환산(같은 스킨으로 겹치면 장착 중인 쪽 우선), 장착 요청은 DB 에 저장된 원본 ID 로 보낸다
+  const byId = new Map<string, { s: SkinDef; raw: string; equipped: boolean }>();
+  for (const o of bundle?.skins ?? []) {
+    const s = getSkin(o.skin_id); if (!s || s.weaponId !== invWeapon) continue;
+    const prev = byId.get(s.id); if (!prev || (o.equipped && !prev.equipped)) byId.set(s.id, { s, raw: o.skin_id, equipped: o.equipped });
+  }
+  const mine = [...byId.values()].sort((x, y) => TIERS[y.s.tier].order - TIERS[x.s.tier].order || x.s.sort - y.s.sort), eq = mine.find((x) => x.equipped) ?? null;
+  const sel = pvInv === '' ? null : mine.find((x) => x.s.id === pvInv) ?? eq, wName = SKIN_WEAPONS.find((w) => w.id === invWeapon)?.name ?? '';
+  pvTarget = { weapon: invWeapon as WeaponId, skin: sel?.s.id ?? null };
+  const equipFoot = (x: { raw: string; equipped: boolean } | null): string => ((x ? x.equipped : !eq) ? `<span style="color:var(--ok)">장착 중</span>` : `<button class="sm" data-equip="${x?.raw ?? ''}">장착</button>`);
+  const cards = [`<div class="skin t-none${sel ? '' : ' sel'}" style="--tc:#8b97ab" data-pv=""><div class="sw" style="background:linear-gradient(120deg,#2b2f36,#4b525c)"></div><div class="inf"><span class="rar mut">STANDARD</span><span class="nm">기본 외형</span>${equipFoot(null)}</div></div>`,
+    ...mine.map((x) => skinCard(x.s, equipFoot(x), x.s.id === sel?.s.id))].join('');
+  return `${htmlSkillLoadout()}<h2>보관함</h2><div class="row" style="flex-wrap:wrap">${chips}</div>${htmlPreview(sel?.s ?? null, wName, equipFoot(sel ?? null))}<div class="grid" style="margin-top:12px">${cards}</div><div class="mut" style="margin-top:10px">전체 스킨 ${skinsForWeapon(invWeapon).length}종 중 ${mine.length}종 보유</div>`;
 }
 function htmlMissions(): string {
   const p = getProfile()!, today = ((Math.max(1, p.login_streak) - 1) % 7) + 1;
@@ -242,7 +283,12 @@ function bindLobbyBody(): void {
     if (await guard(() => buySkin(s.id))) { toast('구매 완료!', 'good'); await loadBundle(); }
   }));
   each('[data-box]', (b) => (b.onclick = () => void runGacha(b.dataset.box!, !!b.dataset.owned)));
-  each('[data-invw]', (b) => (b.onclick = () => { invWeapon = b.dataset.invw!; renderLobby(); }));
+  each('[data-invw]', (b) => (b.onclick = () => { invWeapon = b.dataset.invw!; pvInv = null; renderLobby(); }));
+  each('[data-pv]', (c) => (c.onclick = (e) => { // 카드 클릭 → 3D 미리보기 (카드 안의 버튼 클릭은 제외)
+    if ((e.target as HTMLElement).closest('button')) return;
+    if (lobbyTab === 'shop') pvShop = c.dataset.pv || null; else pvInv = c.dataset.pv ?? null;
+    renderLobby();
+  }));
   each('[data-skslot]', (b) => (b.onclick = () => { skillSlot = b.dataset.skslot as 'q' | 'e' | 'x'; renderLobby(); }));
   each('[data-skpick]', (b) => (b.onclick = () => { // 장착: 일반 스킬은 Q/E 중복 불가(자동 교체), 즉시 저장 + 다음 매치 진입 시 서버로 전달
     const id = b.dataset.skpick!, l = { ...getProfile()!.loadout };
@@ -252,7 +298,7 @@ function bindLobbyBody(): void {
   }));
   each('[data-equip]', (b) => (b.onclick = async () => {
     const id = b.dataset.equip || null;
-    try { await equipSkin(invWeapon, id); bundle?.skins.forEach((s) => { if (s.weapon_id === invWeapon) s.equipped = s.skin_id === id; }); net.refreshProfile(); needReconnect = true; renderLobby(); } catch (e) { toast(errMsg(e), 'bad'); }
+    try { await equipSkin(invWeapon, id); bundle?.skins.forEach((s) => { if (s.weapon_id === invWeapon) s.equipped = s.skin_id === id; }); pvInv = id ? resolveSkinId(id) : ''; net.refreshProfile(); needReconnect = true; renderLobby(); } catch (e) { toast(errMsg(e), 'bad'); }
   }));
   each('[data-claim]', (b) => (b.onclick = async () => { const r = await guard(() => claimMission(+b.dataset.claim!)); if (r) { toast(r.reward_type === 'credits' ? `◈ ${r.reward_amount} 획득` : '랜덤박스 획득', 'good'); await loadBundle(); } }));
   each('[data-title]', (b) => (b.onclick = async () => { try { await equipTitle(b.dataset.title || null); needReconnect = true; renderLobby(); } catch (e) { toast(errMsg(e), 'bad'); } }));
@@ -265,14 +311,14 @@ async function runGacha(boxId: string, useOwned: boolean): Promise<void> {
   const res = await guard(() => openLootbox(boxId, useOwned)); if (!res) return;
   const reel = buildGachaReel(res.skin_id, 40), strip = $('gacha-strip'), CELL = 120, target = reel.length - 4;
   $('gacha-title').textContent = LOOTBOXES[boxId]?.name ?? '랜덤 박스'; $('gacha-result').innerHTML = '<span class="mut">개봉 중…</span>';
-  strip.innerHTML = reel.map((s) => `<div style="${swatch(s)};border-bottom:4px solid ${RARITY[s.rarity].color}">${esc(s.name)}</div>`).join('');
+  strip.innerHTML = reel.map((s) => `<div style="${swatch(s)};border-bottom:4px solid ${TIERS[s.tier].color}"><span class="badge">${tierEmblemSvg(s.tier, 13)}</span>${esc(s.name)}</div>`).join('');
   show('m-gacha'); strip.style.transition = 'none'; strip.style.transform = 'translateX(0)';
   const winW = $('gacha-win').clientWidth, end = -(target * CELL + CELL / 2 - winW / 2) + (Math.random() - 0.5) * 70;
   requestAnimationFrame(() => requestAnimationFrame(() => { strip.style.transition = 'transform 4.2s cubic-bezier(.08,.72,.12,1)'; strip.style.transform = `translateX(${end}px)`; }));
   pc.audio.resume();
   setTimeout(() => {
-    const s = getSkin(res.skin_id), r = RARITY[(s?.rarity ?? 'common')];
-    $('gacha-result').innerHTML = `<div class="pop"><div class="rar" style="color:${r.color};font-size:14px">${r.name}</div><div style="font-size:22px;font-weight:800">${esc(s?.name ?? res.skin_id)}</div>${res.duplicate ? `<div class="mut">이미 보유한 스킨 — ◈ ${fmt(res.refund)} 환급</div>` : `<div style="color:var(--ok)">새 스킨 획득!</div>`}</div>`;
+    const s = getSkin(res.skin_id), r = TIERS[s?.tier ?? normalizeTier(res.rarity)];
+    $('gacha-result').innerHTML = `<div class="pop"><div class="rar" style="color:${r.color};font-size:14px;display:flex;gap:6px;justify-content:center;align-items:center">${tierEmblemSvg(s?.tier ?? res.rarity, 20)}${r.name} 에디션</div><div style="font-size:22px;font-weight:800">${esc(s?.name ?? res.skin_id)}</div>${res.duplicate ? `<div class="mut">이미 보유한 스킨 — ◈ ${fmt(res.refund)} 환급</div>` : `<div style="color:var(--ok)">새 스킨 획득!</div>`}</div>`;
     pc.audio.kill(); void loadBundle();
   }, 4400);
 }

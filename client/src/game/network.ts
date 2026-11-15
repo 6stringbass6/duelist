@@ -5,8 +5,8 @@
 import * as THREE from 'three';
 import { io, type Socket } from 'socket.io-client';
 import { F, RULES, SLOT, SLOT_KEYS, WEAPONS, isGun, type GameMode, type HitZone, type Loadout, type MapId, type WeaponId } from '../config/weapons';
-import { DEFAULT_SKIN, getSkin, type SkinDef } from '../config/skins';
-import { getSkinTextures } from './skinTextures';
+import { getSkin } from '../config/skins';
+import { attachSkinFx, fireWeaponFx, skinMaterials, tickSkinMaterials } from './skinFx';
 import { attachFbxModel } from './weaponModels';
 import { SERVER_URL, socketAuthPayload } from '../services/supabase';
 import type { SkillId, UltId } from '../config/skills';
@@ -71,40 +71,7 @@ export interface NetEvents {
   matchEnd: (m: MatchEnd) => void; reward: (r: MatchReward) => void;
 }
 
-// ───────────────────────────── 스킨 재질 / 무기 메시 ─────────────────────────────
-interface SkinMats { base: THREE.MeshStandardMaterial; accent: THREE.MeshStandardMaterial }
-const matCache = new Map<string, SkinMats>();
-const animated: { mat: THREE.MeshStandardMaterial; mode: 'pulse' | 'flow'; speed: number; base: number }[] = [];
-
-/** 스킨 → 무기 재질(본체/포인트). 스킨별 캐시 공유. */
-export function skinMaterials(skinId: string | null | undefined): SkinMats {
-  const key = skinId && getSkin(skinId) ? skinId : 'default';
-  let mats = matCache.get(key);
-  if (mats) return mats;
-  const def = getSkin(skinId), s: Pick<SkinDef, 'material' | 'emissive'> = def ?? DEFAULT_SKIN, m = s.material, e = s.emissive;
-  const tex = getSkinTextures(m, def?.rarity), glow = e.mode !== 'none', hasEm = !!tex?.emissiveMap;
-  const baseIntensity = !glow ? 0 : hasEm ? e.intensity * 0.7 : e.intensity * 0.12;
-  const baseParams: THREE.MeshPhysicalMaterialParameters = {
-    color: tex ? 0xffffff : m.baseColor, map: tex?.map ?? null, roughnessMap: tex?.roughnessMap ?? null,
-    metalness: m.metalness, roughness: Math.min(1, m.roughness * (tex?.roughnessScale ?? 1)),
-    emissive: e.color, emissiveMap: glow ? tex?.emissiveMap ?? null : null, emissiveIntensity: baseIntensity,
-    clearcoat: Math.max(m.clearcoat ?? 0, tex?.clearcoat ?? 0), clearcoatRoughness: tex?.clearcoatRoughness ?? 0.3,
-  };
-  const base = new THREE.MeshPhysicalMaterial(baseParams);
-  const accent = new THREE.MeshStandardMaterial({ color: m.accentColor, metalness: Math.min(1, m.metalness + 0.2), roughness: Math.max(0.05, m.roughness - 0.1),
-    emissive: e.color, emissiveIntensity: glow ? e.intensity : 0 });
-  if (e.mode === 'pulse' || e.mode === 'flow') animated.push({ mat: accent, mode: e.mode, speed: e.speed ?? 0.5, base: e.intensity }, { mat: base, mode: e.mode, speed: e.speed ?? 0.5, base: baseIntensity });
-  mats = { base, accent }; matCache.set(key, mats);
-  return mats;
-}
-/** 발광 스킨 애니메이션 (프레임마다 1회) */
-export function tickSkinMaterials(timeSec: number): void {
-  for (const a of animated) {
-    if (a.mode === 'pulse') a.mat.emissiveIntensity = a.base * (0.55 + 0.45 * Math.sin(timeSec * a.speed * Math.PI * 2));
-    else { a.mat.emissiveIntensity = a.base * (0.8 + 0.2 * Math.sin(timeSec * 3)); if (a.mat.emissiveMap) a.mat.emissiveMap.offset.x = (timeSec * a.speed * 0.25) % 1; }
-  }
-}
-
+// ───────────────────────────── 무기 메시 (스킨 재질/등급 효과는 skinFx.ts) ─────────────────────────────
 interface GunShape { len: number; h: number; barrel: number; mag: number; stock: number; scope?: boolean; drum?: boolean }
 const GUN_SHAPES: Record<string, GunShape> = {
   classic: { len: 0.2, h: 0.055, barrel: 0.02, mag: 0.1, stock: 0 }, shorty: { len: 0.22, h: 0.07, barrel: 0.1, mag: 0, stock: 0 },
@@ -153,6 +120,7 @@ export function createWeaponMesh(weaponId: WeaponId, skinId?: string | null, vie
     g.add(body, part(accent, 0.03, 0.03, 0.03, 0, flash ? 0.08 : 0.065, 0));
   }
   g.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = true; });
+  attachSkinFx(g, skinId, viewmodel); // 등급 전용 파츠(홀로그램 윙 / 에너지 코어 링 / 총구 섬광)
   attachFbxModel(g, weaponId, { base, accent, skinned: !!getSkin(skinId) }, viewmodel); // FBX 로드 완료 시 박스 모델 교체 (실패 시 폴백 유지)
   return g;
 }
@@ -223,7 +191,7 @@ class RemoteEntity {
     this.weaponKey = '';
   }
   push(s: Snap): void { this.buf.push(s); if (this.buf.length > 40) this.buf.shift(); }
-  onShot(): void { this.kick = 1; }
+  onShot(): void { this.kick = 1; fireWeaponFx(this.weapon); }
   muzzleWorld(out: THREE.Vector3): THREE.Vector3 {
     const m = this.weapon?.userData.muzzle as THREE.Object3D | undefined;
     return m && this.group.visible ? m.getWorldPosition(out) : out.set(this.x, this.y + 1.45, this.z);

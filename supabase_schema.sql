@@ -90,7 +90,7 @@ create table if not exists public.skin_catalog (
   skin_id text primary key,
   weapon_id text not null,
   name text not null,
-  rarity text not null check (rarity in ('common','rare','epic','legendary','mythic')),
+  rarity text not null check (rarity in ('select','deluxe','premium','exclusive','ultra')),  -- 5단계 에디션 등급
   price int not null check (price >= 0),
   featured boolean not null default false,
   in_daily boolean not null default true,
@@ -548,27 +548,50 @@ on conflict (day) do update set reward_type = excluded.reward_type, reward_amoun
 insert into public.lootboxes (box_id, name, price) values ('standard','스탠다드 박스',1000), ('premium','프리미엄 박스',2000)
 on conflict (box_id) do update set name = excluded.name, price = excluded.price;
 
+-- ── 5단계 등급 마이그레이션 (1/2): 구버전 등급값(common/rare/epic/legendary/mythic) → select/deluxe/premium/exclusive/ultra. 여러 번 실행해도 안전
+alter table public.skin_catalog drop constraint if exists skin_catalog_rarity_check;
+update public.skin_catalog set rarity = case rarity when 'common' then 'select' when 'rare' then 'deluxe' when 'epic' then 'premium'
+  when 'legendary' then 'exclusive' when 'mythic' then 'ultra' else rarity end
+where rarity in ('common','rare','epic','legendary','mythic');
+alter table public.skin_catalog add constraint skin_catalog_rarity_check check (rarity in ('select','deluxe','premium','exclusive','ultra'));
+delete from public.lootbox_rates where rarity not in ('select','deluxe','premium','exclusive','ultra');
+
+-- 중복 환급 = 등급 가격의 25%
 insert into public.lootbox_rates (box_id, rarity, weight, dup_refund) values
-  ('standard','common',55,200),('standard','rare',28,375),('standard','epic',12,550),('standard','legendary',4.2,750),('standard','mythic',0.8,1000),
-  ('premium','common',20,200),('premium','rare',40,375),('premium','epic',27,550),('premium','legendary',10,750),('premium','mythic',3,1000)
+  ('standard','select',55,150),('standard','deluxe',28,300),('standard','premium',12,550),('standard','exclusive',4.2,800),('standard','ultra',0.8,1125),
+  ('premium','select',20,150),('premium','deluxe',40,300),('premium','premium',27,550),('premium','exclusive',10,800),('premium','ultra',3,1125)
 on conflict (box_id, rarity) do update set weight = excluded.weight, dup_refund = excluded.dup_refund;
 
--- 스킨 카탈로그: id = <collection>_<weapon>. (Part 1-3의 client/src/config/skins.ts 와 동일 규칙)
+-- 스킨 카탈로그: id = <collection>_<weapon>. (client/src/config/skins.ts 와 동일 규칙)
+-- 가격: 5판 기준 매치 보상(승리 1000 / 패배 500)에 비례 — 셀렉트 600 / 디럭스 1200 / 프리미엄 2200 / 익스클루시브 3200 / 울트라 4500
 insert into public.skin_catalog (skin_id, weapon_id, name, rarity, price, featured, in_daily, in_box, sort)
 select c.id || '_' || w.id, w.id, c.name || ' ' || w.name, c.rarity, c.price, c.featured, not c.featured, not c.featured, c.sort
 from (values
-  ('carbon','카본','common',800,false,1), ('tundra','툰드라','common',800,false,2),
-  ('neon','네온 서킷','rare',1500,false,3), ('sakura','사쿠라','rare',1500,false,4),
-  ('magma','마그마','epic',2200,false,5), ('glacier','글래시어','epic',2200,false,6),
-  ('void','보이드','legendary',3000,false,7), ('aurum','아우룸','legendary',3000,false,8),
-  ('singularity','싱귤래리티','mythic',4000,true,9)
+  ('matte','택티컬 매트','select',600,false,1), ('digicamo','디지털 카모','select',600,false,2), ('steel','브러시드 스틸','select',600,false,3),
+  ('anodized','아노다이즈','deluxe',1200,false,4), ('hexarmor','헥사 아머','deluxe',1200,false,5), ('racing','투톤 레이싱','deluxe',1200,false,6),
+  ('circuit','네온 서킷','premium',2200,false,7), ('glitch','글리치 버스트','premium',2200,false,8), ('gloss','캔디 크롬','premium',2200,false,9),
+  ('flux','플럭스','exclusive',3200,false,10), ('aurora','오로라','exclusive',3200,false,11),
+  ('solar','솔라 프라임','ultra',4500,true,12), ('abyss','어비스 코어','ultra',4500,false,13)
 ) as c(id, name, rarity, price, featured, sort)
 cross join (values
   ('dagger','단검'),('sword','장검'),('classic','클래식'),('shorty','쇼티'),('frenzy','프렌지'),('ghost','고스트'),
   ('sheriff','셰리프'),('vandal','밴달'),('phantom','팬텀'),('marshal','마샬'),('odin','오딘')
 ) as w(id, name)
 on conflict (skin_id) do update set name = excluded.name, rarity = excluded.rarity, price = excluded.price,
-  featured = excluded.featured, in_daily = excluded.in_daily, in_box = excluded.in_box, sort = excluded.sort;
+  featured = excluded.featured, in_daily = excluded.in_daily, in_box = excluded.in_box, sort = excluded.sort, active = true;
+
+-- ── 5단계 등급 마이그레이션 (2/2): 구버전 컬렉션 보유분을 같은 등급대의 신규 컬렉션으로 이관 (클라이언트 LEGACY_COLLECTIONS 와 동일 매핑)
+with m(old_id, new_id) as (values
+  ('carbon','matte'),('tundra','digicamo'),('neon','hexarmor'),('sakura','anodized'),('magma','glitch'),
+  ('glacier','gloss'),('void','aurora'),('aurum','flux'),('singularity','abyss'))
+update public.user_skins u set skin_id = m.new_id || substr(u.skin_id, length(m.old_id) + 1)
+from m
+where split_part(u.skin_id, '_', 1) = m.old_id
+  and exists (select 1 from public.skin_catalog c where c.skin_id = m.new_id || substr(u.skin_id, length(m.old_id) + 1))
+  and not exists (select 1 from public.user_skins x where x.user_id = u.user_id and x.skin_id = m.new_id || substr(u.skin_id, length(m.old_id) + 1));
+delete from public.daily_shop where split_part(skin_id, '_', 1) in ('carbon','tundra','neon','sakura','magma','glacier','void','aurum','singularity'); -- 오늘자 상점은 다음 조회 때 새 카탈로그로 재생성
+update public.skin_catalog set active = false, in_daily = false, in_box = false, featured = false
+where split_part(skin_id, '_', 1) in ('carbon','tundra','neon','sakura','magma','glacier','void','aurum','singularity');
 
 insert into public.achievements (achievement_id, name, description, stat_key, threshold, title, credit_reward, sort) values
   ('first_blood','첫 처치','첫 킬을 달성','kills',1,'신입',100,1),

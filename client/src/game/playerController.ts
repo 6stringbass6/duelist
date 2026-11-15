@@ -14,6 +14,7 @@ import {
 } from '../config/weapons';
 import { DEFAULT_SKILLS, SKILLS, ULTS, ULT_COST, type SkillId, type UltId } from '../config/skills';
 import { createWeaponMesh, type GameClient } from './network';
+import { fireWeaponFx } from './skinFx';
 
 type Slot = 1 | 2 | 3 | 4;
 const ULTS_AFTER_MS = 700; // server ULTS.yoru.afterMs
@@ -538,7 +539,7 @@ export class PlayerController {
     this.recoilPitch = Math.min(r.maxPitch * deg, this.recoilPitch + r.pitch * deg * shots * scopedMul);
     this.recoilYaw += (Math.random() - 0.5) * 2 * r.yaw * deg * scopedMul;
     this.vmKick = Math.min(1.5, this.vmKick + 0.6 + r.pitch * 0.15);
-    this.audio.shot(this.weaponId);
+    this.audio.shot(this.weaponId); fireWeaponFx(this.vm); // 울트라 스킨: 발광 폭증 + 전용 총구 섬광
   }
   private eyePos(): THREE.Vector3 { return this.eye.set(this.pos.x, this.pos.y + this.eyeH, this.pos.z); }
   private isScoped(now: number): boolean { const w = this.weapon; return isGun(w) && !!w.zoom && this.adsOn && now - this.adsSince >= (w.scopeMs ?? 0); }
@@ -584,7 +585,7 @@ export class PlayerController {
     if (key !== this.vmKey) {
       this.vmKey = key; this.vm?.removeFromParent();
       this.vm = createWeaponMesh(this.weaponId, skin, true);
-      this.vm.traverse((o) => { o.castShadow = false; o.frustumCulled = false; (o as THREE.Mesh).renderOrder = 10; });
+      this.vm.traverse((o) => { o.castShadow = false; o.frustumCulled = false; (o as THREE.Mesh).renderOrder = Math.max(10, (o as THREE.Mesh).renderOrder); });
       this.vmRoot.add(this.vm);
     }
     const scoped = this.isScoped(now);
