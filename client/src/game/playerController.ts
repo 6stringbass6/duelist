@@ -12,13 +12,19 @@ import {
   F, MOVE, RULES, SLOT, SLOT_KEYS, THROW, WEAPONS, fireIntervalMs, isGun, isMelee, isThrow, spreadDeg,
   type GunDef, type WeaponDef, type WeaponId,
 } from '../config/weapons';
+import { DEFAULT_SKILLS, SKILLS, ULTS, ULT_COST, type SkillId, type UltId } from '../config/skills';
 import { createWeaponMesh, type GameClient } from './network';
 
 type Slot = 1 | 2 | 3 | 4;
+const ULTS_AFTER_MS = 700; // server ULTS.yoru.afterMs
+export interface SkillHud { id: SkillId; name: string; icon: string; cd: number; left: number; max: number; active: boolean }
 export interface HudState {
   alive: boolean; hp: number; maxHp: number; slot: Slot; weaponId: WeaponId; weaponName: string;
   ammo: number; magSize: number; charges: number; reloading: boolean; reloadProgress: number;
   qCooldown: number; eCooldown: number;       // 0 = 준비 완료, 1 = 방금 사용
+  q: SkillHud; e: SkillHud;                   // Q/E 슬롯에 장착된 스킬 상태
+  ult: { id: UltId; name: string; icon: string; pts: number; ready: boolean; casting: boolean; castLeft: number };
+  silenced: boolean; silenceLeft: number; ampLeft: number; healLeft: number; shieldBuffLeft: number; shieldOn: boolean; driftLeft: number;
   dashActive: boolean; sliding: boolean; scoped: boolean; ads: boolean;
   spreadPx: number;                           // 조준선 동적 벌어짐(px) — drawCrosshair 의 gap
   flash: number;                              // 실명 강도 0..1
@@ -124,6 +130,13 @@ export class PlayerController {
   // 슬라이딩 / 스킬
   private slideUntil = 0; private slideReadyAt = 0;
   private dashUntil = 0; private qReadyAt = 0; private eReadyAt = 0;   // performance.now 기준
+  // 스킬 상태 (서버 'skill'/'ult'/'silence'/'shield' 이벤트로 동기화)
+  private used: Partial<Record<SkillId, number>> = {};
+  private ultPts = 0; private silencedUntil = 0; private ampUntil = 0; private healUntil = 0; private shieldBuffUntil = 0; private shieldOn = false;
+  private driftUntil = 0; private driftLockUntil = 0; private castUntil = 0;
+  /** 오멘: 전술 맵 열기 요청 (main.ts 가 UI 를 띄우고 pc.castOmen(x,z) 호출) */
+  onOmenPrompt: (() => void) | null = null;
+  onSkillDenied: ((msg: string) => void) | null = null;
   // 무기
   private nextFireAt = 0; private equipUntil = 0; private nextThrowAt = 0;
   private spray = 0; private heat = 0; private lastShotAt = 0; private adsSince = 0; private adsOn = false;
@@ -134,7 +147,7 @@ export class PlayerController {
   private readonly vmRoot = new THREE.Group();
   private vm: THREE.Group | null = null; private vmKey = '';
   private bobT = 0; private swingT = 0;
-  private readonly overlay: HTMLDivElement; private readonly flashEl: HTMLDivElement; private readonly hurtEl: HTMLDivElement; private readonly scopeEl: HTMLDivElement;
+  private readonly overlay: HTMLDivElement; private readonly flashEl: HTMLDivElement; private readonly hurtEl: HTMLDivElement; private readonly scopeEl: HTMLDivElement; private readonly skillFxEl: HTMLDivElement;
   private flashUntil = 0; private flashDur = 1; private flashPeak = 1; private hurtA = 0;
   private lastInputAt = 0;
   private readonly offs: (() => void)[] = [];
@@ -153,6 +166,7 @@ export class PlayerController {
     this.scopeEl = mk('background:radial-gradient(circle at center, transparent 0, transparent 33vh, #000 33.4vh);');
     this.scopeEl.innerHTML = '<div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:#000"></div><div style="position:absolute;top:50%;left:0;right:0;height:1px;background:#000"></div>';
     this.hurtEl = mk('background:radial-gradient(ellipse at center, transparent 45%, rgba(255,30,50,0.75) 100%);');
+    this.skillFxEl = mk('transition:opacity .15s;');
     this.flashEl = mk('background:#fff;');
     host.appendChild(this.overlay);
 
@@ -220,6 +234,7 @@ export class PlayerController {
       case 'slide': if (down) this.trySlide(); break;
       case 'updraft': if (down) this.trySkill('q'); break;
       case 'dash': if (down) this.trySkill('e'); break;
+      case 'ult': if (down) this.tryUlt(); break;
       case 'reload': if (down) this.tryReload(); break;
       case 'slot1': if (down) this.switchSlot(1); break;
       case 'slot2': if (down) this.switchSlot(2); break;
@@ -242,9 +257,9 @@ export class PlayerController {
         this.alive = true; this.hp = RULES.hp; this.slot = SLOT.primary; this.grounded = true;
         this.slideUntil = 0; this.dashUntil = 0; this.spray = this.heat = 0; this.recoilPitch = this.recoilYaw = 0; this.flashUntil = 0;
         this.nextFireAt = this.equipUntil = this.nextThrowAt = 0; this.vmKey = '';
-        if (n.phase === 'buy') { this.qReadyAt = this.eReadyAt = 0; }
+        this.qReadyAt = this.eReadyAt = 0; this.used = {}; this.silencedUntil = this.ampUntil = this.healUntil = this.shieldBuffUntil = this.driftUntil = this.driftLockUntil = this.castUntil = 0; this.shieldOn = false;
       }),
-      n.on('correct', (x, y, z, seq) => { if (seq === this.spawnSeq) { this.pos.set(x, y, z); this.vel.set(0, 0, 0); } }),
+      n.on('correct', (x, y, z, seq, yaw) => { if (seq === this.spawnSeq) { this.pos.set(x, y, z); this.vel.set(0, 0, 0); if (yaw !== undefined) { this.yaw = yaw; this.pitch = 0; } } }),
       n.on('ammo', (a) => { this.localAmmo.secondary = a.secondary; this.localAmmo.primary = a.primary; this.localAmmo.charges = a.charges; }),
       n.on('hit', (h) => { this.audio.hit(h.z === 'head'); }),
       n.on('hurt', (h) => { this.hp = h.hp; this.hurtA = Math.min(1, this.hurtA + 0.35 + h.d / 120); this.audio.hurt(); }),
@@ -254,9 +269,21 @@ export class PlayerController {
       }),
       n.on('skill', (s) => {
         if (s.id !== n.you) return;
-        const left = s.cd - n.serverNow(), now = performance.now();
-        if (s.k === 'q') this.qReadyAt = now + left; else { this.eReadyAt = now + left; this.dashUntil = now + (s.until - n.serverNow()); }
+        const left = s.cd - n.serverNow(), now = performance.now(), end = now + (s.until - n.serverNow());
+        if (s.k === 'q') this.qReadyAt = now + left; else this.eReadyAt = now + left;
+        this.used[s.s] = SKILLS[s.s].uses - s.u;
+        if (s.s === 'haste') this.dashUntil = end; else if (s.s === 'amp') this.ampUntil = end; else if (s.s === 'heal') this.healUntil = end; else if (s.s === 'shield') this.shieldBuffUntil = end;
       }),
+      n.on('ultPts', (p) => { this.ultPts = p; }),
+      n.on('silence', (until) => { this.silencedUntil = performance.now() + (until - n.serverNow()); this.castUntil = 0; this.onSkillDenied?.('침묵 — 스킬이 봉인되었습니다'); }),
+      n.on('shield', (sh) => { this.shieldOn = sh.on; if (!sh.on && sh.broke) this.audio.hit(true); }),
+      n.on('ult', (u) => {
+        if (u.id !== n.you) return;
+        const now = performance.now(), end = now + ((u.until ?? 0) - n.serverNow());
+        if (u.s === 'omen') this.castUntil = u.ph === 'cast' ? end : 0;
+        else if (u.s === 'yoru') { if (u.ph === 'start') this.driftUntil = end; else if (u.ph === 'end') { this.driftUntil = 0; this.driftLockUntil = now + ULTS_AFTER_MS; } }
+      }),
+      n.on('duel', () => { this.driftUntil = 0; this.castUntil = 0; this.slideUntil = 0; }),
       n.on('shot', (s) => { if (s.id !== n.you) this.audio.shot(s.w, this.distVol(s.o[0], s.o[1], s.o[2], 90)); }),
       n.on('melee', (m) => { if (m.id !== n.you) { const e = n.entities.get(m.id); if (e) this.audio.swing(m.w === 'sword', this.distVol(e.x, e.y, e.z, 20)); } }),
       n.on('explode', (e) => { const v = this.distVol(e.p[0], e.p[1], e.p[2], e.type === 'flash' ? 50 : 80); if (e.type === 'flash') this.audio.flashPop(v); else this.audio.explosion(v); }),
@@ -297,12 +324,43 @@ export class PlayerController {
     this.vel.x = d.x * sp; this.vel.z = d.z * sp;
     this.slideUntil = now + MOVE.slideMs; this.slideReadyAt = this.slideUntil + MOVE.slideCooldownMs; this.audio.slide();
   }
-  private trySkill(k: 'q' | 'e'): void { // Q 상승기류 / E 가속 (쿨타임 7초, 서버 검증)
+  private skillIdOf(k: 'q' | 'e'): SkillId { const l = this.net.me?.loadout, id = k === 'q' ? l?.q : l?.e; return id && id in SKILLS ? id : k === 'q' ? 'updraft' : 'haste'; }
+  private ultIdOf(): UltId { const x = this.net.me?.loadout?.x; return x && x in ULTS ? x : DEFAULT_SKILLS.x; }
+  private usesLeft(id: SkillId): number { return SKILLS[id].uses - (this.used[id] ?? 0); }
+  private get skillLocked(): boolean { const now = performance.now(); return now < this.driftUntil || now < this.castUntil; }
+  private trySkill(k: 'q' | 'e'): void { // Q/E: 장착 스킬 사용 (쿨타임·라운드당 횟수, 서버 검증)
     const now = performance.now();
-    if (!this.canAct) return;
-    if (k === 'q') { if (now < this.qReadyAt) return; this.qReadyAt = now + MOVE.skillCdMs; this.vel.y = MOVE.updraftV; this.grounded = false; this.slideUntil = 0; }
-    else { if (now < this.eReadyAt) return; this.eReadyAt = now + MOVE.skillCdMs; this.dashUntil = now + MOVE.dashMs; }
-    this.net.skill(k); this.audio.skill(k);
+    if (!this.canAct || this.skillLocked) return;
+    const id = this.skillIdOf(k), def = SKILLS[id], ready = k === 'q' ? this.qReadyAt : this.eReadyAt;
+    if (now < this.silencedUntil) { this.onSkillDenied?.('침묵 상태 — 스킬 사용 불가'); return; }
+    if (now < ready) return;
+    if (this.usesLeft(id) <= 0) { this.onSkillDenied?.(`${def.name} — 이번 라운드 사용 횟수 소진`); return; }
+    const readyAt = now + def.cdMs; if (k === 'q') this.qReadyAt = readyAt; else this.eReadyAt = readyAt;
+    this.used[id] = (this.used[id] ?? 0) + 1;
+    if (id === 'updraft') { this.vel.y = MOVE.updraftV; this.grounded = false; this.slideUntil = 0; }
+    else if (id === 'haste') this.dashUntil = now + (def.durMs ?? 5000);
+    this.audio.skill(k);
+    void this.net.skill(k, { yaw: this.yaw, pitch: this.pitch }).then((ack) => { // 서버 거절 시 쿨타임/횟수 롤백
+      if (ack.ok) return;
+      this.used[id] = Math.max(0, (this.used[id] ?? 1) - 1); if (k === 'q') this.qReadyAt = 0; else this.eReadyAt = 0;
+      if (id === 'haste') this.dashUntil = 0;
+      if (id === 'barrier') this.onSkillDenied?.('장벽을 설치할 수 없는 위치입니다');
+    });
+  }
+  private tryUlt(): void { // X: 궁극기 (6포인트 충전 시)
+    const now = performance.now();
+    if (!this.canAct || this.skillLocked) return;
+    if (now < this.silencedUntil) { this.onSkillDenied?.('침묵 상태 — 궁극기 사용 불가'); return; }
+    if (this.ultPts < ULT_COST) { this.onSkillDenied?.(`궁극기 포인트 부족 (${this.ultPts}/${ULT_COST})`); return; }
+    const id = this.ultIdOf();
+    if (id === 'omen') { this.onOmenPrompt?.(); return; }
+    this.audio.skill('q');
+    void this.net.skill('x', { yaw: this.yaw, pitch: this.pitch }).then((ack) => { if (!ack.ok) this.onSkillDenied?.(id === 'iso' ? '파동에 적중한 적이 없습니다' : '궁극기를 사용할 수 없습니다'); });
+  }
+  /** 오멘: 전술 맵에서 고른 좌표로 시전 요청 */
+  castOmen(x: number, z: number): void {
+    this.audio.skill('e');
+    void this.net.skill('x', { yaw: this.yaw, pitch: this.pitch, t: [Math.round(x * 10) / 10, Math.round(z * 10) / 10] }).then((ack) => { if (!ack.ok) this.onSkillDenied?.('해당 위치로는 이동할 수 없습니다'); });
   }
   private readonly wish = new THREE.Vector3();
   private wishDir(): THREE.Vector3 {
@@ -319,7 +377,7 @@ export class PlayerController {
     const sliding = now < this.slideUntil, w = this.weapon;
     let low = sliding || this.held.has('crouch');
     if (!low && this.eyeH < MOVE.eye - 0.05 && world.blocked(this.pos, MOVE.height)) low = true; // 머리 위가 막혀 있으면 계속 숙임
-    const dashing = now < this.dashUntil;
+    const dashing = now < this.dashUntil || now < this.driftUntil;
     const maxSp = MOVE.run * w.move * (low && !sliding ? MOVE.crouchMult : 1) * (this.adsOn ? MOVE.adsMult : 1) * (dashing ? MOVE.dashMult : 1);
     const wish = this.wishDir(), wl = wish.length(), v = this.vel;
     if (sliding) {
@@ -349,7 +407,7 @@ export class PlayerController {
     // 줌/견착
     const wantAds = isGun(w) && w.adsZoom > 1 && altHeld && !this.reloading && this.alive && now >= this.equipUntil;
     if (wantAds && !this.adsOn) this.adsSince = now; this.adsOn = wantAds;
-    if (!this.canAct || now < this.equipUntil) return;
+    if (!this.canAct || now < this.equipUntil || now < this.driftUntil || now < this.driftLockUntil || now < this.castUntil) return; // 표류 중/후딜/시전 중 공격 불가
     if (isGun(w)) {
       const altFire = !!w.alt && (altEdge || (altHeld && now >= this.nextFireAt)), want = (w.auto ? fireHeld : fireEdge) || altFire;
       if (!want || now < this.nextFireAt || this.reloading) return;
@@ -450,8 +508,17 @@ export class PlayerController {
     const low = this.alive && this.hp < 45 ? 0.25 + 0.1 * Math.sin(now / 180) : 0;
     this.hurtEl.style.opacity = Math.max(this.hurtA, low).toFixed(3);
     this.scopeEl.style.opacity = this.alive && this.isScoped(now) ? '1' : '0';
+    // 스킬 상태 테두리: 데미지 증폭=붉은 오라 / 치유=녹색 / 침묵=보라 / 표류=어두운 청색 / 시전=흰색
+    const fx = !this.alive ? '' : now < this.driftUntil ? '0 0 140px 30px rgba(20,30,80,.85)' : now < this.castUntil ? '0 0 120px 30px rgba(255,255,255,.55)'
+      : now < this.silencedUntil ? '0 0 120px 24px rgba(176,107,255,.6)' : now < this.ampUntil ? '0 0 120px 26px rgba(255,40,40,.55)' : now < this.healUntil ? '0 0 110px 20px rgba(60,255,140,.4)' : '';
+    this.skillFxEl.style.boxShadow = fx ? `inset ${fx}` : 'none'; this.skillFxEl.style.opacity = fx ? '1' : '0';
   }
 
+  private skillHud(k: 'q' | 'e', now: number): SkillHud {
+    const id = this.skillIdOf(k), def = SKILLS[id], ready = k === 'q' ? this.qReadyAt : this.eReadyAt;
+    const active = (id === 'haste' && now < this.dashUntil) || (id === 'amp' && now < this.ampUntil) || (id === 'heal' && now < this.healUntil) || (id === 'shield' && now < this.shieldBuffUntil);
+    return { id, name: def.name, icon: def.icon, cd: Math.max(0, (ready - now) / def.cdMs), left: this.usesLeft(id), max: def.uses, active };
+  }
   /** HUD(조준선/탄약/쿨타임) 렌더용 상태 */
   getHudState(): HudState {
     const now = performance.now(), w = this.weapon, a = this.net.ammo, scoped = this.isScoped(now);
@@ -467,7 +534,11 @@ export class PlayerController {
     return {
       alive: this.alive, hp: this.alive ? Math.max(0, this.hp) : 0, maxHp: RULES.hp, slot: this.slot, weaponId: this.weaponId, weaponName: w.name,
       ammo: this.magAmmo(), magSize: isGun(w) ? w.mag : isThrow(w) ? w.charges : 0, charges: this.localAmmo.charges, reloading: this.reloading, reloadProgress,
-      qCooldown: Math.max(0, (this.qReadyAt - now) / MOVE.skillCdMs), eCooldown: Math.max(0, (this.eReadyAt - now) / MOVE.skillCdMs),
+      qCooldown: Math.max(0, (this.qReadyAt - now) / SKILLS[this.skillIdOf('q')].cdMs), eCooldown: Math.max(0, (this.eReadyAt - now) / SKILLS[this.skillIdOf('e')].cdMs),
+      q: this.skillHud('q', now), e: this.skillHud('e', now),
+      ult: { id: this.ultIdOf(), name: ULTS[this.ultIdOf()].name, icon: ULTS[this.ultIdOf()].icon, pts: this.ultPts, ready: this.ultPts >= ULT_COST, casting: now < this.castUntil, castLeft: Math.max(0, this.castUntil - now) },
+      silenced: now < this.silencedUntil, silenceLeft: Math.max(0, this.silencedUntil - now), ampLeft: Math.max(0, this.ampUntil - now), healLeft: Math.max(0, this.healUntil - now),
+      shieldBuffLeft: Math.max(0, this.shieldBuffUntil - now), shieldOn: this.shieldOn, driftLeft: Math.max(0, this.driftUntil - now),
       dashActive: now < this.dashUntil, sliding: now < this.slideUntil, scoped, ads: this.adsOn, spreadPx, flash: this.flashAmount(now),
       speed: Math.hypot(this.vel.x, this.vel.z), frozen: this.frozen,
     };

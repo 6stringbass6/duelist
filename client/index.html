@@ -87,7 +87,22 @@ table{border-collapse:collapse;width:100%}th,td{padding:6px 8px;text-align:left;
 #hud-slots{display:flex;gap:4px;justify-content:flex-end;margin-top:6px;pointer-events:auto}#hud-slots div{padding:3px 8px;font-size:12px;border-radius:4px;background:rgba(10,14,22,.6);border:1px solid transparent}#hud-slots div.on{border-color:#fff}
 #hud-skills{position:absolute;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));transform:translateX(-50%);display:flex;gap:10px}
 .sk{position:relative;width:54px;height:54px;border-radius:8px;background:rgba(10,14,22,.65);border:1px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800;overflow:hidden}
-.sk small{font-size:10px;font-weight:500;color:var(--mut)}.sk i{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.72)}.sk.act{border-color:var(--acc2);box-shadow:0 0 10px var(--acc2)}
+.sk b{font-size:17px;line-height:1;margin-top:1px}.sk.ult{border-color:#b06bff}.sk.ult.rdy{box-shadow:0 0 12px #b06bff;border-color:#e0b8ff}.sk.off{opacity:.45;filter:grayscale(.8)}
+.sk small{font-size:10px;font-weight:500;color:var(--mut)}
+#hud-skills{gap:8px}.sk{width:60px;height:60px}.sk span{position:absolute;left:4px;top:2px;font-size:11px;color:var(--mut)}
+#hud-ult{position:absolute;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:3px}
+#ult-pips{display:flex;gap:4px}#ult-pips i{width:22px;height:7px;border-radius:2px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.25)}#ult-pips i.on{background:#b06bff;border-color:#e0b8ff;box-shadow:0 0 6px #b06bff}
+#ult-name{font-size:11px;color:var(--mut)}#ult-name.rdy{color:#e0b8ff;font-weight:700}
+#hud-status{position:absolute;left:50%;bottom:calc(112px + env(safe-area-inset-bottom));transform:translateX(-50%);display:flex;gap:6px}
+#hud-status span{padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700;background:rgba(10,14,22,.78);border:1px solid var(--line)}
+#hud-status .sil{color:#e0b8ff;border-color:#b06bff;animation:silp 1s infinite alternate}@keyframes silp{to{box-shadow:0 0 10px #b06bff}}
+#hud-status .amp{color:#ff6b6b;border-color:#ff4655}#hud-status .heal{color:#6bffa8;border-color:#3dd68c}#hud-status .shd{color:#5ef0ff;border-color:#5ef0ff}#hud-status .drift{color:#9db4ff;border-color:#6b84ff}
+#hud-cast{position:absolute;left:50%;top:62%;transform:translateX(-50%);width:220px;text-align:center;font-weight:700;font-size:13px}
+#cast-bar{height:6px;margin-top:4px;background:rgba(255,255,255,.2);border-radius:3px;overflow:hidden}#cast-bar i{display:block;height:100%;background:#fff}
+#tac-canvas{width:min(640px,88vw);height:min(640px,88vw);background:#0b1018;border:1px solid var(--line);cursor:crosshair;display:block;margin:0 auto}
+.slotrow{display:flex;gap:10px;flex-wrap:wrap}.eqslot{flex:1;min-width:150px;padding:10px;border:2px dashed var(--line);border-radius:10px;cursor:pointer;background:rgba(255,255,255,.03)}
+.eqslot.sel{border-style:solid;border-color:var(--acc2)}.eqslot b{font-size:22px;display:block}.eqslot small{color:var(--mut)}
+.skcard{padding:10px;border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;gap:4px}.skcard.on{border-color:var(--ok)}.skcard .ic{font-size:22px}.sk i{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.72)}.sk.act{border-color:var(--acc2);box-shadow:0 0 10px var(--acc2)}
 #killbanner{position:absolute;left:50%;top:68%;transform:translateX(-50%);pointer-events:none;display:flex;flex-direction:column;align-items:center}
 #killbanner .kb{display:flex;flex-direction:column;align-items:center;animation:kbpop .15s ease-out,kbfade .4s ease-in 2.1s forwards;filter:drop-shadow(0 0 8px var(--kc))}
 #killbanner .kb svg{width:190px;height:78px;overflow:visible}
@@ -121,6 +136,7 @@ table{border-collapse:collapse;width:100%}th,td{padding:6px 8px;text-align:left;
 .tbtn.down{background:rgba(255,255,255,.35)}.tbtn.big{width:84px;height:84px;font-size:15px;border-color:var(--acc)}
 #t-fire{right:calc(34px + env(safe-area-inset-right));bottom:calc(74px + env(safe-area-inset-bottom))}#t-ads{right:calc(132px + env(safe-area-inset-right));bottom:calc(46px + env(safe-area-inset-bottom))}
 #t-jump{right:calc(30px + env(safe-area-inset-right));bottom:calc(172px + env(safe-area-inset-bottom))}#t-slide{right:calc(126px + env(safe-area-inset-right));bottom:calc(120px + env(safe-area-inset-bottom))}
+#t-x{right:calc(284px + env(safe-area-inset-right));bottom:calc(60px + env(safe-area-inset-bottom))}
 #t-q{right:calc(202px + env(safe-area-inset-right));bottom:calc(30px + env(safe-area-inset-bottom))}#t-e{right:calc(204px + env(safe-area-inset-right));bottom:calc(104px + env(safe-area-inset-bottom))}
 #t-reload{right:calc(100px + env(safe-area-inset-right));bottom:calc(200px + env(safe-area-inset-bottom));width:46px;height:46px}
 #t-auto{right:calc(18px + env(safe-area-inset-right));top:calc(120px + env(safe-area-inset-top));width:auto;height:34px;border-radius:99px;padding:0 12px;font-size:11px}#t-auto.on{border-color:var(--ok);color:var(--ok)}
@@ -151,9 +167,13 @@ body.left #joy-base{left:auto;right:calc(36px + env(safe-area-inset-right))}
     <div id="hud-hint" class="hidden"></div>
     <div id="hud-bl"><div><div id="hud-hp">150</div><div id="hud-hpbar"><i></i></div></div></div>
     <div id="hud-skills">
-      <div class="sk" id="sk-q"><span>Q</span><small>상승기류</small><i></i></div>
-      <div class="sk" id="sk-e"><span>E</span><small>가속</small><i></i></div>
+      <div class="sk" id="sk-q"><span>Q</span><b></b><small></small><i></i></div>
+      <div class="sk" id="sk-e"><span>E</span><b></b><small></small><i></i></div>
+      <div class="sk ult" id="sk-x"><span>X</span><b></b><small></small><i></i></div>
     </div>
+    <div id="hud-ult"><div id="ult-pips"></div><div id="ult-name"></div></div>
+    <div id="hud-status"></div>
+    <div id="hud-cast" class="hidden"><div id="cast-label"></div><div id="cast-bar"><i></i></div></div>
     <div id="hud-br"><div id="hud-ammo">0</div><div id="hud-weapon"></div><div id="hud-slots"><div data-slot="1">1 주무기</div><div data-slot="2">2 보조</div><div data-slot="3">3 근접</div><div data-slot="4">4 투척</div></div></div>
   </div>
 
@@ -164,7 +184,7 @@ body.left #joy-base{left:auto;right:calc(36px + env(safe-area-inset-right))}
     <div class="tbtn" id="t-menu">메뉴</div><div class="tbtn" id="t-load">무기</div>
     <div class="tbtn" id="t-auto">Auto-Fire OFF</div>
     <div class="tbtn" id="t-reload" data-act="reload">R</div>
-    <div class="tbtn" id="t-q" data-act="updraft">Q</div><div class="tbtn" id="t-e" data-act="dash">E</div>
+    <div class="tbtn" id="t-q" data-act="updraft">Q</div><div class="tbtn" id="t-e" data-act="dash">E</div><div class="tbtn" id="t-x" data-act="ult">X</div>
     <div class="tbtn" id="t-slide" data-act="slide">슬라</div><div class="tbtn" id="t-jump" data-act="jump">점프</div>
     <div class="tbtn" id="t-ads" data-act="alt">줌</div><div class="tbtn big" id="t-fire" data-act="fire">사격</div>
   </div>
@@ -208,6 +228,7 @@ body.left #joy-base{left:auto;right:calc(36px + env(safe-area-inset-right))}
   <div class="modal hidden" id="m-gacha"><div class="card"><div class="mh"><h3 id="gacha-title">랜덤 박스</h3><button class="x" data-close>✕</button></div><div id="gacha-win"><div id="gacha-strip"></div></div><div id="gacha-result"></div></div></div>
   <div class="modal hidden" id="m-support"><div class="card"><div class="mh"><h3 id="sup-title">고객센터</h3><button class="x" data-close>✕</button></div><div id="sup-body"></div><div id="sup-foot"><input id="sup-input" maxlength="500" placeholder="불편 사항이나 건의 내용을 입력하세요" autocomplete="off" /><button class="pri" id="sup-send">전송</button></div></div></div>
   <div class="modal hidden" id="m-login"><div class="card sm col"><div class="mh"><h3>7일 연속 로그인 보상</h3><button class="x" data-close>✕</button></div><div id="login-body"></div><button class="pri" data-close>확인</button></div></div>
+  <div class="modal hidden" id="tacmap"><div class="card"><div class="mh"><h3>전술 맵 — 이동할 위치를 클릭 (그림자 습격)</h3><button class="x" id="tac-close">✕</button></div><canvas id="tac-canvas" width="640" height="640"></canvas><div class="mut" style="margin-top:6px;font-size:12px">시전 시간 1.5초 · 시전 중 피격되면 취소됩니다. 흰 점 = 내 위치</div></div></div>
   <div class="modal hidden" id="m-result"><div class="card sm col"><div class="mh"><h3 id="res-title"></h3></div><div id="res-body"></div><button class="pri" id="res-ok">로비로</button></div></div>
   <div class="modal hidden" id="m-pause"><div class="card sm col"><div class="mh"><h3>일시 메뉴</h3></div><button class="pri" id="pause-resume">계속하기</button><button id="pause-load">무기 변경</button><button id="pause-settings">설정</button><button class="ghost" id="pause-leave">게임 나가기</button></div></div>
 

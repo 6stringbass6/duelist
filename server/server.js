@@ -37,7 +37,7 @@ export const MOVE = {
   run: 6.6, gravity: 22, jumpV: 7.6, slideV: 12.5, updraftV: 17, dashMult: 1.6, dashMs: 3000, skillCdMs: 7000,
   eye: 1.6, eyeCrouch: 1.0, radius: 0.4,
 };
-export const F = { CROUCH: 1, SLIDE: 2, ADS: 4, AIR: 8, DASH: 16, ALIVE: 32, PROT: 64, RELOAD: 128, FLASHED: 256 };
+export const F = { CROUCH: 1, SLIDE: 2, ADS: 4, AIR: 8, DASH: 16, ALIVE: 32, PROT: 64, RELOAD: 128, FLASHED: 256, AMP: 512, SILENCED: 1024, SHIELD: 2048, HEAL: 4096, INVIS: 8192, CAST: 16384 };
 const HB = { // 히트박스 (발 기준 높이)
   s: { headY: 1.62, headR: 0.23, bodyTop: 1.38, legTop: 0.72, bodyR: 0.36, legR: 0.28 },
   c: { headY: 1.02, headR: 0.23, bodyTop: 0.8, legTop: 0.4, bodyR: 0.38, legR: 0.34 },
@@ -45,7 +45,19 @@ const HB = { // 히트박스 (발 기준 높이)
 // 슬롯 번호 = 숫자키: 1 주무기 / 2 보조 / 3 근접 / 4 투척 (client/src/config/weapons.ts SLOT_KEYS 와 동일)
 const SLOT_KEYS = { 1: 'primary', 2: 'secondary', 3: 'melee', 4: 'throwable' };
 const SLOT = { primary: 1, secondary: 2, melee: 3, throwable: 4 };
-const DEFAULT_LOADOUT = { melee: 'dagger', secondary: 'classic', primary: 'vandal', throwable: 'grenade' };
+const DEFAULT_LOADOUT = { melee: 'dagger', secondary: 'classic', primary: 'vandal', throwable: 'grenade', q: 'updraft', e: 'haste', x: 'omen' };
+// 스킬 정의 (client/src/config/skills.ts 와 동일 수치). cd=쿨타임(ms), uses=라운드(리스폰)당 사용 횟수
+export const SKILLS = {
+  updraft:  { cd: 7000, uses: 3 },
+  haste:    { cd: 8000, uses: 2, ms: 5000 },
+  amp:      { cd: 12000, uses: 2, ms: 5000, mult: 1.4 },
+  suppress: { cd: 15000, uses: 2, radius: 12, silenceMs: 8000, speed: 20, lift: 3 },
+  heal:     { cd: 18000, uses: 2, ms: 4000, total: 60 },
+  barrier:  { cd: 14000, uses: 2, w: 6, h: 3.2, t: 0.6, hp: 250, range: 22, lifeMs: 30000, maxPerOwner: 3 },
+  shield:   { cd: 20000, uses: 1, ms: 10000, orbMs: 15000 },
+};
+export const ULTS = { omen: { castMs: 1500 }, yoru: { ms: 7000, afterMs: 700 }, iso: { range: 40, width: 1.6, ms: 15000 } };
+export const ULT_COST = 6;
 const THROW_G = 20, PROJ_R = 0.12;
 
 // ranges: [최대거리, head, body, leg] (발로란트 원본) × scale → 반올림
@@ -145,7 +157,7 @@ function raycastWorld(map, o, d, maxT) {
   let best = null, bt = maxT;
   if (d.y < -1e-9) { const t = -o.y / d.y; if (t >= 0 && t < bt) { bt = t; best = { t, axis: 1, sign: 1 }; } }
   const boxes = map.boxes;
-  for (let i = 0; i < boxes.length; i++) { const h = rayBox(o, d, boxes[i], bt); if (h && h.t < bt) { bt = h.t; best = h; } }
+  for (let i = 0; i < boxes.length; i++) { const h = rayBox(o, d, boxes[i], bt); if (h && h.t < bt) { bt = h.t; best = h; h.box = boxes[i]; } }
   return best;
 }
 function losClear(map, a, b) {
@@ -252,7 +264,17 @@ function mkMap(id, name, bounds, wallH, boxes, spawns, extra = {}) {
   const all = [...boxes,
     [x0 - T, 0, z0 - T, x0, wallH, z1 + T, 'bound'], [x1, 0, z0 - T, x1 + T, wallH, z1 + T, 'bound'],
     [x0, 0, z0 - T, x1, wallH, z0, 'bound'], [x0, 0, z1, x1, wallH, z1 + T, 'bound']];
-  return { id, name, bounds, wallH, boxes: all, spawns, nav: buildNav(bounds, all), ...extra };
+  const nav = buildNav(bounds, all);
+  let duel = null;
+  if (id !== 'range') { // 아이소 궁극기: 맵 외곽(동쪽)의 1:1 격리 아레나 (높은 벽으로 완전 밀폐)
+    const dx0 = x1 + 30, dx1 = dx0 + 26, dz0 = -13, dz1 = 13, H = 18;
+    all.push([dx0, -0.5, dz0, dx1, 0, dz1, 'duelfloor'],
+      [dx0 - 2, 0, dz0 - 2, dx0, H, dz1 + 2, 'duel'], [dx1, 0, dz0 - 2, dx1 + 2, H, dz1 + 2, 'duel'],
+      [dx0, 0, dz0 - 2, dx1, H, dz0, 'duel'], [dx0, 0, dz1, dx1, H, dz1 + 2, 'duel'],
+      [(dx0 + dx1) / 2 - 1.5, 0, -1.5, (dx0 + dx1) / 2 + 1.5, 2.4, 1.5, 'cover']);
+    duel = { rect: { x0: dx0, x1: dx1, z0: dz0, z1: dz1 }, spawns: [{ x: dx0 + 3, y: 0, z: 0, yaw: -Math.PI / 2 }, { x: dx1 - 3, y: 0, z: 0, yaw: Math.PI / 2 }] };
+  }
+  return { id, name, bounds, wallH, boxes: all, spawns, nav, duel, ...extra };
 }
 const mkSpawns = (z, xs, yaw) => xs.map((x) => ({ x, y: 0, z, yaw }));
 function buildGrid() {
@@ -297,7 +319,7 @@ function buildRange() {
     { marks: marks.map((m) => ({ z: -m + 3, label: `${m}m` })), dummies: marks.map((m, i) => ({ x: xs[i], y: 0, z: -m + 3, yaw: Math.PI })) });
 }
 export const MAPS = { grid: buildGrid(), arena: buildArena(), range: buildRange() };
-const mapPublic = (m) => ({ id: m.id, name: m.name, bounds: m.bounds, wallH: m.wallH, boxes: m.boxes, spawns: m.spawns, marks: m.marks || [] });
+const mapPublic = (m) => ({ id: m.id, name: m.name, bounds: m.bounds, wallH: m.wallH, boxes: m.boxes, spawns: m.spawns, marks: m.marks || [], duel: m.duel || null });
 
 // ───────────────────────────── 6. 방 / 엔티티 ─────────────────────────────
 let io = null, roomSeq = 0;
@@ -315,15 +337,23 @@ const newStats = () => ({ k: 0, d: 0, a: 0, hsk: 0, hh: 0, hb: 0, hl: 0, shots: 
 const sanitizeName = (s) => (typeof s === 'string' ? s.replace(/[^A-Za-z0-9가-힣_]/g, '').slice(0, 16) : '');
 function sanitizeLoadout(l) {
   const out = { ...DEFAULT_LOADOUT };
-  if (l && typeof l === 'object') for (const [slot, key] of Object.entries(SLOT_KEYS)) { const w = WEAPONS[l[key]]; if (w && w.slot === +slot) out[key] = l[key]; }
+  if (l && typeof l === 'object') {
+    for (const [slot, key] of Object.entries(SLOT_KEYS)) { const w = WEAPONS[l[key]]; if (w && w.slot === +slot) out[key] = l[key]; }
+    if (typeof l.q === 'string' && Object.hasOwn(SKILLS, l.q)) out.q = l.q;
+    if (typeof l.e === 'string' && Object.hasOwn(SKILLS, l.e)) out.e = l.e;
+    if (typeof l.x === 'string' && Object.hasOwn(ULTS, l.x)) out.x = l.x;
+  }
+  if (out.q === out.e) out.e = Object.keys(SKILLS).find((k) => k !== out.q); // 같은 스킬 중복 장착 불가
   return out;
 }
 
+// 방마다 박스 배열을 복사 → 장벽(동적 충돌체)을 방 단위로 추가/제거
+const roomMap = (m) => ({ ...m, boxes: [...m.boxes] });
 function createRoom({ mode, teamSize, mapId, isPrivate = false, fillBots = true, botLevel = 6 }) {
   const room = {
-    id: 'r' + (++roomSeq).toString(36), code: null, mode, teamSize, mapId, map: MAPS[mapId], isPrivate, fillBots, botLevel,
+    id: 'r' + (++roomSeq).toString(36), code: null, mode, teamSize, mapId, map: roomMap(MAPS[mapId]), isPrivate, fillBots, botLevel,
     hostId: 0, phase: 'lobby', endsAt: 0, round: 0, score: [0, 0], ents: new Map(), projs: new Map(), nextId: 1, nextProj: 1,
-    lastSnap: 0, rangeMoving: false,
+    lastSnap: 0, rangeMoving: false, walls: new Map(), orbs: new Map(), duels: [], nextWall: 1, nextOrb: 1,
   };
   if (isPrivate && mode !== 'range') { do { room.code = String(randInt(1000, 9999)); } while (codes.has(room.code)); codes.set(room.code, room); }
   rooms.set(room.id, room);
@@ -339,7 +369,7 @@ function newEntity(room, base) {
     team: 0, pos: { x: 0, y: 0, z: 0 }, vel: { x: 0, y: 0, z: 0 }, yaw: 0, pitch: 0, flags: 0, hp: 0, alive: false,
     loadout: { ...DEFAULT_LOADOUT }, pending: null, slot: SLOT.primary, ammo: { secondary: 0, primary: 0 }, charges: 0,
     reloadUntil: 0, reloadKey: null, nextFireAt: 0, nextThrowAt: 0, spray: 0, heat: 0, lastShotAt: 0, adsSince: 0,
-    skillAt: { q: 0, e: 0 }, dashUntil: 0, protUntil: 0, respawnAt: 0, spawnedAt: 0, spawnSeq: 0, flashedUntil: 0,
+    skillAt: { q: 0, e: 0 }, uses: {}, silencedUntil: 0, ampUntil: 0, healUntil: 0, healAcc: 0, shieldBuffUntil: 0, shield: 0, driftUntil: 0, cast: null, ult: 0, duel: null, dashUntil: 0, protUntil: 0, respawnAt: 0, spawnedAt: 0, spawnSeq: 0, flashedUntil: 0,
     lastMoveAt: 0, violations: 0, hist: [], dmgLog: new Map(), stats: newStats(), persisted: false, ai: null, ...base,
   };
   room.ents.set(e.id, e);
@@ -363,6 +393,7 @@ function spawnEntity(room, e, pt, now) {
   e.pos = { x: pt.x, y: pt.y, z: pt.z }; e.vel = { x: 0, y: 0, z: 0 }; e.yaw = pt.yaw; e.pitch = 0; e.flags = 0;
   e.hp = e.ai?.dummy ? RULES.dummyHp : RULES.hp; e.alive = true; e.slot = SLOT.primary; refill(e);
   e.spray = 0; e.heat = 0; e.nextFireAt = now; e.nextThrowAt = now; e.dashUntil = 0; e.flashedUntil = 0; e.respawnAt = 0;
+  e.skillAt = { q: 0, e: 0 }; e.uses = {}; e.silencedUntil = e.ampUntil = e.healUntil = e.shieldBuffUntil = e.driftUntil = 0; e.shield = 0; e.cast = null; e.duel = null;
   e.protUntil = room.mode === 'tdm' ? now + RULES.spawnProtectMs : 0;
   e.spawnedAt = now; e.spawnSeq++; e.lastMoveAt = now; e.violations = 0; e.hist = []; e.dmgLog.clear();
   if (e.isBot) resetAi(e, now);
@@ -564,13 +595,15 @@ function startReload(room, e, now) {
 }
 function traceShot(room, shooter, o, d, rt, maxDist) {
   const wh = raycastWorld(room.map, o, d, maxDist); let bt = wh ? wh.t : maxDist, victim = null, zone = null;
+  const wallT = bt;
   for (const t of room.ents.values()) {
     if (t === shooter || !t.alive || t.team === shooter.team) continue;
     const p = shooter.isBot ? { x: t.pos.x, y: t.pos.y, z: t.pos.z, c: t.flags & 3 } : posAt(t, rt);
     const h = rayEntity(o, d, p, p.c, bt);
     if (h && h.t < bt) { bt = h.t; victim = t; zone = h.zone; }
   }
-  return { t: bt, victim, zone };
+  const barrier = !victim && wh && wh.box && wh.box[6] === 'barrier' && bt === wallT ? wh.box : null;
+  return { t: bt, victim, zone, barrier };
 }
 function fireGun(room, e, w, wid, m, now) {
   const key = SLOT_KEYS[e.slot];
@@ -596,6 +629,8 @@ function fireGun(room, e, w, wid, m, now) {
   for (let i = 0; i < n; i++) {
     const d = spreadDir(base, spreadDeg), res = traceShot(room, e, o, d, rt, 300);
     ends.push(r2(o.x + d.x * res.t), r2(o.y + d.y * res.t), r2(o.z + d.z * res.t));
+    if (res.barrier) damageBarrier(room, res.barrier[7], damageAt(w, res.t, 'body'), now);
+    for (const orb of [...room.orbs.values()]) if (orb.owner === e.id && raySphere(o, d, orb.pos.x, orb.pos.y, orb.pos.z, 0.5) < res.t) takeOrb(room, orb); // 구슬 사격
     if (res.victim) {
       const a = agg.get(res.victim) || { dmg: 0, head: false, zone: res.zone };
       a.dmg += damageAt(w, res.t, res.zone); if (res.zone === 'head') { a.head = true; a.zone = 'head'; }
@@ -651,17 +686,28 @@ function stepProj(room, p, dt, now) {
     if (!hit) { p.pos.x += d.x * dist; p.pos.y += d.y * dist; p.pos.z += d.z * dist; break; }
     const tt = Math.max(0, hit.t - PROJ_R);
     p.pos.x += d.x * tt; p.pos.y += d.y * tt; p.pos.z += d.z * tt; rem -= tt / sp;
+    if (p.type === 'zero') { detonate(room, p, now); return; } // 억제 나이프: 착탄 즉시 발동
     const ax = hit.axis === 0 ? 'x' : hit.axis === 1 ? 'y' : 'z';
     p.vel.x *= 0.82; p.vel.y *= 0.82; p.vel.z *= 0.82; p.vel[ax] = (-p.vel[ax] / 0.82) * p.rest; // 바운드
     if (hit.axis === 1 && Math.abs(p.vel.y) < 1.2) p.vel.y = 0;
   }
-  if (p.pos.y < PROJ_R) p.pos.y = PROJ_R;
+  if (p.pos.y < PROJ_R) { p.pos.y = PROJ_R; if (p.type === 'zero') detonate(room, p, now); }
 }
 function detonate(room, p, now) {
   room.projs.delete(p.id);
   const w = WEAPONS[p.type], c = { x: p.pos.x, y: p.pos.y + 0.1, z: p.pos.z }, owner = room.ents.get(p.owner);
   emitRoom(room, 'proj:explode', { id: p.id, type: p.type, p: [r2(c.x), r2(c.y), r2(c.z)] });
+  if (p.type === 'zero') { // 제로/포인트: 반경 12m 내 적 감지 → Q/E/X 8초 봉인
+    const sd = SKILLS.suppress;
+    for (const t of room.ents.values()) {
+      if (!t.alive || t.team === p.team || dist3(c, { x: t.pos.x, y: t.pos.y + 0.9, z: t.pos.z }) > sd.radius) continue;
+      t.silencedUntil = now + sd.silenceMs; emitTo(t, 'silence', { until: t.silencedUntil });
+      if (t.cast) cancelCast(room, t);
+    }
+    return;
+  }
   if (p.type === 'grenade') {
+    for (const wl of [...room.walls.values()]) if (dist3(c, { x: (wl.box[0] + wl.box[3]) / 2, y: 1, z: (wl.box[2] + wl.box[5]) / 2 }) < w.radius) damageBarrier(room, wl.id, 120, now);
     if (!owner) return;
     for (const t of [...room.ents.values()]) {
       if (!t.alive || (t !== owner && t.team === p.team)) continue;
@@ -690,7 +736,13 @@ function applyDamage(room, victim, attacker, dmg, wid, zone, now) {
   const self = attacker === victim;
   if (!self && attacker.team === victim.team) return;
   if (room.mode === 'range' && !victim.ai?.dummy) return;
-  dmg = Math.min(dmg, victim.hp); victim.hp -= dmg;
+  if (now < victim.driftUntil) return; // 요루 궁극기: 무적
+  if (!self && now < attacker.ampUntil && WEAPONS[wid]?.type === 'gun') dmg = Math.round(dmg * SKILLS.amp.mult); // 데미지 증폭 x1.4
+  if (victim.shield > 0 && !self) { // 아이소 보호막: 1회 완전 방어
+    victim.shield = 0; emitTo(victim, 'shield', { on: false, broke: true }); emitTo(attacker, 'hit', { v: victim.id, d: 0, z: zone, k: false }); return;
+  }
+  dmg = Math.min(dmg, victim.hp); victim.hp -= dmg; victim.healUntil = 0; // 회복 중 피격 -> 중단
+  if (victim.cast) cancelCast(room, victim); // 오멘 시전 중 피격 -> 취소
   if (!self) { attacker.stats.dmg += dmg; const rec = victim.dmgLog.get(attacker.id); victim.dmgLog.set(attacker.id, { dmg: (rec?.dmg || 0) + dmg, t: now }); }
   const killed = victim.hp <= 0;
   emitTo(attacker, 'hit', { v: victim.id, d: dmg, z: zone, k: killed });
@@ -712,6 +764,9 @@ function kill(room, victim, killer, wid, hs, now) {
     }
   }
   victim.dmgLog.clear();
+  if (victim.cast) cancelCast(room, victim); victim.healUntil = 0;
+  addUlt(victim, 1);
+  if (!self) { addUlt(killer, 1); if (killer.alive && now < killer.shieldBuffUntil) spawnOrb(room, killer, victim, now); }
   if (room.mode === 'tdm' && !self) room.score[killer.team]++;
   emitRoom(room, 'kill', { k: killer.id, v: victim.id, w: wid, hs, a: assists, s: room.score });
   if (room.mode === 'tdm') {
@@ -720,26 +775,159 @@ function kill(room, victim, killer, wid, hs, now) {
   } else if (room.mode === 'range') victim.respawnAt = now + RULES.rangeRespawnMs;
   else checkRoundEnd(room, now);
 }
-function useSkill(room, e, k, now) {
-  if ((k !== 'q' && k !== 'e') || now < e.skillAt[k]) return false;
-  e.skillAt[k] = now + MOVE.skillCdMs;
-  if (k === 'e') e.dashUntil = now + MOVE.dashMs;
-  emitRoom(room, 'skill', { id: e.id, k, cd: e.skillAt[k], until: k === 'e' ? e.dashUntil : 0 });
+const skillOf = (e, k) => (Object.hasOwn(SKILLS, e.loadout[k]) ? e.loadout[k] : k === 'q' ? 'updraft' : 'haste');
+function addUlt(e, n) { if (e.isBot) return; e.ult = clamp(e.ult + n, 0, ULT_COST); emitTo(e, 'ult:pts', { p: e.ult }); }
+function teleport(e, x, y, z, yaw, now) { // 서버 권위 순간이동 -> 클라이언트에 위치 보정 전송
+  e.pos = { x, y, z }; e.vel = { x: 0, y: 0, z: 0 }; e.lastMoveAt = now; e.violations = 0; e.hist.length = 0;
+  if (yaw !== undefined) e.yaw = yaw;
+  emitTo(e, 'pos:correct', { p: [r2(x), r2(y), r2(z)], s: e.spawnSeq, yaw: yaw === undefined ? undefined : r3(yaw) });
+}
+function useSkill(room, e, k, now, m = {}) {
+  if (k === 'x') return useUlt(room, e, now, m);
+  if ((k !== 'q' && k !== 'e') || now < e.skillAt[k] || now < e.silencedUntil || now < e.driftUntil || e.cast) return false;
+  const id = skillOf(e, k), def = SKILLS[id], left = def.uses - (e.uses[id] || 0);
+  if (left <= 0) return false;
+  let until = 0;
+  if (id === 'barrier') { if (!placeBarrier(room, e, now)) return false; }
+  else if (id === 'haste') until = e.dashUntil = now + def.ms;
+  else if (id === 'amp') until = e.ampUntil = now + def.ms;
+  else if (id === 'heal') { until = e.healUntil = now + def.ms; e.healAcc = 0; }
+  else if (id === 'shield') until = e.shieldBuffUntil = now + def.ms;
+  else if (id === 'suppress') throwKnife(room, e, now);
+  e.uses[id] = (e.uses[id] || 0) + 1; e.skillAt[k] = now + def.cd;
+  emitRoom(room, 'skill', { id: e.id, k, s: id, cd: e.skillAt[k], until, u: def.uses - e.uses[id] });
   return true;
+}
+function throwKnife(room, e, now) { // 제로/포인트 억제 나이프
+  const sd = SKILLS.suppress, dir = dirFrom(e.yaw, e.pitch), eye = eyeOf(e);
+  const start = raycastWorld(room.map, eye, dir, 0.6) ? eye : { x: eye.x + dir.x * 0.4, y: eye.y + dir.y * 0.4, z: eye.z + dir.z * 0.4 };
+  const p = { id: room.nextProj++, type: 'zero', alt: false, owner: e.id, team: e.team, pos: { ...start },
+    vel: { x: dir.x * sd.speed, y: dir.y * sd.speed + sd.lift, z: dir.z * sd.speed }, explodeAt: now + 3000, rest: 0.3 };
+  room.projs.set(p.id, p);
+  emitRoom(room, 'proj:spawn', { id: p.id, type: 'zero', alt: false, owner: e.id, p: [r2(start.x), r2(start.y), r2(start.z)], v: [r2(p.vel.x), r2(p.vel.y), r2(p.vel.z)], at: p.explodeAt });
+}
+function placeBarrier(room, e, now) { // 장벽(세이지 벽): 조준한 바닥 지점에 AABB 충돌체 생성
+  const sd = SKILLS.barrier, eye = eyeOf(e), dir = dirFrom(e.yaw, e.pitch), hit = raycastWorld(room.map, eye, dir, sd.range);
+  if (!hit) return false;
+  const cx = eye.x + dir.x * hit.t, cz = eye.z + dir.z * hit.t, by = hit.axis === 1 ? Math.max(0, eye.y + dir.y * hit.t) : 0;
+  const alongZ = Math.abs(Math.sin(e.yaw)) > Math.abs(Math.cos(e.yaw)); // 시선과 수직으로 펼침
+  const hw = (alongZ ? sd.t : sd.w) / 2, hd = (alongZ ? sd.w : sd.t) / 2, bd = room.map.bounds;
+  if (cx - hw < bd.x0 || cx + hw > bd.x1 || cz - hd < bd.z0 || cz + hd > bd.z1) return false;
+  const box = [cx - hw, by, cz - hd, cx + hw, by + sd.h, cz + hd, 'barrier', 0];
+  for (const t of room.ents.values()) if (t.alive && t.pos.x + 0.5 > box[0] && t.pos.x - 0.5 < box[3] && t.pos.z + 0.5 > box[2] && t.pos.z - 0.5 < box[5] && t.pos.y < box[4] && t.pos.y + 1.8 > box[1]) return false; // 사람 위에는 설치 불가
+  const mine = [...room.walls.values()].filter((w) => w.owner === e.id);
+  if (mine.length >= sd.maxPerOwner) removeBarrier(room, mine[0].id);
+  const id = room.nextWall++; box[7] = id;
+  room.map.boxes.push(box); room.walls.set(id, { id, box, hp: sd.hp, owner: e.id, until: now + sd.lifeMs });
+  emitRoom(room, 'wall:add', { id, b: box.slice(0, 6).map(r2), hp: sd.hp, o: e.id });
+  return true;
+}
+function removeBarrier(room, id) {
+  const w = room.walls.get(id); if (!w) return;
+  room.walls.delete(id); const i = room.map.boxes.indexOf(w.box); if (i >= 0) room.map.boxes.splice(i, 1);
+  emitRoom(room, 'wall:del', { id });
+}
+function damageBarrier(room, id, dmg, now) {
+  const w = room.walls.get(id); if (!w || room.phase !== 'live') return;
+  w.hp -= dmg;
+  if (w.hp <= 0) removeBarrier(room, id); else emitRoom(room, 'wall:hp', { id, hp: Math.round(w.hp) });
+}
+function spawnOrb(room, killer, victim, now) { // 아이소 보호막: 처치 위치에 에너지 구슬
+  const id = room.nextOrb++, orb = { id, owner: killer.id, pos: { x: victim.pos.x, y: victim.pos.y + 0.9, z: victim.pos.z }, until: now + SKILLS.shield.orbMs };
+  room.orbs.set(id, orb); emitRoom(room, 'orb:add', { id, o: killer.id, p: [r2(orb.pos.x), r2(orb.pos.y), r2(orb.pos.z)] });
+}
+function takeOrb(room, orb) {
+  room.orbs.delete(orb.id); emitRoom(room, 'orb:del', { id: orb.id });
+  const o = room.ents.get(orb.owner); if (o && o.alive) { o.shield = 1; emitTo(o, 'shield', { on: true }); }
+}
+function cancelCast(room, e) { if (!e.cast) return; e.cast = null; emitRoom(room, 'ult', { id: e.id, s: 'omen', ph: 'cancel' }); }
+
+function useUlt(room, e, now, m) {
+  if (e.ult < ULT_COST || e.cast || now < e.silencedUntil || now < e.driftUntil || e.duel) return false;
+  const id = Object.hasOwn(ULTS, e.loadout.x) ? e.loadout.x : 'omen', def = ULTS[id];
+  if (id === 'omen') { // 그림자 습격: 지정 좌표로 순간이동 (시전 중 피격 시 취소)
+    const t = m.t; if (!Array.isArray(t) || t.length !== 2 || !t.every(Number.isFinite)) return false;
+    const bd = room.map.bounds, x = clamp(t[0], bd.x0 + 1, bd.x1 - 1), z = clamp(t[1], bd.z0 + 1, bd.z1 - 1);
+    if (insideSolid(room.map, x, 0.9, z) || insideSolid(room.map, x, 0.3, z)) return false;
+    e.cast = { id, until: now + def.castMs, x, z };
+    emitRoom(room, 'ult', { id: e.id, s: id, ph: 'cast', until: e.cast.until, p: [r2(x), r2(z)] });
+  } else if (id === 'yoru') { // 차원 표류: 무적/은신/고속 이동 (공격 불가)
+    e.ult = 0; e.driftUntil = now + def.ms; e.protUntil = 0;
+    emitTo(e, 'ult:pts', { p: 0 }); emitRoom(room, 'ult', { id: e.id, s: id, ph: 'start', until: e.driftUntil });
+  } else if (id === 'iso') { // 청부 계약: 전방 직선 파동에 맞은 적 1명과 1:1 격리 아레나로
+    if (!room.map.duel) return false;
+    const eye = eyeOf(e), dir = dirFrom(e.yaw, e.pitch); let best = null, bt = def.range;
+    for (const t of room.ents.values()) {
+      if (!t.alive || t.team === e.team || t.duel || now < t.driftUntil) continue;
+      const c = { x: t.pos.x, y: t.pos.y + 0.9, z: t.pos.z }, tt = (c.x - eye.x) * dir.x + (c.y - eye.y) * dir.y + (c.z - eye.z) * dir.z;
+      if (tt < 0 || tt > bt) continue;
+      if (Math.hypot(c.x - (eye.x + dir.x * tt), c.y - (eye.y + dir.y * tt), c.z - (eye.z + dir.z * tt)) > def.width || !losClear(room.map, eye, c)) continue;
+      bt = tt; best = t;
+    }
+    emitRoom(room, 'ult', { id: e.id, s: id, ph: 'wave', o: [r2(eye.x), r2(eye.y), r2(eye.z)], d: [r3(dir.x), r3(dir.y), r3(dir.z)], hit: best ? best.id : 0 });
+    if (!best) return false;
+    e.ult = 0; emitTo(e, 'ult:pts', { p: 0 }); startDuel(room, e, best, now);
+  }
+  return true;
+}
+function startDuel(room, a, b, now) {
+  const D = room.map.duel, d = { a: a.id, b: b.id, until: now + ULTS.iso.ms, oa: { x: a.pos.x, y: a.pos.y, z: a.pos.z, yaw: a.yaw }, ob: { x: b.pos.x, y: b.pos.y, z: b.pos.z, yaw: b.yaw } };
+  room.duels.push(d); a.duel = d; b.duel = d; a.cast = b.cast = null; a.healUntil = b.healUntil = 0;
+  teleport(a, D.spawns[0].x, 0, D.spawns[0].z, D.spawns[0].yaw, now); teleport(b, D.spawns[1].x, 0, D.spawns[1].z, D.spawns[1].yaw, now);
+  for (const x of [a, b]) { refill(x); emitAmmo(x); x.slot = SLOT.primary; x.nextFireAt = now + 500; }
+  emitRoom(room, 'duel', { a: a.id, b: b.id, until: d.until });
+}
+function endDuel(room, d, now) {
+  const i = room.duels.indexOf(d); if (i >= 0) room.duels.splice(i, 1);
+  const A = room.ents.get(d.a), B = room.ents.get(d.b);
+  for (const [x, o] of [[A, d.oa], [B, d.ob]]) if (x) { x.duel = null; if (x.alive) teleport(x, o.x, o.y, o.z, o.yaw, now); } // 승자만 원위치 복귀
+  emitRoom(room, 'duel:end', { a: d.a, b: d.b, w: A?.alive ? d.a : B?.alive ? d.b : 0 });
+}
+function tickSkills(room, now, dt) {
+  for (const e of room.ents.values()) {
+    if (!e.alive) continue;
+    if (e.healUntil) { // 4초에 걸쳐 총 60 회복 (경과 비율 기준 → 오차 없음)
+      const sd = SKILLS.heal, target = Math.round(sd.total * clamp(1 - (e.healUntil - now) / sd.ms, 0, 1)), inc = target - e.healAcc;
+      if (inc > 0) { e.healAcc = target; e.hp = Math.min(RULES.hp, e.hp + inc); }
+      if (now >= e.healUntil) e.healUntil = 0;
+    }
+    if (e.driftUntil && now >= e.driftUntil) { e.driftUntil = 0; e.nextFireAt = Math.max(e.nextFireAt, now + ULTS.yoru.afterMs); e.nextThrowAt = Math.max(e.nextThrowAt, now + ULTS.yoru.afterMs); emitRoom(room, 'ult', { id: e.id, s: 'yoru', ph: 'end' }); }
+    if (e.cast && now >= e.cast.until) { const c = e.cast; e.cast = null; e.ult = 0; emitTo(e, 'ult:pts', { p: 0 }); teleport(e, c.x, 0, c.z, undefined, now); emitRoom(room, 'ult', { id: e.id, s: 'omen', ph: 'done', p: [r2(c.x), r2(c.z)] }); }
+  }
+  for (const orb of [...room.orbs.values()]) {
+    const o = room.ents.get(orb.owner);
+    if (now >= orb.until || !o) { room.orbs.delete(orb.id); emitRoom(room, 'orb:del', { id: orb.id }); continue; }
+    if (o.alive && dist3({ x: o.pos.x, y: o.pos.y + 0.9, z: o.pos.z }, orb.pos) < 1.3) takeOrb(room, orb); // 접촉
+  }
+  for (const w of [...room.walls.values()]) if (now >= w.until) removeBarrier(room, w.id);
+  for (const d of [...room.duels]) {
+    const A = room.ents.get(d.a), B = room.ents.get(d.b);
+    if (!A || !B || !A.alive || !B.alive) { endDuel(room, d, now); continue; }
+    if (now >= d.until) { const win = A.hp > B.hp ? A : B, lose = win === A ? B : A; applyDuelLoss(room, lose, win, now); } // 시간 종료: 체력 높은 쪽 승리(동점이면 대상 승리)
+  }
+}
+function applyDuelLoss(room, loser, winner, now) {
+  const d = loser.duel; loser.duel = null; winner.duel = null;
+  if (d) { const i = room.duels.indexOf(d); if (i >= 0) room.duels.splice(i, 1); }
+  kill(room, loser, winner, 'iso', false, now);
+  if (d && winner.alive) { const o = winner.id === d.a ? d.oa : d.ob; teleport(winner, o.x, o.y, o.z, o.yaw, now); }
+  emitRoom(room, 'duel:end', { a: d?.a ?? 0, b: d?.b ?? 0, w: winner.id });
 }
 
 // ───────────────────────────── 9. 모드 / 페이즈 ─────────────────────────────
 function startMatch(room, now) {
   room.score = [0, 0]; room.round = 0; room.projs.clear();
-  for (const e of room.ents.values()) { e.stats = newStats(); e.persisted = false; e.skillAt = { q: 0, e: 0 }; }
+  for (const e of room.ents.values()) { e.stats = newStats(); e.persisted = false; e.skillAt = { q: 0, e: 0 }; e.ult = 0; }
   if (room.fillBots) fillBots(room, now);
   emitRoom(room, 'room:state', roomState(room));
   startRound(room, now);
 }
 function startRound(room, now) {
   room.round++; room.phase = 'buy'; room.endsAt = now + (room.mode === 'tdm' ? RULES.tdmWarmupMs : RULES.buyMs); room.projs.clear();
+  room.walls.clear(); room.orbs.clear(); room.duels.length = 0; room.map.boxes = room.map.boxes.filter((b) => b[6] !== 'barrier'); // 장벽/구슬/결투 초기화
+  if (room.round > 1) for (const e of room.ents.values()) addUlt(e, 1); // 라운드 전환 +1
   const spawns = [];
-  for (const t of [0, 1]) teamEnts(room, t).forEach((e, i) => { e.skillAt = { q: 0, e: 0 }; spawns.push(spawnEntity(room, e, room.map.spawns[t][i % room.map.spawns[t].length], now)); });
+  for (const t of [0, 1]) teamEnts(room, t).forEach((e, i) => { spawns.push(spawnEntity(room, e, room.map.spawns[t][i % room.map.spawns[t].length], now)); });
   emitPhase(room, { spawns });
 }
 function checkRoundEnd(room, now) {
@@ -819,13 +1007,14 @@ function tickRoom(room, now, dt) {
     if (e.isBot && e.alive && live) { if (!e.ai.dummy && now >= e.ai.thinkAt) botThink(room, e, now); if (e.alive) botAct(room, e, now, dt); }
     if (e.alive) recordHist(e, now);
   }
-  if (live) for (const p of [...room.projs.values()]) stepProj(room, p, dt, now);
+  if (live) { for (const p of [...room.projs.values()]) stepProj(room, p, dt, now); tickSkills(room, now, dt); }
   if (now - room.lastSnap >= RULES.snapMs && room.phase !== 'lobby') {
     room.lastSnap = now;
     const arr = [];
     for (const e of room.ents.values()) {
       let f = e.flags & 15;
       if (e.alive) f |= F.ALIVE; if (now < e.protUntil) f |= F.PROT; if (e.reloadUntil) f |= F.RELOAD; if (now < e.flashedUntil) f |= F.FLASHED; if (now < e.dashUntil) f |= F.DASH;
+      if (now < e.ampUntil) f |= F.AMP; if (now < e.silencedUntil) f |= F.SILENCED; if (e.shield > 0) f |= F.SHIELD; if (now < e.healUntil) f |= F.HEAL; if (now < e.driftUntil) f |= F.INVIS; if (e.cast) f |= F.CAST;
       arr.push([e.id, r2(e.pos.x), r2(e.pos.y), r2(e.pos.z), r3(e.yaw), r3(e.pitch), f, e.hp, e.slot]);
     }
     const pj = []; for (const p of room.projs.values()) pj.push([p.id, r2(p.pos.x), r2(p.pos.y), r2(p.pos.z)]);
@@ -1000,7 +1189,7 @@ export function attach(ioInstance) {
 on('room:config', 4, inGame((room, e, m) => {
       if (room.phase !== 'lobby') return { ok: false, error: 'NOT_ALLOWED' };
       if (m.mode === 'classic' || m.mode === 'tdm') room.mode = m.mode;
-      if (m.map === 'grid' || m.map === 'arena') { room.mapId = m.map; room.map = MAPS[m.map]; }
+      if (m.map === 'grid' || m.map === 'arena') { room.mapId = m.map; room.map = roomMap(MAPS[m.map]); }
       if (Number.isFinite(m.teamSize)) { const ts = clamp(Math.floor(m.teamSize), 1, 6); if ([0, 1].every((t) => teamEnts(room, t).length <= ts)) room.teamSize = ts; }
       if (typeof m.fillBots === 'boolean') room.fillBots = m.fillBots;
       if (Number.isFinite(m.botLevel)) room.botLevel = clamp(Math.floor(m.botLevel), 0, 19);
@@ -1032,8 +1221,9 @@ on('room:config', 4, inGame((room, e, m) => {
       const p = m.p; if (!Array.isArray(p) || p.length !== 3 || !p.every((v) => Number.isFinite(v))) return;
       const dt = clamp((now - e.lastMoveAt) / 1000, 0.001, 0.25), d = Math.hypot(p[0] - e.pos.x, p[2] - e.pos.z), bd = room.map.bounds;
       const w = WEAPONS[e.loadout[SLOT_KEYS[e.slot]]];
-      const maxSp = Math.max(MOVE.run * (w?.move || 1), MOVE.slideV) * (now < e.dashUntil + 300 ? MOVE.dashMult : 1);
-      const bad = d > maxSp * dt * 1.4 + 0.5 || p[0] < bd.x0 || p[0] > bd.x1 || p[2] < bd.z0 || p[2] > bd.z1 || p[1] < -0.5 || p[1] > 40 || insideSolid(room.map, p[0], p[1] + 0.9, p[2]);
+      const maxSp = Math.max(MOVE.run * (w?.move || 1), MOVE.slideV) * (now < e.dashUntil + 300 || now < e.driftUntil + 300 ? MOVE.dashMult : 1);
+      const dr = e.duel ? room.map.duel.rect : null, oob = dr ? p[0] < dr.x0 || p[0] > dr.x1 || p[2] < dr.z0 || p[2] > dr.z1 : p[0] < bd.x0 || p[0] > bd.x1 || p[2] < bd.z0 || p[2] > bd.z1;
+      const bad = d > maxSp * dt * 1.4 + 0.5 || oob || p[1] < -0.5 || p[1] > 40 || insideSolid(room.map, p[0], p[1] + 0.9, p[2]);
       if (bad) { if (++e.violations > 4) { e.violations = 0; e.lastMoveAt = now; socket.emit('pos:correct', { p: [e.pos.x, e.pos.y, e.pos.z], s: e.spawnSeq }); } return; }
       e.violations = Math.max(0, e.violations - 0.05); e.lastMoveAt = now;
       e.vel.x = (p[0] - e.pos.x) / dt; e.vel.z = (p[2] - e.pos.z) / dt;
@@ -1046,14 +1236,18 @@ on('room:config', 4, inGame((room, e, m) => {
     }));
     // 사격/근접/투척: {t:서버시각 추정, o:[x,y,z], yaw, pitch, alt}
     on('fire', 40, inGame((room, e, m, now) => {
-      if (!canAct(room, e)) return;
+      if (!canAct(room, e) || now < e.driftUntil || e.cast) return;
       const wid = e.loadout[SLOT_KEYS[e.slot]], w = WEAPONS[wid];
       if (w.type === 'melee') meleeAttack(room, e, w, wid, m, now);
       else if (w.type === 'throw') throwProj(room, e, wid, m, now);
       else fireGun(room, e, w, wid, m, now);
     }));
     on('reload', 5, inGame((room, e, m, now) => { if (e.alive) startReload(room, e, now); }));
-    on('skill', 6, inGame((room, e, m, now) => { if (!canAct(room, e)) return { ok: false }; return { ok: useSkill(room, e, m.k, now) }; }));
+    on('skill', 8, inGame((room, e, m, now) => {
+      if (!canAct(room, e) || !m || typeof m !== 'object') return { ok: false };
+      if (Number.isFinite(m.yaw) && Number.isFinite(m.pitch)) { e.yaw = m.yaw; e.pitch = clamp(m.pitch, -1.55, 1.55); }
+      return { ok: useSkill(room, e, m.k, now, m) };
+    }));
 
     // ───── 고객센터 / 개발자 모드 (async 핸들러). 개발자 권한은 이 소켓 연결에만 유효.
     const onA = (ev, max, fn) => socket.on(ev, async (m, ack) => {

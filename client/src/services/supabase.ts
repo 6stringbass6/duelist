@@ -5,6 +5,7 @@
 // =====================================================================
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import { DEFAULT_LOADOUT, WEAPONS, SLOT_KEYS, type Loadout } from '../config/weapons';
+import { SKILLS, SKILL_IDS, ULTS } from '../config/skills';
 import { getSettings, onSettingsChange, replaceSettings, type Settings } from '../config/settings';
 
 const env = (import.meta as unknown as { env: Record<string, string | undefined> }).env;
@@ -80,6 +81,13 @@ export function sanitizeLoadout(l: unknown): Loadout {
     const key = SLOT_KEYS[slot], id = (l as Record<string, unknown>)[key];
     if (typeof id === 'string' && id in WEAPONS && WEAPONS[id as keyof typeof WEAPONS].slot === slot) out[key] = id;
   }
+  if (l && typeof l === 'object') {
+    const r = l as Record<string, unknown>;
+    if (typeof r.q === 'string' && r.q in SKILLS) out.q = r.q;
+    if (typeof r.e === 'string' && r.e in SKILLS) out.e = r.e;
+    if (typeof r.x === 'string' && r.x in ULTS) out.x = r.x;
+  }
+  if (out.q === out.e) out.e = SKILL_IDS.find((k) => k !== out.q)!; // 같은 스킬 중복 장착 불가
   return out as unknown as Loadout;
 }
 

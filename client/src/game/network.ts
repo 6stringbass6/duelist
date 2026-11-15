@@ -7,6 +7,7 @@ import { io, type Socket } from 'socket.io-client';
 import { F, RULES, SLOT, SLOT_KEYS, WEAPONS, isGun, type GameMode, type HitZone, type Loadout, type MapId, type WeaponId } from '../config/weapons';
 import { DEFAULT_SKIN, getSkin, type SkinDef, type SkinMaterial } from '../config/skins';
 import { SERVER_URL, socketAuthPayload } from '../services/supabase';
+import type { SkillId, UltId } from '../config/skills';
 import { buildArena, textSprite, type ArenaBuild, type MapData, type World } from './arena';
 
 // ───────────────────────────── 타입 ─────────────────────────────
@@ -36,7 +37,7 @@ export interface NetEvents {
   joined: (room: RoomState) => void; state: (room: RoomState) => void; roster: (room: RoomState) => void; closed: (reason: string) => void;
   phase: (p: { phase: Phase; endsAt: number; round: number; score: [number, number]; winner?: number }) => void;
   spawn: (x: number, y: number, z: number, yaw: number, seq: number) => void;   // 내 스폰
-  correct: (x: number, y: number, z: number, seq: number) => void;
+  correct: (x: number, y: number, z: number, seq: number, yaw?: number) => void;
   ammo: (a: AmmoState) => void;
   hit: (h: { v: number; d: number; z: HitZone; k: boolean }) => void;
   hurt: (h: { a: number; d: number; hp: number; from: [number, number] }) => void;
@@ -45,8 +46,14 @@ export interface NetEvents {
   shot: (s: { id: number; w: WeaponId; o: [number, number, number]; alt: boolean }) => void;
   melee: (m: { id: number; w: WeaponId; hit: number }) => void;
   reload: (id: number) => void;
-  explode: (e: { type: 'grenade' | 'flash'; p: [number, number, number] }) => void;
-  skill: (s: { id: number; k: 'q' | 'e'; cd: number; until: number }) => void;
+  explode: (e: { type: 'grenade' | 'flash' | 'zero'; p: [number, number, number] }) => void;
+  skill: (s: { id: number; k: 'q' | 'e'; s: SkillId; cd: number; until: number; u: number }) => void;
+  ult: (u: { id: number; s: UltId; ph: 'cast' | 'cancel' | 'done' | 'start' | 'end' | 'wave'; until?: number; p?: [number, number]; o?: [number, number, number]; d?: [number, number, number]; hit?: number }) => void;
+  ultPts: (p: number) => void;
+  silence: (until: number) => void;
+  shield: (s: { on: boolean; broke?: boolean }) => void;
+  duel: (d: { a: number; b: number; until: number }) => void;
+  duelEnd: (d: { a: number; b: number; w: number }) => void;
   loadout: (id: number, l: Loadout) => void;
   rangeConfig: (moving: boolean) => void;
   matchEnd: (m: MatchEnd) => void; reward: (r: MatchReward) => void;
@@ -153,12 +160,15 @@ export function createWeaponMesh(weaponId: WeaponId, skinId?: string | null): TH
 // ───────────────────────────── 원격 캐릭터 ─────────────────────────────
 const COLOR_ALLY = 0x3b9cff, COLOR_ENEMY = 0xff4655, COLOR_DUMMY = 0xffa23a;
 const HEAD_GEO = new THREE.SphereGeometry(0.23, 16, 12);
+const FX_GEO = new THREE.SphereGeometry(1, 16, 12);
 class RemoteEntity {
   readonly group = new THREE.Group();
   private readonly upper = new THREE.Group();
   private readonly hand = new THREE.Group();
   private readonly bodyMat: THREE.MeshStandardMaterial;
   private tag: THREE.Sprite | null = null;
+  private readonly aura: THREE.Mesh; private readonly bubble: THREE.Mesh; private readonly fxMat: THREE.MeshBasicMaterial[] = [];
+  private ally: boolean;
   private weapon: THREE.Group | null = null;
   private weaponKey = '';
   readonly buf: Snap[] = [];
@@ -166,6 +176,7 @@ class RemoteEntity {
   private kick = 0;
 
   constructor(public info: PlayerInfo, ally: boolean) {
+    this.ally = ally;
     const color = info.dummy ? COLOR_DUMMY : ally ? COLOR_ALLY : COLOR_ENEMY;
     this.bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.15, emissive: color, emissiveIntensity: 0.18 });
     const dark = new THREE.MeshStandardMaterial({ color: 0x1c2028, roughness: 0.7, metalness: 0.2 });
@@ -179,6 +190,11 @@ class RemoteEntity {
     this.hand.position.set(0.24, -0.1, -0.42); this.upper.add(this.hand);
     g.add(this.upper);
     g.traverse((o) => { if ((o as THREE.Mesh).isMesh) { o.castShadow = true; o.userData.entityId = info.id; } });
+    const mkFx = (color: number, r: number): THREE.Mesh => { // 스킬 상태 이펙트 구체 (데미지 증폭 붉은 오라 / 보호막 / 봉인)
+      const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.28, depthWrite: false, blending: THREE.AdditiveBlending });
+      this.fxMat.push(mat); const m = new THREE.Mesh(FX_GEO, mat); m.scale.setScalar(r); m.position.y = 0.95; m.visible = false; g.add(m); return m;
+    };
+    this.aura = mkFx(0xff2a2a, 1.05); this.bubble = mkFx(0x5ef0ff, 0.95);
     this.setTag(ally);
     g.visible = false;
   }
@@ -188,7 +204,7 @@ class RemoteEntity {
     this.tag = textSprite(this.info.name, ally ? '#8cc8ff' : '#ff8c96', 0.8); this.tag.position.set(0, 2.15, 0); this.group.add(this.tag);
   }
   setInfo(info: PlayerInfo, ally: boolean): void {
-    const renamed = info.name !== this.info.name; this.info = info;
+    const renamed = info.name !== this.info.name; this.info = info; this.ally = ally;
     const color = info.dummy ? COLOR_DUMMY : ally ? COLOR_ALLY : COLOR_ENEMY; this.bodyMat.color.setHex(color); this.bodyMat.emissive.setHex(color);
     if (renamed) this.setTag(ally);
     this.weaponKey = '';
@@ -208,14 +224,18 @@ class RemoteEntity {
     this.x = far ? n.x : a.x + (n.x - a.x) * k; this.y = far ? n.y : a.y + (n.y - a.y) * k; this.z = far ? n.z : a.z + (n.z - a.z) * k;
     this.yaw = a.yaw + shortAngle(n.yaw - a.yaw) * Math.min(1, k); this.pitch = a.pitch + (n.pitch - a.pitch) * Math.min(1, k);
     const s = k >= 0.5 ? n : a; this.flags = s.f; this.hp = s.hp; this.slot = s.slot; this.alive = !!(s.f & F.ALIVE);
-    const g = this.group; g.visible = this.alive; if (!this.alive) return;
+    const g = this.group; g.visible = this.alive && !(this.flags & F.INVIS && !this.ally); if (!this.alive) return; // 차원 표류: 적에게는 완전 은신
     g.position.set(this.x, this.y, this.z); g.rotation.y = this.yaw;
     const low = this.flags & (F.CROUCH | F.SLIDE);
     g.scale.y += ((low ? 0.64 : 1) - g.scale.y) * Math.min(1, dt * 14);
     this.kick = Math.max(0, this.kick - dt * 9);
     this.upper.rotation.x = this.pitch + this.kick * 0.06; this.hand.position.z = -0.42 + this.kick * 0.05;
-    this.bodyMat.transparent = !!(this.flags & F.PROT); this.bodyMat.opacity = this.flags & F.PROT ? 0.45 : 1;
-    this.bodyMat.emissiveIntensity = this.flags & F.DASH ? 0.7 : 0.18;
+    const ghost = !!(this.flags & F.INVIS), cast = !!(this.flags & F.CAST), t = performance.now() / 1000;
+    this.bodyMat.transparent = !!(this.flags & F.PROT) || ghost || cast; this.bodyMat.opacity = ghost ? 0.2 : cast ? 0.45 + 0.25 * Math.sin(t * 20) : this.flags & F.PROT ? 0.45 : 1;
+    this.bodyMat.emissiveIntensity = this.flags & (F.DASH | F.HEAL) ? 0.7 : 0.18;
+    this.aura.visible = !!(this.flags & F.AMP);
+    if (this.aura.visible) this.aura.scale.setScalar(1.05 + 0.08 * Math.sin(t * 9));
+    this.fxMat[1].color.setHex(this.flags & F.SILENCED ? 0xb06bff : 0x5ef0ff); this.bubble.visible = !!(this.flags & (F.SHIELD | F.SILENCED));
     if (this.tag) this.tag.scale.y = 0.4 / g.scale.y;
     // 손에 든 무기 + 스킨
     const wid = this.info.loadout[SLOT_KEYS[(this.slot as 1 | 2 | 3 | 4)] ?? 'primary'] as WeaponId, skin = this.info.skins?.[wid] ?? '', key = wid + '|' + skin;
@@ -225,7 +245,7 @@ class RemoteEntity {
     }
   }
   dispose(): void {
-    this.group.removeFromParent(); this.bodyMat.dispose();
+    this.group.removeFromParent(); this.bodyMat.dispose(); for (const m of this.fxMat) m.dispose();
     if (this.tag) { this.tag.material.map?.dispose(); this.tag.material.dispose(); }
   }
 }
@@ -256,6 +276,8 @@ export class GameClient {
   private syncTimer: ReturnType<typeof setInterval> | null = null;
   private readonly handlers = new Map<string, Set<Handler>>();
   private readonly projs = new Map<number, { mesh: THREE.Mesh; target: THREE.Vector3 }>();
+  private readonly walls = new Map<number, { box: MapData['boxes'][number]; mesh: THREE.Mesh; hp: number; max: number }>();
+  private readonly orbs = new Map<number, { mesh: THREE.Mesh; base: THREE.Vector3; mine: boolean }>();
   private readonly fx: Fx[] = [];
   private readonly tmp = new THREE.Vector3();
 
@@ -341,7 +363,8 @@ export class GameClient {
   }
   switchWeapon(slot: 1 | 2 | 3 | 4): void { this.socket?.emit('weapon:switch', { slot }); }
   reload(): void { this.socket?.emit('reload', {}); }
-  skill(k: 'q' | 'e'): void { this.socket?.emit('skill', { k }); }
+  /** 스킬 사용 요청(서버 검증). yaw/pitch 는 투척·장벽 조준용, t 는 오멘 목표 좌표 */
+  skill(k: 'q' | 'e' | 'x', aim?: { yaw: number; pitch: number; t?: [number, number] }): Promise<Ack> { return this.req('skill', { k, ...aim }); }
 
   // ── 수신 바인딩
   private bind(s: Socket): void {
@@ -379,7 +402,18 @@ export class GameClient {
       this.emit('phase', p);
     });
     s.on('spawn', (m: { s: SpawnTuple }) => this.onSpawn(m.s));
-    s.on('pos:correct', (m: { p: [number, number, number]; s: number }) => this.emit('correct', m.p[0], m.p[1], m.p[2], m.s));
+    s.on('pos:correct', (m: { p: [number, number, number]; s: number; yaw?: number }) => this.emit('correct', m.p[0], m.p[1], m.p[2], m.s, m.yaw));
+    s.on('ult:pts', (m: { p: number }) => this.emit('ultPts', m.p));
+    s.on('silence', (m: { until: number }) => this.emit('silence', m.until));
+    s.on('shield', (m: { on: boolean; broke?: boolean }) => this.emit('shield', m));
+    s.on('duel', (m: { a: number; b: number; until: number }) => this.emit('duel', m));
+    s.on('duel:end', (m: { a: number; b: number; w: number }) => this.emit('duelEnd', m));
+    s.on('ult', (m: Parameters<NetEvents['ult']>[0]) => { if (m.ph === 'wave' && m.o && m.d) this.spawnWave(m.o, m.d); this.emit('ult', m); });
+    s.on('wall:add', (m: { id: number; b: number[]; hp: number; o: number }) => this.addWall(m.id, m.b, m.hp));
+    s.on('wall:hp', (m: { id: number; hp: number }) => { const w = this.walls.get(m.id); if (w) { w.hp = m.hp; (w.mesh.material as THREE.MeshStandardMaterial).opacity = 0.35 + 0.5 * (m.hp / w.max); } });
+    s.on('wall:del', (m: { id: number }) => this.removeWall(m.id, true));
+    s.on('orb:add', (m: { id: number; o: number; p: [number, number, number] }) => this.addOrb(m.id, m.p, m.o === this.you));
+    s.on('orb:del', (m: { id: number }) => this.removeOrb(m.id));
     s.on('snap', (m: { t: number; e: number[][]; p: number[][]; s: [number, number] }) => this.onSnap(m));
     s.on('ammo', (m: { s: number; p: number; c: number; r: number; rk: 'secondary' | 'primary' | null }) => {
       this.ammo = { secondary: m.s, primary: m.p, charges: m.c, reloadUntil: m.r, reloadKey: m.rk }; this.emit('ammo', this.ammo);
@@ -391,15 +425,16 @@ export class GameClient {
     s.on('hit', (m: { v: number; d: number; z: HitZone; k: boolean }) => this.emit('hit', m));
     s.on('hurt', (m: { a: number; d: number; hp: number; from: [number, number] }) => { this.self.hp = m.hp; this.emit('hurt', m); });
     s.on('flash', (m: { dur: number; by: number; full: boolean }) => this.emit('flash', m));
-    s.on('skill', (m: { id: number; k: 'q' | 'e'; cd: number; until: number }) => this.emit('skill', m));
+    s.on('skill', (m: Parameters<NetEvents['skill']>[0]) => this.emit('skill', m));
     s.on('kill', (m: { k: number; v: number; w: WeaponId; hs: boolean; a: number[]; s: [number, number] }) => this.onKill(m));
-    s.on('proj:spawn', (m: { id: number; type: 'grenade' | 'flash'; p: [number, number, number] }) => {
-      const mesh = new THREE.Mesh(new THREE.SphereGeometry(m.type === 'flash' ? 0.07 : 0.09, 10, 8),
-        new THREE.MeshStandardMaterial({ color: m.type === 'flash' ? 0xe8f4ff : 0x4f6b45, emissive: m.type === 'flash' ? 0x9fd8ff : 0xff3b1f, emissiveIntensity: 0.8 }));
+    s.on('proj:spawn', (m: { id: number; type: 'grenade' | 'flash' | 'zero'; p: [number, number, number] }) => {
+      const zero = m.type === 'zero';
+      const mesh = new THREE.Mesh(zero ? new THREE.ConeGeometry(0.07, 0.3, 6) : new THREE.SphereGeometry(m.type === 'flash' ? 0.07 : 0.09, 10, 8),
+        new THREE.MeshStandardMaterial({ color: zero ? 0x2a1a4a : m.type === 'flash' ? 0xe8f4ff : 0x4f6b45, emissive: zero ? 0xb06bff : m.type === 'flash' ? 0x9fd8ff : 0xff3b1f, emissiveIntensity: 0.8 }));
       mesh.position.set(m.p[0], m.p[1], m.p[2]); this.scene.add(mesh);
       this.projs.set(m.id, { mesh, target: mesh.position.clone() });
     });
-    s.on('proj:explode', (m: { id: number; type: 'grenade' | 'flash'; p: [number, number, number] }) => {
+    s.on('proj:explode', (m: { id: number; type: 'grenade' | 'flash' | 'zero'; p: [number, number, number] }) => {
       this.removeProj(m.id); this.spawnBlast(m.type, m.p); this.emit('explode', { type: m.type, p: m.p });
     });
     s.on('range:config', (m: { moving: boolean }) => { this.rangeMoving = m.moving; this.emit('rangeConfig', m.moving); });
@@ -490,12 +525,44 @@ export class GameClient {
       sp.position.set(x, y, z); this.scene.add(sp); this.fx.push({ obj: sp, life: 0.15, max: 0.15, kind: 'pop' });
     }
   }
-  private spawnBlast(type: 'grenade' | 'flash', p: [number, number, number]): void {
+  private spawnBlast(type: 'grenade' | 'flash' | 'zero', p: [number, number, number]): void {
+    if (type === 'zero') { // 제로/포인트: 반경 12m 감지 파동
+      const r = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), new THREE.MeshBasicMaterial({ color: 0xb06bff, transparent: true, opacity: 0.5, depthWrite: false, wireframe: true }));
+      r.position.set(p[0], p[1], p[2]); r.userData.radius = 12 / 0.8; this.scene.add(r); this.fx.push({ obj: r, life: 0.7, max: 0.7, kind: 'boom' }); return;
+    }
     const flash = type === 'flash';
     const m = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshBasicMaterial({ color: flash ? 0xffffff : 0xff8a30, transparent: true, opacity: 0.85, depthWrite: false }));
     m.position.set(p[0], p[1], p[2]); m.userData.radius = flash ? 1.6 : (WEAPONS.grenade.type === 'throw' ? WEAPONS.grenade.radius ?? 6.5 : 6.5);
     const light = new THREE.PointLight(flash ? 0xffffff : 0xff7a20, flash ? 6 : 4, flash ? 30 : 18); m.add(light);
     this.scene.add(m); this.fx.push({ obj: m, life: flash ? 0.22 : 0.4, max: flash ? 0.22 : 0.4, kind: 'boom' });
+  }
+  private addWall(id: number, b: number[], hp: number): void {
+    const world = this.world; if (!world) return;
+    const box = [b[0], b[1], b[2], b[3], b[4], b[5], 'barrier', id] as unknown as MapData['boxes'][number];
+    world.boxes.push(box); // 클라이언트 충돌 월드에도 즉시 반영 (서버와 동일 AABB)
+    const m = new THREE.Mesh(UNIT_BOX, new THREE.MeshStandardMaterial({ color: 0x7fe8ff, emissive: 0x2a9bb8, emissiveIntensity: 0.6, transparent: true, opacity: 0.85, roughness: 0.2, metalness: 0.3 }));
+    m.scale.set(b[3] - b[0], b[4] - b[1], b[5] - b[2]); m.position.set((b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2); m.castShadow = true;
+    this.scene.add(m); this.walls.set(id, { box, mesh: m, hp, max: hp });
+  }
+  private removeWall(id: number, fxOn = false): void {
+    const w = this.walls.get(id); if (!w) return;
+    const i = this.world?.boxes.indexOf(w.box) ?? -1; if (i >= 0) this.world!.boxes.splice(i, 1);
+    if (fxOn && this.particles !== 'off') this.spawnBlast('flash', [w.mesh.position.x, w.mesh.position.y, w.mesh.position.z]);
+    w.mesh.removeFromParent(); (w.mesh.material as THREE.Material).dispose(); this.walls.delete(id);
+  }
+  private addOrb(id: number, p: [number, number, number], mine: boolean): void {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.22, 14, 10), new THREE.MeshBasicMaterial({ color: mine ? 0x5ef0ff : 0x9aa7b4, transparent: true, opacity: mine ? 0.95 : 0.45 }));
+    m.position.set(p[0], p[1], p[2]); this.scene.add(m); this.orbs.set(id, { mesh: m, base: m.position.clone(), mine });
+  }
+  private removeOrb(id: number): void {
+    const o = this.orbs.get(id); if (!o) return;
+    o.mesh.removeFromParent(); o.mesh.geometry.dispose(); (o.mesh.material as THREE.Material).dispose(); this.orbs.delete(id);
+  }
+  /** 청부 계약: 전방 직선 파동 */
+  private spawnWave(o: [number, number, number], d: [number, number, number]): void {
+    const len = 40, m = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, len, 12, 1, true), new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+    const dir = new THREE.Vector3(d[0], d[1], d[2]); m.position.set(o[0] + d[0] * len / 2, o[1] - 0.2 + d[1] * len / 2, o[2] + d[2] * len / 2);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir); this.scene.add(m); this.fx.push({ obj: m, life: 0.5, max: 0.5, kind: 'pop' });
   }
   private removeProj(id: number): void {
     const p = this.projs.get(id); if (!p) return;
@@ -503,6 +570,8 @@ export class GameClient {
   }
   private clearEffects(): void {
     for (const id of [...this.projs.keys()]) this.removeProj(id);
+    for (const id of [...this.walls.keys()]) this.removeWall(id);
+    for (const id of [...this.orbs.keys()]) this.removeOrb(id);
     for (const f of this.fx) disposeFx(f); this.fx.length = 0;
   }
   private clearRoom(): void {
@@ -520,6 +589,7 @@ export class GameClient {
     for (const e of this.entities.values()) e.update(rt, dt);
     const k = Math.min(1, dt * 18);
     for (const p of this.projs.values()) { p.mesh.position.lerp(p.target, k); p.mesh.rotation.x += dt * 9; p.mesh.rotation.z += dt * 7; }
+    const ot = performance.now() / 1000; for (const o of this.orbs.values()) o.mesh.position.y = o.base.y + 0.12 * Math.sin(ot * 3 + o.base.x);
     for (let i = this.fx.length - 1; i >= 0; i--) {
       const f = this.fx[i]; f.life -= dt;
       if (f.life <= 0) { disposeFx(f); this.fx.splice(i, 1); continue; }

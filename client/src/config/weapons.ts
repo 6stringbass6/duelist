@@ -3,6 +3,8 @@
 // 서버가 판정 권위. 이 파일은 예측·연출·UI 용.
 // =====================================================================
 
+import type { SkillId, UltId } from './skills';
+
 export type SlotKey = 'primary' | 'secondary' | 'melee' | 'throwable';
 export type MeleeId = 'fists' | 'dagger' | 'sword';
 export type SecondaryId = 'classic' | 'shorty' | 'frenzy' | 'ghost' | 'sheriff';
@@ -12,12 +14,13 @@ export type GunId = SecondaryId | PrimaryId;
 export type WeaponId = MeleeId | GunId | ThrowableId;
 export type HitZone = 'head' | 'body' | 'leg';
 
-export interface Loadout { melee: MeleeId; secondary: SecondaryId; primary: PrimaryId; throwable: ThrowableId }
+/** q/e = 일반 스킬 슬롯, x = 궁극기 슬롯 (서버로 전달되어 방 전원과 동기화) */
+export interface Loadout { melee: MeleeId; secondary: SecondaryId; primary: PrimaryId; throwable: ThrowableId; q: SkillId; e: SkillId; x: UltId }
 
 /** 숫자키 슬롯 (FPS 표준): 1 주무기 / 2 보조 / 3 근접 / 4 투척 — server.js SLOT_KEYS 와 동일 */
 export const SLOT_KEYS: Record<1 | 2 | 3 | 4, SlotKey> = { 1: 'primary', 2: 'secondary', 3: 'melee', 4: 'throwable' };
 export const SLOT: Record<SlotKey, 1 | 2 | 3 | 4> = { primary: 1, secondary: 2, melee: 3, throwable: 4 };
-export const DEFAULT_LOADOUT: Loadout = { melee: 'dagger', secondary: 'classic', primary: 'vandal', throwable: 'grenade' };
+export const DEFAULT_LOADOUT: Loadout = { melee: 'dagger', secondary: 'classic', primary: 'vandal', throwable: 'grenade', q: 'updraft', e: 'haste', x: 'omen' };
 
 interface BaseDef { id: WeaponId; slot: 1 | 2 | 3 | 4; name: string; desc: string; move: number; equipMs: number; model: string }
 
@@ -144,7 +147,7 @@ export const MOVE = {
 export const THROW = { gravity: 20, radius: 0.12, cooldownMs: 900 } as const;
 
 /** 스냅샷 플래그 비트 */
-export const F = { CROUCH: 1, SLIDE: 2, ADS: 4, AIR: 8, DASH: 16, ALIVE: 32, PROT: 64, RELOAD: 128, FLASHED: 256 } as const;
+export const F = { CROUCH: 1, SLIDE: 2, ADS: 4, AIR: 8, DASH: 16, ALIVE: 32, PROT: 64, RELOAD: 128, FLASHED: 256, AMP: 512, SILENCED: 1024, SHIELD: 2048, HEAL: 4096, INVIS: 8192, CAST: 16384 } as const;
 
 export type GameMode = 'classic' | 'ranked' | 'tdm' | 'range';
 export type MapId = 'grid' | 'arena' | 'range';

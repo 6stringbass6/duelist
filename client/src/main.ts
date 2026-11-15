@@ -18,6 +18,7 @@ import {
   initAuth, isSupabaseConfigured, onProfileChange, openLootbox, patchProfile, refreshProfile, saveLoadout, setGuestNickname, signInWithGoogle, signInWithId, signOut, signUpWithId, startGuest,
   type AccountBundle, type DailyLoginResult, type MatchRow,
 } from './services/supabase';
+import { SKILLS, SKILL_IDS, ULTS, ULT_IDS, ULT_COST, type SkillId, type UltId } from './config/skills';
 import { GameClient, type MatchEnd, type MatchReward, type PlayerInfo, type RoomState } from './game/network';
 import { PlayerController } from './game/playerController';
 
@@ -86,7 +87,7 @@ function setView(v: View): void {
   if (v !== 'game') { show('scoreboard', false); show('loadout', false); show('m-pause', false); if (document.pointerLockElement) document.exitPointerLock(); pc.releaseAll(); xctx.clearRect(0, 0, xhair.width, xhair.height); }
   pc.captureEnabled = v === 'game';
 }
-const anyPanelOpen = (): boolean => visible('loadout') || visible('m-pause') || visible('m-settings') || visible('m-result');
+const anyPanelOpen = (): boolean => visible('tacmap') || visible('loadout') || visible('m-pause') || visible('m-settings') || visible('m-result');
 function closeModal(id: string): void { show(id, false); if (id === 'm-support') endDevMode(); if (id === 'm-settings' && view === 'game' && !visible('m-pause')) resumeGame(); }
 document.querySelectorAll<HTMLElement>('[data-close]').forEach((b) => b.addEventListener('click', () => closeModal(b.closest('.modal')!.id)));
 
@@ -179,12 +180,25 @@ function htmlShop(): string {
   <h2>랜덤 박스</h2><div class="grid wide">${boxes}</div>`;
 }
 let invWeapon = 'vandal';
+let skillSlot: 'q' | 'e' | 'x' = 'q';
+function htmlSkillLoadout(): string {
+  const l = getProfile()!.loadout, cur = { q: l.q, e: l.e, x: l.x };
+  const slot = (k: 'q' | 'e' | 'x'): string => {
+    const d = k === 'x' ? ULTS[cur.x] : SKILLS[cur[k as 'q' | 'e']];
+    return `<div class="eqslot ${skillSlot === k ? 'sel' : ''}" data-skslot="${k}"><small>${k === 'x' ? 'X 궁극기' : k.toUpperCase() + ' 스킬'}</small><b>${d.icon} ${esc(d.name)}</b><small>${k === 'x' ? `궁극기 포인트 ${ULT_COST} 필요` : `쿨타임 ${SKILLS[cur[k as 'q' | 'e']].cdMs / 1000}초 · 라운드당 ${SKILLS[cur[k as 'q' | 'e']].uses}회`}</small></div>`;
+  };
+  const list = skillSlot === 'x'
+    ? ULT_IDS.map((id) => `<div class="skcard ${cur.x === id ? 'on' : ''}"><span class="ic">${ULTS[id].icon}</span><b>${esc(ULTS[id].name)}</b><span class="mut" style="font-size:12px">${esc(ULTS[id].desc)}</span>${cur.x === id ? '<span style="color:var(--ok)">장착 중</span>' : `<button class="sm" data-skpick="${id}">X 에 장착</button>`}</div>`).join('')
+    : SKILL_IDS.map((id) => { const d = SKILLS[id], other = skillSlot === 'q' ? cur.e : cur.q, mine = cur[skillSlot] === id;
+      return `<div class="skcard ${mine ? 'on' : ''}"><span class="ic">${d.icon}</span><b>${esc(d.name)}</b><span class="mut" style="font-size:12px">${esc(d.desc)}</span><span class="mut" style="font-size:11px">쿨타임 ${d.cdMs / 1000}초 · 라운드당 ${d.uses}회</span>${mine ? '<span style="color:var(--ok)">장착 중</span>' : other === id ? `<button class="sm" data-skpick="${id}">${skillSlot.toUpperCase()} 와 교체</button>` : `<button class="sm" data-skpick="${id}">${skillSlot.toUpperCase()} 에 장착</button>`}</div>`; }).join('');
+  return `<h2>스킬 로드아웃 <small class="mut">Q / E / X 슬롯을 선택한 뒤 아래 목록에서 장착 — 다음 매치부터 적용</small></h2><div class="slotrow">${slot('q')}${slot('e')}${slot('x')}</div><div class="grid" style="margin:12px 0 18px">${list}</div>`;
+}
 function htmlInventory(): string {
   const chips = SKIN_WEAPONS.map((w) => `<button class="sm ${w.id === invWeapon ? 'on' : ''}" data-invw="${w.id}">${w.name}</button>`).join('');
   const mine = (bundle?.skins ?? []).filter((s) => s.weapon_id === invWeapon), equipped = mine.find((s) => s.equipped)?.skin_id ?? null;
   const cards = [`<div class="skin"><div class="sw" style="background:linear-gradient(120deg,#2b2f36,#4b525c)"></div><div class="inf"><span class="rar mut">기본</span><span class="nm">기본 외형</span>${equipped ? `<button class="sm" data-equip="">장착</button>` : `<span style="color:var(--ok)">장착 중</span>`}</div></div>`,
     ...mine.map((o) => { const s = getSkin(o.skin_id); return s ? skinCard(s, o.equipped ? `<span style="color:var(--ok)">장착 중</span>` : `<button class="sm" data-equip="${s.id}">장착</button>`) : ''; })].join('');
-  return `<h2>보관함</h2><div class="row" style="flex-wrap:wrap">${chips}</div><div class="grid" style="margin-top:12px">${cards}</div><div class="mut" style="margin-top:10px">전체 스킨 ${skinsForWeapon(invWeapon).length}종 중 ${mine.length}종 보유</div>`;
+  return `${htmlSkillLoadout()}<h2>보관함</h2><div class="row" style="flex-wrap:wrap">${chips}</div><div class="grid" style="margin-top:12px">${cards}</div><div class="mut" style="margin-top:10px">전체 스킨 ${skinsForWeapon(invWeapon).length}종 중 ${mine.length}종 보유</div>`;
 }
 function htmlMissions(): string {
   const p = getProfile()!, today = ((Math.max(1, p.login_streak) - 1) % 7) + 1;
@@ -221,6 +235,13 @@ function bindLobbyBody(): void {
   }));
   each('[data-box]', (b) => (b.onclick = () => void runGacha(b.dataset.box!, !!b.dataset.owned)));
   each('[data-invw]', (b) => (b.onclick = () => { invWeapon = b.dataset.invw!; renderLobby(); }));
+  each('[data-skslot]', (b) => (b.onclick = () => { skillSlot = b.dataset.skslot as 'q' | 'e' | 'x'; renderLobby(); }));
+  each('[data-skpick]', (b) => (b.onclick = () => { // 장착: 일반 스킬은 Q/E 중복 불가(자동 교체), 즉시 저장 + 다음 매치 진입 시 서버로 전달
+    const id = b.dataset.skpick!, l = { ...getProfile()!.loadout };
+    if (skillSlot === 'x') l.x = id as UltId;
+    else { const other = skillSlot === 'q' ? 'e' : 'q'; if (l[other] === id) l[other] = l[skillSlot]; l[skillSlot] = id as SkillId; }
+    needReconnect = true; void saveLoadout(l).then(() => renderLobby());
+  }));
   each('[data-equip]', (b) => (b.onclick = async () => {
     const id = b.dataset.equip || null;
     try { await equipSkin(invWeapon, id); bundle?.skins.forEach((s) => { if (s.weapon_id === invWeapon) s.equipped = s.skin_id === id; }); net.refreshProfile(); needReconnect = true; renderLobby(); } catch (e) { toast(errMsg(e), 'bad'); }
@@ -448,6 +469,46 @@ function renderScoreboard(): void {
 let hitUntil = 0, kfSig = '', fpsFrames = 0, fpsAt = performance.now();
 net.on('hit', (h) => { hitUntil = performance.now() + (h.k ? 320 : 160); $('hitmarker').classList.toggle('hs', h.z === 'head' || h.k); });
 net.on('kill', () => { if (visible('scoreboard')) renderScoreboard(); });
+// ── 스킬 알림 / 오멘 전술 맵 / 청부 계약 연출
+let lastDenyAt = 0;
+pc.onSkillDenied = (msg) => { const t = performance.now(); if (t - lastDenyAt > 700) { lastDenyAt = t; toast(msg, 'bad'); } };
+net.on('duel', (d) => { if (d.a === net.you || d.b === net.you) setBanner('청부 계약', '15초 1:1 결투 — 승자만 원래 위치로 복귀', 3000); });
+net.on('duelEnd', (d) => { if (d.a === net.you || d.b === net.you) toast(d.w === net.you ? '결투 승리! 원래 위치로 복귀' : '결투 패배', d.w === net.you ? 'good' : 'bad'); });
+net.on('ult', (u) => { if (u.id === net.you && u.ph === 'cancel') toast('피격으로 그림자 습격이 취소되었습니다', 'bad'); });
+let tacHover: { x: number; z: number } | null = null;
+function tacGeom(): { sc: number; ox: number; oz: number; w: number; h: number } | null {
+  const world = net.world, cv = $<HTMLCanvasElement>('tac-canvas'); if (!world) return null;
+  const b = world.bounds, ww = b.x1 - b.x0, hh = b.z1 - b.z0, sc = Math.min((cv.width - 20) / ww, (cv.height - 20) / hh);
+  return { sc, ox: (cv.width - ww * sc) / 2 - b.x0 * sc, oz: (cv.height - hh * sc) / 2 - b.z0 * sc, w: ww, h: hh };
+}
+function drawTacMap(): void {
+  const cv = $<HTMLCanvasElement>('tac-canvas'), c = cv.getContext('2d'), world = net.world, g = tacGeom(); if (!c || !world || !g) return;
+  c.clearRect(0, 0, cv.width, cv.height); const b = world.bounds;
+  c.fillStyle = '#121a26'; c.fillRect(g.ox + b.x0 * g.sc, g.oz + b.z0 * g.sc, g.w * g.sc, g.h * g.sc);
+  for (const bx of world.boxes) {
+    if (bx[6] === 'bound' || bx[6] === 'duel' || bx[6] === 'duelfloor' || bx[4] - bx[1] < 0.5) continue;
+    c.fillStyle = bx[6] === 'barrier' ? '#5ef0ff' : bx[4] > 3 ? '#4a5568' : '#2f3a4a'; c.fillRect(g.ox + bx[0] * g.sc, g.oz + bx[2] * g.sc, (bx[3] - bx[0]) * g.sc, (bx[5] - bx[2]) * g.sc);
+  }
+  const me = pc.pos; c.fillStyle = '#fff'; c.beginPath(); c.arc(g.ox + me.x * g.sc, g.oz + me.z * g.sc, 5, 0, 7); c.fill();
+  if (tacHover) {
+    const x = g.ox + tacHover.x * g.sc, z = g.oz + tacHover.z * g.sc, bad = world.blocked({ x: tacHover.x, y: 0, z: tacHover.z }, 1.8);
+    c.strokeStyle = bad ? '#ff4655' : '#b06bff'; c.lineWidth = 2; c.beginPath(); c.arc(x, z, 9, 0, 7); c.moveTo(x - 14, z); c.lineTo(x + 14, z); c.moveTo(x, z - 14); c.lineTo(x, z + 14); c.stroke();
+  }
+}
+function tacPoint(e: MouseEvent): { x: number; z: number } | null {
+  const cv = $<HTMLCanvasElement>('tac-canvas'), r = cv.getBoundingClientRect(), g = tacGeom(); if (!g) return null;
+  return { x: ((e.clientX - r.left) * (cv.width / r.width) - g.ox) / g.sc, z: ((e.clientY - r.top) * (cv.height / r.height) - g.oz) / g.sc };
+}
+function closeTacMap(): void { show('tacmap', false); if (view === 'game' && !TOUCH && !visible('m-pause')) pc.requestCapture(); }
+pc.onOmenPrompt = () => { tacHover = null; show('tacmap'); if (document.pointerLockElement) document.exitPointerLock(); pc.releaseAll(); drawTacMap(); };
+$('tac-close').onclick = closeTacMap;
+$('tac-canvas').addEventListener('mousemove', (e) => { tacHover = tacPoint(e); drawTacMap(); });
+$('tac-canvas').addEventListener('click', (e) => {
+  const p = tacPoint(e), world = net.world; if (!p || !world) return;
+  if (world.blocked({ x: p.x, y: 0, z: p.z }, 1.8)) { toast('해당 위치로는 이동할 수 없습니다', 'bad'); return; }
+  pc.castOmen(p.x, p.z); closeTacMap();
+});
+addEventListener('keydown', (e) => { if (e.code === 'Escape' && visible('tacmap')) closeTacMap(); });
 // ── 킬 배너 / 연속 킬 (라운드 내 누적, 라운드 시작·사망 시 초기화)
 let killStreak = 0, kbTimer = 0;
 function killBannerSvg(n: number, hs: boolean): string {
@@ -492,7 +553,22 @@ function updateHud(now: number): void {
   $('hud-weapon').textContent = h.weaponName;
   $('hud-slots').querySelectorAll<HTMLElement>('[data-slot]').forEach((d) => d.classList.toggle('on', +d.dataset.slot! === h.slot));
   const sk = (id: string, cd: number, act: boolean): void => { const e = $(id); (e.lastElementChild as HTMLElement).style.height = `${cd * 100}%`; e.classList.toggle('act', act); };
-  sk('sk-q', h.qCooldown, false); sk('sk-e', h.eCooldown, h.dashActive);
+  const skFill = (id: string, d: { icon: string; name: string }, uses: string, cd: number, act: boolean, off: boolean): void => {
+    const e = $(id); sk(id, cd, act); e.classList.toggle('off', off);
+    (e.children[1] as HTMLElement).textContent = d.icon; (e.children[2] as HTMLElement).textContent = `${d.name} ${uses}`;
+  };
+  skFill('sk-q', h.q, `${h.q.left}/${h.q.max}`, h.qCooldown, h.q.active, h.silenced || h.q.left <= 0);
+  skFill('sk-e', h.e, `${h.e.left}/${h.e.max}`, h.eCooldown, h.e.active, h.silenced || h.e.left <= 0);
+  skFill('sk-x', h.ult, h.ult.ready ? 'READY' : `${h.ult.pts}/${ULT_COST}`, 1 - h.ult.pts / ULT_COST, h.ult.casting || h.driftLeft > 0, h.silenced);
+  $('sk-x').classList.toggle('rdy', h.ult.ready && !h.silenced);
+  $('ult-pips').innerHTML = Array.from({ length: ULT_COST }, (_, i) => `<i class="${i < h.ult.pts ? 'on' : ''}"></i>`).join('');
+  $('ult-name').textContent = h.ult.ready ? `[X] ${h.ult.name} 준비 완료` : `궁극기 ${h.ult.pts}/${ULT_COST} · 킬/데스/라운드 +1`; $('ult-name').classList.toggle('rdy', h.ult.ready);
+  const sec = (ms: number): string => (ms / 1000).toFixed(1);
+  $('hud-status').innerHTML = [
+    h.silenced ? `<span class="sil">침묵 ${sec(h.silenceLeft)}s</span>` : '', h.ampLeft ? `<span class="amp">증폭 ${sec(h.ampLeft)}s</span>` : '', h.healLeft ? `<span class="heal">치유 ${sec(h.healLeft)}s</span>` : '',
+    h.shieldBuffLeft ? `<span class="shd">구슬 생성 ${sec(h.shieldBuffLeft)}s</span>` : '', h.shieldOn ? `<span class="shd">보호막 ◈</span>` : '', h.driftLeft ? `<span class="drift">차원 표류 ${sec(h.driftLeft)}s</span>` : '',
+  ].join('');
+  show('hud-cast', h.ult.casting); if (h.ult.casting) { $('cast-label').textContent = '그림자 습격 시전 중…'; ($('cast-bar').firstElementChild as HTMLElement).style.width = `${(1 - h.ult.castLeft / 1500) * 100}%`; }
   // 점수 / 타이머
   if (room && room.mode !== 'range') {
     const ms = net.phaseRemainingMs(), sec = Math.ceil(ms / 1000);
