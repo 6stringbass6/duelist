@@ -951,7 +951,7 @@ async function persist(room, e, result, now) {
   if (e.persisted || e.isBot) return; e.persisted = true;
   const s = e.stats, won = result === 'win', ranked = room.mode === 'ranked';
   const rp = ranked && result !== 'draw' ? (result === 'left' ? Math.min(-20, rpDelta(room, e, false)) : rpDelta(room, e, won)) : 0;
-  const credits = room.isPrivate ? 10 : result === 'left' ? 0 : Math.min(150, 20 + s.k * 4 + s.a * 2 + (won ? 40 : 10));
+  const credits = room.isPrivate ? 10 : result === 'left' ? 0 : (won ? 1000 : 500) + s.k * 25;
   const reward = { result, rp_delta: rp, credits, saved: false };
   if (supabase && e.userId && !room.isPrivate && room.mode !== 'range') {
     try {

@@ -47,31 +47,31 @@ interface CollectionDef {
 }
 
 export const COLLECTIONS: CollectionDef[] = [
-  { id: 'carbon', name: '카본', rarity: 'common', price: 600, sort: 1, model: 'default', blurb: '무광 카본 파이버 마감.',
+  { id: 'carbon', name: '카본', rarity: 'common', price: 800, sort: 1, model: 'default', blurb: '무광 카본 파이버 마감.',
     material: { baseColor: 0x1b1d21, accentColor: 0x3a3f47, metalness: 0.35, roughness: 0.55, pattern: 'carbon', patternColor: 0x2a2e35, patternScale: 12 },
     emissive: { color: 0x000000, intensity: 0, mode: 'none' }, vfx: {} },
-  { id: 'tundra', name: '툰드라', rarity: 'common', price: 600, sort: 2, model: 'default', blurb: '설원 위장 도색.',
+  { id: 'tundra', name: '툰드라', rarity: 'common', price: 800, sort: 2, model: 'default', blurb: '설원 위장 도색.',
     material: { baseColor: 0xdfe6ec, accentColor: 0x8fa1b3, metalness: 0.1, roughness: 0.8, pattern: 'stripes', patternColor: 0xaab8c5, patternScale: 5 },
     emissive: { color: 0x000000, intensity: 0, mode: 'none' }, vfx: { tracerColor: 0xe8f4ff } },
-  { id: 'neon', name: '네온 서킷', rarity: 'rare', price: 1100, sort: 3, model: 'angular', blurb: '회로 패턴을 따라 흐르는 네온.',
+  { id: 'neon', name: '네온 서킷', rarity: 'rare', price: 1500, sort: 3, model: 'angular', blurb: '회로 패턴을 따라 흐르는 네온.',
     material: { baseColor: 0x0d1020, accentColor: 0x1b2340, metalness: 0.6, roughness: 0.35, pattern: 'circuit', patternColor: 0x00f0ff, patternScale: 8 },
     emissive: { color: 0x00f0ff, intensity: 1.4, mode: 'flow', speed: 0.6 }, vfx: { tracerColor: 0x00f0ff, muzzleColor: 0x66f7ff } },
-  { id: 'sakura', name: '사쿠라', rarity: 'rare', price: 1100, sort: 4, model: 'sleek', blurb: '흩날리는 벚꽃잎 자개 마감.',
+  { id: 'sakura', name: '사쿠라', rarity: 'rare', price: 1500, sort: 4, model: 'sleek', blurb: '흩날리는 벚꽃잎 자개 마감.',
     material: { baseColor: 0xfff0f5, accentColor: 0xff8fb3, metalness: 0.25, roughness: 0.4, pattern: 'petals', patternColor: 0xff6f9f, patternScale: 6, clearcoat: 0.6 },
     emissive: { color: 0xff9fc0, intensity: 0.5, mode: 'static' }, vfx: { tracerColor: 0xffb7d0, killEffect: 'shatter' } },
-  { id: 'magma', name: '마그마', rarity: 'epic', price: 1900, sort: 5, model: 'heavy', blurb: '균열 사이로 용암이 맥동한다.',
+  { id: 'magma', name: '마그마', rarity: 'epic', price: 2200, sort: 5, model: 'heavy', blurb: '균열 사이로 용암이 맥동한다.',
     material: { baseColor: 0x17110f, accentColor: 0x3a1c12, metalness: 0.3, roughness: 0.7, pattern: 'cracks', patternColor: 0xff5a1f, patternScale: 7 },
     emissive: { color: 0xff4a10, intensity: 2.0, mode: 'pulse', speed: 0.8 }, vfx: { tracerColor: 0xff7a30, muzzleColor: 0xffa040, killEffect: 'burn' } },
-  { id: 'glacier', name: '글래시어', rarity: 'epic', price: 1900, sort: 6, model: 'angular', blurb: '반투명 빙결 크리스털.',
+  { id: 'glacier', name: '글래시어', rarity: 'epic', price: 2200, sort: 6, model: 'angular', blurb: '반투명 빙결 크리스털.',
     material: { baseColor: 0xbfe9ff, accentColor: 0x5fb8e8, metalness: 0.15, roughness: 0.12, pattern: 'gradient', patternColor: 0xffffff, patternScale: 3, clearcoat: 1 },
     emissive: { color: 0x7fd8ff, intensity: 1.1, mode: 'static' }, vfx: { tracerColor: 0x9fe4ff, killEffect: 'freeze' } },
-  { id: 'void', name: '보이드', rarity: 'legendary', price: 3200, sort: 7, model: 'sleek', blurb: '공허의 별빛이 표면을 유영한다.',
+  { id: 'void', name: '보이드', rarity: 'legendary', price: 3000, sort: 7, model: 'sleek', blurb: '공허의 별빛이 표면을 유영한다.',
     material: { baseColor: 0x07040f, accentColor: 0x2a0f55, metalness: 0.8, roughness: 0.2, pattern: 'stars', patternColor: 0xb48cff, patternScale: 10, clearcoat: 0.8 },
     emissive: { color: 0x9a5cff, intensity: 2.2, mode: 'flow', speed: 0.35 }, vfx: { tracerColor: 0xa070ff, muzzleColor: 0xc8a8ff, killEffect: 'void', trail: true } },
-  { id: 'aurum', name: '아우룸', rarity: 'legendary', price: 3200, sort: 8, model: 'ornate', blurb: '순금 세공과 흑요석 인레이.',
+  { id: 'aurum', name: '아우룸', rarity: 'legendary', price: 3000, sort: 8, model: 'ornate', blurb: '순금 세공과 흑요석 인레이.',
     material: { baseColor: 0xd9a520, accentColor: 0x15120c, metalness: 1.0, roughness: 0.18, pattern: 'hex', patternColor: 0xfff0a8, patternScale: 9, clearcoat: 0.5 },
     emissive: { color: 0xffd45a, intensity: 0.8, mode: 'pulse', speed: 0.4 }, vfx: { tracerColor: 0xffd86a, killEffect: 'gold', trail: true } },
-  { id: 'singularity', name: '싱귤래리티', rarity: 'mythic', price: 5500, featured: true, sort: 9, model: 'angular', blurb: '신규 출시 — 사건의 지평선을 두른 무기.',
+  { id: 'singularity', name: '싱귤래리티', rarity: 'mythic', price: 4000, featured: true, sort: 9, model: 'angular', blurb: '신규 출시 — 사건의 지평선을 두른 무기.',
     material: { baseColor: 0x050508, accentColor: 0xff2d6a, metalness: 0.9, roughness: 0.1, pattern: 'wave', patternColor: 0x3df2ff, patternScale: 4, clearcoat: 1 },
     emissive: { color: 0xff2d6a, intensity: 3.0, mode: 'flow', speed: 1.0 }, vfx: { tracerColor: 0xff4d8a, muzzleColor: 0x3df2ff, killEffect: 'nova', trail: true } },
 ];
@@ -114,11 +114,11 @@ export const DEFAULT_SKIN: Pick<SkinDef, 'model' | 'material' | 'emissive' | 'vf
 // ───────────────────────────── 2) 랜덤박스 확률표 (스킨 데이터와 독립) ─────────────────────────────
 export interface LootboxDef { id: string; name: string; price: number; rates: Record<Rarity, number> }
 export const LOOTBOXES: Record<string, LootboxDef> = {
-  standard: { id: 'standard', name: '스탠다드 박스', price: 800, rates: { common: 55, rare: 28, epic: 12, legendary: 4.2, mythic: 0.8 } },
+  standard: { id: 'standard', name: '스탠다드 박스', price: 1000, rates: { common: 55, rare: 28, epic: 12, legendary: 4.2, mythic: 0.8 } },
   premium: { id: 'premium', name: '프리미엄 박스', price: 2000, rates: { common: 20, rare: 40, epic: 27, legendary: 10, mythic: 3 } },
 };
 /** 중복 획득 시 크레딧 환급액 */
-export const DUP_REFUND: Record<Rarity, number> = { common: 150, rare: 300, epic: 600, legendary: 1200, mythic: 2500 };
+export const DUP_REFUND: Record<Rarity, number> = { common: 200, rare: 375, epic: 550, legendary: 750, mythic: 1000 };
 
 /** 확률표(%)로 정규화 — 상점의 확률 공개 UI용 */
 export function lootboxOdds(boxId: string): { rarity: Rarity; percent: number }[] {

@@ -464,7 +464,7 @@ $$;
 create or replace function public.apply_match_result(p_user uuid, p_result jsonb) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare v_mode text := p_result->>'mode'; v_res text := p_result->>'result';
-        v_rp int := ji(p_result, 'rp_delta'); v_cr int := greatest(0, least(500, ji(p_result, 'credits')));
+        v_rp int := ji(p_result, 'rp_delta'); v_cr int := greatest(0, least(3000, ji(p_result, 'credits')));
         v_p profiles; v_new text[];
 begin
   if v_mode not in ('classic','ranked','tdm') then raise exception 'BAD_MODE'; end if;
@@ -519,23 +519,23 @@ insert into public.login_rewards (day, reward_type, reward_amount) values
   (1,'credits',100),(2,'credits',150),(3,'credits',200),(4,'credits',250),(5,'credits',300),(6,'credits',400),(7,'lootbox',1)
 on conflict (day) do update set reward_type = excluded.reward_type, reward_amount = excluded.reward_amount;
 
-insert into public.lootboxes (box_id, name, price) values ('standard','스탠다드 박스',800), ('premium','프리미엄 박스',2000)
+insert into public.lootboxes (box_id, name, price) values ('standard','스탠다드 박스',1000), ('premium','프리미엄 박스',2000)
 on conflict (box_id) do update set name = excluded.name, price = excluded.price;
 
 insert into public.lootbox_rates (box_id, rarity, weight, dup_refund) values
-  ('standard','common',55,150),('standard','rare',28,300),('standard','epic',12,600),('standard','legendary',4.2,1200),('standard','mythic',0.8,2500),
-  ('premium','common',20,150),('premium','rare',40,300),('premium','epic',27,600),('premium','legendary',10,1200),('premium','mythic',3,2500)
+  ('standard','common',55,200),('standard','rare',28,375),('standard','epic',12,550),('standard','legendary',4.2,750),('standard','mythic',0.8,1000),
+  ('premium','common',20,200),('premium','rare',40,375),('premium','epic',27,550),('premium','legendary',10,750),('premium','mythic',3,1000)
 on conflict (box_id, rarity) do update set weight = excluded.weight, dup_refund = excluded.dup_refund;
 
 -- 스킨 카탈로그: id = <collection>_<weapon>. (Part 1-3의 client/src/config/skins.ts 와 동일 규칙)
 insert into public.skin_catalog (skin_id, weapon_id, name, rarity, price, featured, in_daily, in_box, sort)
 select c.id || '_' || w.id, w.id, c.name || ' ' || w.name, c.rarity, c.price, c.featured, not c.featured, not c.featured, c.sort
 from (values
-  ('carbon','카본','common',600,false,1), ('tundra','툰드라','common',600,false,2),
-  ('neon','네온 서킷','rare',1100,false,3), ('sakura','사쿠라','rare',1100,false,4),
-  ('magma','마그마','epic',1900,false,5), ('glacier','글래시어','epic',1900,false,6),
-  ('void','보이드','legendary',3200,false,7), ('aurum','아우룸','legendary',3200,false,8),
-  ('singularity','싱귤래리티','mythic',5500,true,9)
+  ('carbon','카본','common',800,false,1), ('tundra','툰드라','common',800,false,2),
+  ('neon','네온 서킷','rare',1500,false,3), ('sakura','사쿠라','rare',1500,false,4),
+  ('magma','마그마','epic',2200,false,5), ('glacier','글래시어','epic',2200,false,6),
+  ('void','보이드','legendary',3000,false,7), ('aurum','아우룸','legendary',3000,false,8),
+  ('singularity','싱귤래리티','mythic',4000,true,9)
 ) as c(id, name, rarity, price, featured, sort)
 cross join (values
   ('dagger','단검'),('sword','장검'),('classic','클래식'),('shorty','쇼티'),('frenzy','프렌지'),('ghost','고스트'),
