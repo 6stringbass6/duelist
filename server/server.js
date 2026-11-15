@@ -840,7 +840,7 @@ function addHuman(room, sess, now) {
   if (team < 0) return null;
   const e = newEntity(room, { sess, userId: sess.userId, name: sess.name, rp: sess.rp, level: tierLevel(sess.rp, sess.rankPos), title: sess.title, skins: sess.skins, career: sess.career, team, loadout: { ...sess.loadout } });
   sess.room = room; sess.ent = e; sess.socket.join(room.id);
-  if (!room.hostId) room.hostId = e.id;
+ if (!room.hostId || !room.ents.has(room.hostId) || room.ents.get(room.hostId)?.isBot) room.hostId = e.id;
   let spawn = null;
   if (room.phase !== 'lobby' && room.phase !== 'ended') {
     if (!isRound(room)) spawn = spawnEntity(room, e, pickSpawn(room, e), now);
@@ -990,8 +990,8 @@ export function attach(ioInstance) {
       if (teamEnts(room, t).length >= room.teamSize) return { ok: false, error: 'TEAM_FULL' };
       e.team = t; emitRoom(room, 'room:state', roomState(room));
     }));
-    on('room:config', 4, inGame((room, e, m) => {
-      if (room.phase !== 'lobby' || room.hostId !== e.id) return { ok: false, error: 'NOT_HOST' };
+on('room:config', 4, inGame((room, e, m) => {
+      if (room.phase !== 'lobby') return { ok: false, error: 'NOT_ALLOWED' };
       if (m.mode === 'classic' || m.mode === 'tdm') room.mode = m.mode;
       if (m.map === 'grid' || m.map === 'arena') { room.mapId = m.map; room.map = MAPS[m.map]; }
       if (Number.isFinite(m.teamSize)) { const ts = clamp(Math.floor(m.teamSize), 1, 6); if ([0, 1].every((t) => teamEnts(room, t).length <= ts)) room.teamSize = ts; }
@@ -1000,7 +1000,7 @@ export function attach(ioInstance) {
       emitRoom(room, 'room:state', roomState(room));
     }));
     on('room:start', 2, inGame((room, e, m, now) => {
-      if (room.phase !== 'lobby' || room.hostId !== e.id) return { ok: false, error: 'NOT_HOST' };
+      if (room.phase !== 'lobby') return { ok: false, error: 'NOT_ALLOWED' };
       if (!room.fillBots && [0, 1].some((t) => !teamEnts(room, t).length)) return { ok: false, error: 'TEAM_EMPTY' };
       emitRoom(room, 'room:map', mapPublic(room.map)); startMatch(room, now);
     }));

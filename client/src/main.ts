@@ -358,6 +358,7 @@ async function leaveAfterClose(): Promise<void> { await refreshProfile(); await 
 let bannerUntil = 0;
 function setBanner(title: string, sub: string, ms = 0): void { $('hud-banner').innerHTML = title ? `${esc(title)}${sub ? `<small>${esc(sub)}</small>` : ''}` : ''; bannerUntil = ms ? performance.now() + ms : 0; }
 net.on('phase', (p) => {
+  if (net.room && view !== 'game' && p.phase !== 'lobby') enterGame();
   if (view !== 'game' || !net.room) return;
   const round = net.mode === 'classic' || net.mode === 'ranked';
   if (p.phase === 'buy') { setBanner(round ? `ROUND ${p.round}` : '준비', '무기를 선택하세요 — 4개 슬롯 자유 선택 (B)'); if (TOUCH) toggleLoadout(true); }
