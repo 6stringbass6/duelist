@@ -31,7 +31,6 @@ const SHOT_PROFILE: Record<string, { dur: number; freq: number; thump: number; g
   frenzy: { dur: 0.08, freq: 2600, thump: 170, gain: 0.45 }, ghost: { dur: 0.07, freq: 3400, thump: 0, gain: 0.25 },
   sheriff: { dur: 0.2, freq: 1300, thump: 110, gain: 0.85 }, vandal: { dur: 0.13, freq: 1500, thump: 120, gain: 0.7 },
   phantom: { dur: 0.08, freq: 3000, thump: 0, gain: 0.35 }, marshal: { dur: 0.32, freq: 1000, thump: 75, gain: 1.0 },
-  odin: { dur: 0.11, freq: 1100, thump: 100, gain: 0.75 },
 };
 export class AudioFX {
   private ctx: AudioContext | null = null;

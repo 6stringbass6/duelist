@@ -105,7 +105,7 @@ const GUN_SHAPES: Record<string, GunShape> = {
   frenzy: { len: 0.22, h: 0.06, barrel: 0.03, mag: 0.16, stock: 0 }, ghost: { len: 0.21, h: 0.055, barrel: 0.14, mag: 0.1, stock: 0 },
   sheriff: { len: 0.2, h: 0.07, barrel: 0.14, mag: 0, stock: 0, drum: true },
   vandal: { len: 0.5, h: 0.08, barrel: 0.22, mag: 0.2, stock: 0.24 }, phantom: { len: 0.52, h: 0.075, barrel: 0.26, mag: 0.18, stock: 0.22 },
-  marshal: { len: 0.6, h: 0.065, barrel: 0.4, mag: 0.08, stock: 0.3, scope: true }, odin: { len: 0.62, h: 0.11, barrel: 0.3, mag: 0.16, stock: 0.22, drum: true },
+  marshal: { len: 0.6, h: 0.065, barrel: 0.4, mag: 0.08, stock: 0.3, scope: true },
 };
 const UNIT_BOX = new THREE.BoxGeometry(1, 1, 1);
 const part = (mat: THREE.Material, w: number, h: number, d: number, x: number, y: number, z: number): THREE.Mesh => {

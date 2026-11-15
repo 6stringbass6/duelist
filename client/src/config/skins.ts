@@ -35,7 +35,7 @@ export const RARITY: Record<Rarity, { name: string; color: string; order: number
 export const SKIN_WEAPONS: { id: SkinWeaponId; name: string }[] = [
   { id: 'dagger', name: '단검' }, { id: 'sword', name: '장검' },
   { id: 'classic', name: '클래식' }, { id: 'shorty', name: '쇼티' }, { id: 'frenzy', name: '프렌지' }, { id: 'ghost', name: '고스트' }, { id: 'sheriff', name: '셰리프' },
-  { id: 'vandal', name: '밴달' }, { id: 'phantom', name: '팬텀' }, { id: 'marshal', name: '마샬' }, { id: 'odin', name: '오딘' },
+  { id: 'vandal', name: '밴달' }, { id: 'phantom', name: '팬텀' }, { id: 'marshal', name: '마샬' },
 ];
 const ALL_WEAPONS = SKIN_WEAPONS.map((w) => w.id);
 

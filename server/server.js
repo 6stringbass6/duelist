@@ -58,12 +58,10 @@ export const WEAPONS = {
              spread: { base: 0.15, perShot: 0.9, max: 2.5, recoverMs: 500 }, move: 1.06, equipMs: 350 },
   vandal:  { slot: 1, type: 'gun', auto: true, rps: 9.75, mag: 25, reloadMs: 2500, scale: 1, ranges: [[Infinity, 62, 28, 24]],
              spread: { base: 0.12, perShot: 0.14, max: 1.7, recoverMs: 380 }, adsSpread: 0.85, move: 1, equipMs: 400 },
-  phantom: { slot: 1, type: 'gun', auto: true, rps: 11, mag: 30, reloadMs: 2500, scale: 1, ranges: [[15, 51, 24, 20], [30, 48, 23, 19], [Infinity, 45, 22, 18]],
+  phantom: { slot: 1, type: 'gun', auto: true, rps: 11, mag: 30, reloadMs: 2500, scale: 1, ranges: [[Infinity, 64, 24, 20]],
              spread: { base: 0.1, perShot: 0.11, max: 1.4, recoverMs: 350 }, adsSpread: 0.85, move: 1, equipMs: 400 },
   marshal: { slot: 1, type: 'gun', auto: false, rps: 1.5, mag: 5, reloadMs: 2500, scale: 1, ranges: [[Infinity, 202, 101, 85]],
              spread: { base: 0, perShot: 0, max: 0, recoverMs: 300, hip: 6.5 }, zoom: 3.5, scopeMs: 150, move: 1, equipMs: 450 },
-  odin:    { slot: 1, type: 'gun', auto: true, rps: 12, rpsMax: 15.6, rampShots: 10, mag: 100, reloadMs: 5000, scale: 0.5, ranges: [[30, 95, 38, 32], [Infinity, 77, 31, 26]],
-             spread: { base: 0.5, perShot: 0.07, max: 2.4, recoverMs: 450 }, adsSpread: 0.7, move: 0.88, equipMs: 550 },
   grenade: { slot: 4, type: 'throw', fuseMs: 2000, speed: 21, lift: 3, radius: 6.5, maxDmg: 130, minDmg: 15, selfMult: 0.5, charges: 2, restitution: 0.45, move: 1.06 },
   flash:   { slot: 4, type: 'throw', fuseMs: 1600, altFuseMs: 1000, speed: 24, altSpeed: 10, lift: 2, altLift: 3.5, maxBlindMs: 2250, altMaxBlindMs: 1500, charges: 2, restitution: 0.5, move: 1.06 },
 };
@@ -394,7 +392,7 @@ function addBot(room, team, now, level = room.botLevel) {
     isBot: true, name, team, level: lv, rp: levelRp(lv),
     loadout: {
       melee: pick(['dagger', 'sword']), secondary: pick(['classic', 'shorty', 'frenzy', 'ghost', 'sheriff']),
-      primary: pick(lv >= 9 ? ['vandal', 'vandal', 'phantom', 'phantom', 'marshal', 'odin'] : ['vandal', 'phantom', 'phantom', 'odin']),
+      primary: pick(lv >= 9 ? ['vandal', 'vandal', 'phantom', 'phantom', 'marshal'] : ['vandal', 'phantom', 'phantom']),
       throwable: pick(['grenade', 'flash']),
     },
   });

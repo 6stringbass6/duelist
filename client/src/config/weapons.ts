@@ -6,7 +6,7 @@
 export type SlotKey = 'primary' | 'secondary' | 'melee' | 'throwable';
 export type MeleeId = 'fists' | 'dagger' | 'sword';
 export type SecondaryId = 'classic' | 'shorty' | 'frenzy' | 'ghost' | 'sheriff';
-export type PrimaryId = 'vandal' | 'phantom' | 'marshal' | 'odin';
+export type PrimaryId = 'vandal' | 'phantom' | 'marshal';
 export type ThrowableId = 'grenade' | 'flash';
 export type GunId = SecondaryId | PrimaryId;
 export type WeaponId = MeleeId | GunId | ThrowableId;
@@ -68,19 +68,16 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     ranges: [[30, 80, 38, 32], [INF, 76, 36, 30]], spread: { base: 0.15, perShot: 0.9, max: 2.5, recoverMs: 500 },
     adsZoom: 1, move: 1.06, equipMs: 350, model: 'sheriff', recoil: { pitch: 2.6, yaw: 0.4, recover: 6, maxPitch: 8 }, tracer: 0xffe0a0 },
 
-  // ── 1번: 주무기 (밴달/팬텀/오딘 = 발로란트 데미지 50% 반올림)
+  // ── 1번: 주무기 (밴달/팬텀: 헤드2+몸1 처치 / 마샬: 헤드 원샷)
   vandal: { id: 'vandal', slot: 1, type: 'gun', name: '밴달', desc: '거리 감쇠 없는 돌격소총.', auto: true, rps: 9.75, mag: 25, reloadMs: 2500, scale: 1,
     ranges: [[INF, 62, 28, 24]], spread: { base: 0.12, perShot: 0.14, max: 1.7, recoverMs: 380 }, adsSpread: 0.85,
     adsZoom: 1.25, move: 1, equipMs: 400, model: 'vandal', recoil: { pitch: 0.62, yaw: 0.3, recover: 7, maxPitch: 9 }, tracer: 0xffc070 },
   phantom: { id: 'phantom', slot: 1, type: 'gun', name: '팬텀', desc: '빠른 연사, 안정적인 소음 소총.', auto: true, rps: 11, mag: 30, reloadMs: 2500, scale: 1,
-    ranges: [[15, 51, 24, 20], [30, 48, 23, 19], [INF, 45, 22, 18]], spread: { base: 0.1, perShot: 0.11, max: 1.4, recoverMs: 350 }, adsSpread: 0.85,
+    ranges: [[INF, 64, 24, 20]], spread: { base: 0.1, perShot: 0.11, max: 1.4, recoverMs: 350 }, adsSpread: 0.85,
     adsZoom: 1.25, move: 1, equipMs: 400, model: 'phantom', recoil: { pitch: 0.5, yaw: 0.24, recover: 7.5, maxPitch: 8 }, tracer: 0xc0d8ff },
   marshal: { id: 'marshal', slot: 1, type: 'gun', name: '마샬', desc: '고배율 저격소총. 노줌 지향사격은 탄퍼짐 극대화.', auto: false, rps: 1.5, mag: 5, reloadMs: 2500, scale: 1,
     ranges: [[INF, 202, 101, 85]], spread: { base: 0, perShot: 0, max: 0, recoverMs: 300, hip: 6.5 }, zoom: 3.5, scopeMs: 150,
     adsZoom: 3.5, move: 1, equipMs: 450, model: 'marshal', recoil: { pitch: 3.5, yaw: 0.3, recover: 5, maxPitch: 6 }, tracer: 0xffffff },
-  odin: { id: 'odin', slot: 1, type: 'gun', name: '오딘', desc: '100발 경기관총. 쏠수록 연사 가속.', auto: true, rps: 12, rpsMax: 15.6, rampShots: 10, mag: 100, reloadMs: 5000, scale: 0.5,
-    ranges: [[30, 95, 38, 32], [INF, 77, 31, 26]], spread: { base: 0.5, perShot: 0.07, max: 2.4, recoverMs: 450 }, adsSpread: 0.7,
-    adsZoom: 1.15, move: 0.88, equipMs: 550, model: 'odin', recoil: { pitch: 0.42, yaw: 0.36, recover: 6, maxPitch: 10 }, tracer: 0xffb060 },
 
   // ── 4번: 투척류
   grenade: { id: 'grenade', slot: 4, type: 'throw', name: '수류탄', desc: '바운드 후 범위 폭발.', fuseMs: 2000, speed: 21, lift: 3, radius: 6.5, maxDmg: 130, minDmg: 15, selfMult: 0.5,
@@ -90,7 +87,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
 };
 
 export const WEAPONS_BY_SLOT: Record<SlotKey, WeaponId[]> = { // 키 순서 = 로드아웃 UI 표시 순서
-  primary: ['vandal', 'phantom', 'marshal', 'odin'],
+  primary: ['vandal', 'phantom', 'marshal'],
   secondary: ['classic', 'shorty', 'frenzy', 'ghost', 'sheriff'],
   melee: ['fists', 'dagger', 'sword'],
   throwable: ['grenade', 'flash'],
