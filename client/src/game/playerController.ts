@@ -484,7 +484,7 @@ export class PlayerController {
     const skin = this.net.me?.skins?.[this.weaponId] ?? '', key = this.weaponId + '|' + skin;
     if (key !== this.vmKey) {
       this.vmKey = key; this.vm?.removeFromParent();
-      this.vm = createWeaponMesh(this.weaponId, skin);
+      this.vm = createWeaponMesh(this.weaponId, skin, true);
       this.vm.traverse((o) => { o.castShadow = false; o.frustumCulled = false; (o as THREE.Mesh).renderOrder = 10; });
       this.vmRoot.add(this.vm);
     }

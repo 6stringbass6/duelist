@@ -7,6 +7,7 @@ import { io, type Socket } from 'socket.io-client';
 import { F, RULES, SLOT, SLOT_KEYS, WEAPONS, isGun, type GameMode, type HitZone, type Loadout, type MapId, type WeaponId } from '../config/weapons';
 import { DEFAULT_SKIN, getSkin, type SkinDef } from '../config/skins';
 import { getSkinTextures } from './skinTextures';
+import { attachFbxModel } from './weaponModels';
 import { SERVER_URL, socketAuthPayload } from '../services/supabase';
 import type { SkillId, UltId } from '../config/skills';
 import { buildArena, textSprite, type ArenaBuild, type MapData, type World } from './arena';
@@ -107,7 +108,7 @@ const part = (mat: THREE.Material, w: number, h: number, d: number, x: number, y
   const m = new THREE.Mesh(UNIT_BOX, mat); m.scale.set(w, h, d); m.position.set(x, y, z); return m;
 };
 /** 프로시저럴 무기 메시 (전방 = -Z). userData.muzzle = 총구 Object3D */
-export function createWeaponMesh(weaponId: WeaponId, skinId?: string | null): THREE.Group {
+export function createWeaponMesh(weaponId: WeaponId, skinId?: string | null, viewmodel = false): THREE.Group {
   const g = new THREE.Group(), { base, accent } = skinMaterials(skinId), variant = getSkin(skinId)?.model ?? 'default';
   const muzzle = new THREE.Object3D(); g.add(muzzle); g.userData.muzzle = muzzle; g.userData.weaponId = weaponId;
   const fat = variant === 'heavy' ? 1.2 : variant === 'sleek' ? 0.88 : 1;
@@ -142,6 +143,7 @@ export function createWeaponMesh(weaponId: WeaponId, skinId?: string | null): TH
     g.add(body, part(accent, 0.03, 0.03, 0.03, 0, flash ? 0.08 : 0.065, 0));
   }
   g.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = true; });
+  attachFbxModel(g, weaponId, { base, accent, skinned: !!getSkin(skinId) }, viewmodel); // FBX 로드 완료 시 박스 모델 교체 (실패 시 폴백 유지)
   return g;
 }
 

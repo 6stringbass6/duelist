@@ -13,6 +13,7 @@ import {
   MODES, RULES, SLOT, SLOT_KEYS, WEAPONS, WEAPONS_BY_SLOT, damageTable, isGun, tdmTargetKills, tierInfo, tierLevel, tierProgress,
   type GameMode, type Loadout, type SlotKey, type WeaponId,
 } from './config/weapons';
+import { preloadWeaponModels } from './game/weaponModels';
 import { skinSwatchUrl } from './game/skinTextures';
 import { FEATURED_BANNER, LOOTBOXES, RARITY, SKIN_WEAPONS, buildGachaReel, featuredSkins, getSkin, lootboxOdds, skinsForWeapon, type SkinDef } from './config/skins';
 import {
@@ -43,6 +44,7 @@ const TOUCH = isTouchDevice();
 const stage = $('stage'), xhair = $<HTMLCanvasElement>('xhair'), xctx = xhair.getContext('2d')!;
 const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0b0f18);
 const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.05, 600);
+preloadWeaponModels();
 const net = new GameClient(scene);
 const pc = new PlayerController(camera, stage, net);
 let renderer!: THREE.WebGLRenderer, rendererAA = false;
