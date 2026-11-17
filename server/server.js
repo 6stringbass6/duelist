@@ -1108,8 +1108,9 @@ async function loadTitles(now) {
 }
 async function loadProfile(sess) {
   await loadTitles(clock.now());
-  const selProfile = () => supabase.from('profiles').select('nickname,rank_points,equipped_title,loadout').eq('id', sess.userId).maybeSingle();
+  const selProfile = () => supabase.from('profiles').select('nickname,rank_points,equipped_title,loadout' + (BAN_COLS ? ',banned_until' : '')).eq('id', sess.userId).maybeSingle();
   let p = await selProfile();
+  if (p.error && /banned_until/.test(p.error.message)) { BAN_COLS = false; p = await selProfile(); } // 정지 컬럼 마이그레이션 전이면 정지 기능만 비활성
   if (!p.error && !p.data) { // auth.users 에는 있으나 profiles 행이 없음 → 기본값으로 자동 생성
     const r = await supabase.rpc('create_profile_for', { p_id: sess.userId });
     if (r.error) { // RPC 미배포/실패 → service_role 로 직접 insert (스키마 마이그레이션 누락 대비)
@@ -1131,6 +1132,7 @@ async function loadProfile(sess) {
     supabase.from('user_skins').select('weapon_id,skin_id').eq('user_id', sess.userId).eq('equipped', true),
   ]);
   if (p.error || !p.data) throw new Error('PROFILE_NOT_FOUND');
+  if (p.data.banned_until && new Date(p.data.banned_until).getTime() > Date.now()) throw new Error('BANNED:' + new Date(p.data.banned_until).toISOString());
   sess.name = p.data.nickname; sess.rp = p.data.rank_points; sess.title = titleCache.get(p.data.equipped_title) || null;
   sess.loadout = sanitizeLoadout(p.data.loadout);
   sess.career = st.data ? { kd: +st.data.kd, hs: +st.data.hs_pct, wr: +st.data.win_rate, matches: st.data.matches } : { kd: 0, hs: 0, wr: 0, matches: 0 };
@@ -1139,8 +1141,14 @@ async function loadProfile(sess) {
   if (sess.rp >= 3600) { const { data } = await supabase.rpc('rank_position', { p_user: sess.userId }); sess.rankPos = data || null; }
 }
 /** 관리자 계정 검색: UUID / 이메일(auth.users) / 닉네임·아이디(부분 일치) 모두 지원. [{id,nickname,username,credits,email?}] 반환 */
-const PROFILE_COLS = 'id,nickname,username,credits';
-async function findAccounts(rawIn) {
+let BAN_COLS = true; // supabase_account_admin.sql 적용 여부(미적용이면 자동 false)
+const profileCols = () => 'id,nickname,username,credits,rank_points' + (BAN_COLS ? ',banned_until,ban_reason' : '');
+async function findAccounts(q) {
+  try { return await findAccountsRaw(q); }
+  catch (e) { if (BAN_COLS && /banned_until|ban_reason/.test(e?.message || '')) { BAN_COLS = false; return findAccountsRaw(q); } throw e; }
+}
+async function findAccountsRaw(rawIn) {
+  const PROFILE_COLS = profileCols();
   const raw = String(rawIn ?? '').normalize('NFC').trim().replace(/^["'<\s]+|["'>\s]+$/g, '').slice(0, 80);
   if (!raw) return [];
   if (UUID_RE.test(raw)) { const { data, error } = await supabase.from('profiles').select(PROFILE_COLS).eq('id', raw.toLowerCase()); if (error) throw error; return data; }
@@ -1432,6 +1440,36 @@ on('room:config', 4, inGame((room, e, m) => {
       console.log(`[admin] skin revoke ${skinId} target=${id} by=${sess.userId}`);
       const pushed = await pushSkins(id);
       return { ok: true, skins: (await ownedSkins(id)).map((r) => r.skin_id), pushed };
+    });
+
+    // ───── 계정 조회 확장: 랭크 점수 설정 / 기간 정지·해제
+    const refreshOnline = async (id) => { const t = online.get(id); if (!t?.data.sess) return false; await loadProfile(t.data.sess); const x = t.data.sess; t.emit('hello', { serverTime: clock.now(), guest: false, name: x.name, rp: x.rp, tier: tierLevel(x.rp, x.rankPos), tierLabel: tierLabel(tierLevel(x.rp, x.rankPos)), loadout: x.loadout }); return true; };
+    onA('admin:rank', 8, async (m) => {
+      const e = needDev(); if (e) return { ok: false, error: e };
+      const id = String(m.id ?? '').trim().toLowerCase(), rp = Number(m.rp);
+      if (!UUID_RE.test(id) || !Number.isInteger(rp) || rp < 0 || rp > 1000000) return { ok: false, error: 'BAD_REQUEST', message: '랭크 점수는 0 ~ 1,000,000 사이 정수여야 합니다.' };
+      const cur = await supabase.from('profiles').select('rank_points,peak_rank_points').eq('id', id).maybeSingle(); if (cur.error) throw cur.error;
+      if (!cur.data) return { ok: false, error: 'USER_NOT_FOUND' };
+      const { error } = await supabase.from('profiles').update({ rank_points: rp, peak_rank_points: Math.max(cur.data.peak_rank_points ?? 0, rp) }).eq('id', id); if (error) throw error;
+      console.log(`[admin] rank ${cur.data.rank_points}->${rp} target=${id} by=${sess.userId}`);
+      let pushed = false; try { pushed = await refreshOnline(id); } catch (err) { console.error('[admin:rank refresh]', err.message); }
+      return { ok: true, before: cur.data.rank_points, after: rp, pushed };
+    });
+    // 정지: {id, minutes:int(>0) , reason?} 또는 {id, minutes:0} 해제
+    onA('admin:ban', 6, async (m) => {
+      const e = needDev(); if (e) return { ok: false, error: e };
+      const id = String(m.id ?? '').trim().toLowerCase(), minutes = Number(m.minutes);
+      if (!UUID_RE.test(id) || !Number.isInteger(minutes) || minutes < 0 || minutes > 525600 * 10) return { ok: false, error: 'BAD_REQUEST' };
+      if (id === sess.userId) return { ok: false, error: 'SELF_BAN', message: '본인 계정은 정지할 수 없습니다.' };
+      const until = minutes > 0 ? new Date(Date.now() + minutes * 60000).toISOString() : null, reason = String(m.reason ?? '').replace(/[ -]/g, '').trim().slice(0, 200) || null;
+      const { data, error } = await supabase.from('profiles').update({ banned_until: until, ban_reason: until ? reason : null }).eq('id', id).select('id');
+      if (error) { if (/banned_until|ban_reason/.test(error.message)) return { ok: false, error: 'DB_MIGRATION_REQUIRED', message: 'DB 에 정지 컬럼이 없습니다. npm run db:push 로 supabase_account_admin.sql 을 적용하세요.' }; throw error; }
+      if (!data.length) return { ok: false, error: 'USER_NOT_FOUND' };
+      BAN_COLS = true;
+      console.log(`[admin] ${until ? `ban until ${until}` : 'unban'} target=${id} by=${sess.userId} reason=${reason ?? ''}`);
+      const t = online.get(id); let kicked = false;
+      if (until && t) { t.emit('kicked', { reason: 'BANNED:' + until }); t.disconnect(true); kicked = true; }
+      return { ok: true, banned_until: until, ban_reason: until ? reason : null, kicked };
     });
 
     socket.on('disconnect', () => {

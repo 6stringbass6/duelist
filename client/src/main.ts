@@ -403,7 +403,10 @@ function renderPlay(): void {
   }
 }
 const ACK_KO: Record<string, string> = { LOGIN_REQUIRED: '경쟁전은 로그인이 필요합니다.', ROOM_FULL: '방이 가득 찼습니다.', ROOM_NOT_FOUND: '방을 찾을 수 없습니다.', ROOM_CLOSING: '종료 중인 방입니다.', NOT_CONNECTED: '서버에 연결되지 않았습니다.', TIMEOUT: '서버 응답이 없습니다.', TEAM_FULL: '해당 팀이 가득 찼습니다.', TEAM_EMPTY: '양 팀에 최소 1명이 필요합니다.', NOT_HOST: '방장만 할 수 있습니다.', NOT_ALLOWED: '지금은 할 수 없습니다.' };
-const ackMsg = (code?: string): string => ACK_KO[code ?? ''] ?? code ?? '요청 실패';
+const ackMsg = (code?: string): string => {
+  if (code?.startsWith('BANNED:')) { const d = new Date(code.slice(7)); return `정지된 계정입니다. (해제: ${isNaN(+d) ? '?' : d.toLocaleString('ko-KR', { hour12: false })})`; }
+  return ACK_KO[code ?? ''] ?? code ?? '요청 실패';
+};
 async function ensureConnected(): Promise<boolean> {
   pc.audio.resume();
   if (needReconnect) { net.disconnect(); needReconnect = false; }
@@ -853,15 +856,15 @@ $('btn-settings').onclick = () => openSettings();
 
 // ───────────────────────────── 고객센터 / 개발자 모드 ─────────────────────────────
 interface Ticket { id: number; message: string; status: 'open' | 'done'; created_at: string; user_id?: string; nickname?: string }
-interface AdminUser { id: string; nickname: string; username?: string | null; credits: number; email?: string }
+interface AdminUser { id: string; nickname: string; username?: string | null; credits: number; rank_points?: number; banned_until?: string | null; ban_reason?: string | null; email?: string }
 const SUP_ERR: Record<string, string> = { LOGIN_REQUIRED: '로그인 후 이용할 수 있습니다.', RATE_LIMIT: '잠시 후 다시 시도해 주세요.', TICKET_LIMIT: '문의 전송 한도를 초과했습니다. 잠시 후 다시 시도해 주세요.',
   TOO_LONG: '500자 이내로 작성해 주세요.', EMPTY: '내용을 입력해 주세요.', FORBIDDEN: '권한이 없습니다. 개발자 모드를 다시 인증해 주세요.', EMPTY_QUERY: '검색어(닉네임·이메일·UUID)를 입력해 주세요.', USER_NOT_FOUND: '해당 유저를 찾을 수 없습니다.', BAD_REQUEST: '잘못된 요청입니다. (대상 ID/스킨 ID 형식 오류)', NO_DB: '서버 DB가 연결되지 않았습니다.' };
 const supMsg = (c?: string): string => SUP_ERR[c ?? ''] ?? ackMsg(c);
 const fmtTime = (iso: string): string => new Date(iso).toLocaleString('ko-KR', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-let devMode = false, devTab: 'inbox' | 'credits' | 'skins' = 'inbox', adminSel: AdminUser | null = null, adminResults: AdminUser[] = [];
+let devMode = false, devTab: 'inbox' | 'account' = 'inbox';
 net.onCredits = (c) => patchProfile({ credits: c });
 net.onSkinsUpdate = () => { needReconnect = true; toast('보유 스킨이 갱신되었습니다.', 'good'); void loadBundle(); };
-function endDevMode(): void { if (devMode) { devMode = false; adminSel = null; adminResults = []; admSkinUser = null; admSkinOwned = []; void net.call('admin:exit'); } }
+function endDevMode(): void { if (devMode) { devMode = false; admSkinUser = null; admSkinOwned = []; void net.call('admin:exit'); } }
 
 async function openSupport(): Promise<void> {
   if (getProfile()?.isGuest) { toast('고객센터는 로그인 후 이용할 수 있습니다.', 'bad'); return; }
@@ -891,10 +894,10 @@ $('sup-input').addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key
 
 function renderDev(): void {
   $('sup-title').textContent = '개발자 모드'; show('sup-foot', false);
-  $('sup-body').innerHTML = `<div class="tabs"><button data-dt="inbox" class="${devTab === 'inbox' ? 'on' : ''}">전체 문의함</button><button data-dt="credits" class="${devTab === 'credits' ? 'on' : ''}">크레딧 관리</button><button data-dt="skins" class="${devTab === 'skins' ? 'on' : ''}">계정 스킨 관리</button><button class="sm ghost" id="dev-exit" style="margin-left:auto">개발자 모드 종료</button></div><div id="dev-pane" style="margin-top:12px"></div>`;
+  $('sup-body').innerHTML = `<div class="tabs"><button data-dt="inbox" class="${devTab === 'inbox' ? 'on' : ''}">전체 문의함</button><button data-dt="account" class="${devTab === 'account' ? 'on' : ''}">계정 조회</button><button class="sm ghost" id="dev-exit" style="margin-left:auto">개발자 모드 종료</button></div><div id="dev-pane" style="margin-top:12px"></div>`;
   $('sup-body').querySelectorAll<HTMLElement>('[data-dt]').forEach((b) => (b.onclick = () => { devTab = b.dataset.dt as typeof devTab; renderDev(); }));
   $('dev-exit').onclick = () => { endDevMode(); void renderSupport(); };
-  if (devTab === 'inbox') void renderInbox(); else if (devTab === 'skins') renderAdminSkins(); else renderCredits();
+  if (devTab === 'inbox') void renderInbox(); else renderAdminAccount();
 }
 async function renderInbox(): Promise<void> {
   const pane = $('dev-pane'); pane.innerHTML = '<div class="mut">불러오는 중…</div>';
@@ -910,69 +913,68 @@ async function renderInbox(): Promise<void> {
     if (!a.ok) toast(supMsg(a.error), 'bad'); else void renderInbox();
   }));
 }
-function renderCredits(): void {
-  const pane = $('dev-pane');
-  pane.innerHTML = `<div class="row" style="gap:8px"><input id="adm-q" placeholder="닉네임 또는 계정 ID(UUID)" style="flex:1" autocomplete="off" /><button class="pri" id="adm-search">검색</button></div>
-    <div id="adm-results" style="margin-top:10px"></div><div id="adm-sel" style="margin-top:10px"></div>`;
-  const drawResults = (): void => {
-    $('adm-results').innerHTML = adminResults.map((u) => `<div class="tk row" style="gap:8px"><b>${esc(u.nickname)}</b><span class="mut" style="font-size:11px">${esc(u.id)}</span><span class="right">◈ ${fmt(u.credits)}</span><button class="sm" data-uid="${esc(u.id)}">선택</button></div>`).join('');
-    $('adm-results').querySelectorAll<HTMLElement>('[data-uid]').forEach((b) => (b.onclick = () => { adminSel = adminResults.find((u) => u.id === b.dataset.uid) ?? null; drawSel(); }));
-  };
-  const drawSel = (): void => {
-    const u = adminSel, box = $('adm-sel');
-    if (!u) { box.innerHTML = ''; return; }
-    box.innerHTML = `<div class="tk"><div class="row"><b>${esc(u.nickname)}</b><span class="mut" style="font-size:11px;margin-left:8px">${esc(u.id)}</span></div>
-      <div style="margin:8px 0;font-size:18px">현재 크레딧 ◈ <b>${fmt(u.credits)}</b></div>
-      <div class="row" style="gap:8px"><input id="adm-amt" type="number" min="1" max="1000000000" placeholder="수량" style="flex:1" /><button class="pri" id="adm-add">+ 지급</button><button id="adm-sub">− 차감</button></div></div>`;
-    const apply = async (sign: 1 | -1): Promise<void> => {
-      const n = Math.floor(Number($<HTMLInputElement>('adm-amt').value));
-      if (!Number.isFinite(n) || n <= 0) { toast('1 이상의 수량을 입력하세요.', 'bad'); return; }
-      const r = await net.call<{ before: number; after: number }>('admin:credits', { id: u.id, delta: sign * n });
-      if (!r.ok) { toast(supMsg(r.error), 'bad'); return; }
-      u.credits = r.after ?? u.credits; toast(`${u.nickname}: ◈ ${fmt(r.before ?? 0)} → ${fmt(r.after ?? 0)}`, 'good'); drawResults(); drawSel();
-    };
-    $('adm-add').onclick = () => void apply(1); $('adm-sub').onclick = () => void apply(-1);
-  };
-  const search = async (): Promise<void> => {
-    const r = await net.call<{ items: AdminUser[] }>('admin:search', { q: $<HTMLInputElement>('adm-q').value });
-    if (!r.ok) { toast(supMsg(r.error), 'bad'); return; }
-    adminResults = r.items ?? []; adminSel = null; drawSel(); drawResults();
-    if (!adminResults.length) $('adm-results').innerHTML = '<div class="mut">검색 결과가 없습니다.</div>';
-  };
-  $('adm-search').onclick = () => void search();
-  $('adm-q').addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter' && !(e as KeyboardEvent).isComposing) void search(); });
-  drawResults(); drawSel();
-}
-// ── [계정 스킨 관리] 개발자 모드 — 서버가 DEV 인증(소켓)을 검증하므로 UI 는 호출만 한다
+// ── [계정 조회] 개발자 모드 — 한 번 조회하면 크레딧 · 랭크 점수 · 스킨 · 기간 정지를 한 카드에서 관리. 서버가 DEV 인증(소켓)을 검증한다.
 let admSkinUser: AdminUser | null = null, admSkinOwned: string[] = [];
 const SKIN_ERR: Record<string, string> = { SKIN_NOT_FOUND: '카탈로그에 없는 스킨입니다.', SKIN_NOT_OWNED: '해당 유저가 보유하지 않은 스킨입니다.' };
-function renderAdminSkins(): void {
+const BAN_PRESETS: [number, string][] = [[60, '1시간'], [1440, '1일'], [4320, '3일'], [10080, '7일'], [43200, '30일'], [525600, '365일']];
+const banLeft = (iso?: string | null): string => { const ms = iso ? new Date(iso).getTime() - Date.now() : 0; if (ms <= 0) return ''; const m = Math.ceil(ms / 60000); return m >= 1440 ? `${Math.floor(m / 1440)}일 ${Math.floor((m % 1440) / 60)}시간` : m >= 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분` : `${m}분`; };
+function renderAdminAccount(): void {
   const pane = $('dev-pane'), weaponName = (id: string): string => SKIN_WEAPONS.find((w) => w.id === id)?.name ?? id;
   const opts = [...SKINS].sort((a, b) => TIERS[b.tier].order - TIERS[a.tier].order || a.weaponId.localeCompare(b.weaponId) || a.sort - b.sort)
     .map((s) => `<option value="${esc(s.id)}">[${TIERS[s.tier].name}] ${esc(s.name)} · ${weaponName(s.weaponId)}${s.glb ? ' ★' : ''}</option>`).join('');
-  pane.innerHTML = `<div class="row" style="gap:8px"><input id="sk-q" placeholder="닉네임 · 이메일 · 계정 ID(UUID)" style="flex:1" autocomplete="off" value="${esc(admSkinUser?.nickname ?? '')}" /><button class="pri" id="sk-search">조회</button></div><div id="sk-status" class="mut" style="margin-top:8px;font-size:13px;min-height:18px"></div><div id="sk-box" style="margin-top:10px"></div>`;
+  pane.innerHTML = `<div class="row" style="gap:8px"><input id="sk-q" placeholder="닉네임 · 이메일 · 계정 ID(UUID)" style="flex:1" autocomplete="off" value="${esc(admSkinUser?.nickname ?? '')}" /><button class="pri" id="sk-search">계정 조회</button></div><div id="sk-status" class="mut" style="margin-top:8px;font-size:13px;min-height:18px"></div><div id="sk-box" style="margin-top:10px"></div>`;
   const status = (msg: string, kind: 'good' | 'bad' | '' = ''): void => { const el = $('sk-status'); el.textContent = msg; el.style.color = kind === 'bad' ? '#ff6b6b' : kind === 'good' ? '#5ddc8a' : ''; };
+  const fail = (r: { error?: string; message?: string }): void => { const m = r.message || SKIN_ERR[r.error ?? ''] || supMsg(r.error); status(m, 'bad'); toast(m, 'bad'); };
   const draw = (): void => {
     const u = admSkinUser, box = $('sk-box'); if (!u) { box.innerHTML = ''; return; }
     const tags = admSkinOwned.map((id) => { const s = getSkin(id); return `<span class="tierchip" style="--tc:${s ? TIERS[s.tier].color : '#8b97ab'};margin:2px">${s ? tierEmblemSvg(s.tier, 13) : ''}<b>${esc(s?.name ?? id)}</b><button class="sm ghost" data-rv="${esc(id)}" title="회수" style="padding:0 6px">×</button></span>`; }).join('');
-    box.innerHTML = `<div class="tk"><div class="row"><b>${esc(u.nickname)}</b><span class="mut" style="font-size:11px;margin-left:8px">${esc(u.email ? u.email + ' · ' : '')}${esc(u.id)}</span><span class="right">◈ ${fmt(u.credits)}</span></div>
-      <div class="row" style="gap:8px;margin:10px 0"><select id="sk-pick" style="flex:1;min-width:0">${opts}</select><button class="pri" id="sk-grant">선택 스킨 해금</button><button id="sk-all">모든 스킨 일괄 해금</button></div>
-      <div class="mut" style="font-size:12px;margin-bottom:6px">보유 스킨 ${admSkinOwned.length}종 — × 로 회수</div><div>${tags || '<span class="mut">보유 스킨이 없습니다.</span>'}</div></div>`;
-    const done = (r: { skins?: string[]; added?: number; pushed?: boolean }, msg: string): void => { admSkinOwned = r.skins ?? admSkinOwned; toast(msg + (r.pushed ? ' (접속 중 — 즉시 반영)' : ''), 'good'); draw(); };
-    $('sk-grant').onclick = async () => {
+    const left = banLeft(u.banned_until), sec = 'margin-top:12px;padding-top:10px;border-top:1px solid var(--line)';
+    box.innerHTML = `<div class="tk"><div class="row"><b>${esc(u.nickname)}</b>${left ? '<span class="chip" style="margin-left:8px;border-color:var(--acc)">정지 중</span>' : ''}<span class="mut" style="font-size:11px;margin-left:8px">${esc(u.email ? u.email + ' · ' : '')}${esc(u.id)}</span></div>
+      <div style="${sec}"><div class="row"><b>크레딧</b><span class="right">◈ <b>${fmt(u.credits)}</b></span></div>
+        <div class="row" style="gap:8px;margin-top:6px"><input id="adm-amt" type="number" min="1" max="1000000000" placeholder="수량" style="flex:1" /><button class="pri" id="adm-add">+ 지급</button><button id="adm-sub">− 차감</button></div></div>
+      <div style="${sec}"><div class="row"><b>랭크 점수</b><span class="right">현재 <b>${fmt(u.rank_points ?? 0)}</b> RP</span></div>
+        <div class="row" style="gap:8px;margin-top:6px"><input id="rp-val" type="number" min="0" max="1000000" placeholder="설정할 랭크 점수" style="flex:1" value="${u.rank_points ?? 0}" /><button class="pri" id="rp-set">랭크 점수 적용</button></div></div>
+      <div style="${sec}"><div class="row"><b>스킨</b><span class="right mut" style="font-size:12px">보유 ${admSkinOwned.length}종 — × 로 회수</span></div>
+        <div class="row" style="gap:8px;margin:6px 0"><select id="sk-pick" style="flex:1;min-width:0">${opts}</select><button class="pri" id="sk-grant">선택 스킨 해금</button><button id="sk-all">모든 스킨 일괄 해금</button></div><div>${tags || '<span class="mut">보유 스킨이 없습니다.</span>'}</div></div>
+      <div style="${sec}"><div class="row"><b>계정 정지</b><span class="right" style="font-size:12px;color:${left ? '#ff6b6b' : 'var(--mut)'}">${left ? `정지 중 — 남은 ${left} (${esc(u.ban_reason || '사유 없음')})` : '정지 없음'}</span></div>
+        <div class="row" style="gap:8px;margin-top:6px"><select id="ban-pre">${BAN_PRESETS.map(([m, n]) => `<option value="${m}">${n}</option>`).join('')}<option value="custom">직접 입력(분)</option></select><input id="ban-min" type="number" min="1" placeholder="분" class="hidden" style="width:90px" /><input id="ban-why" maxlength="200" placeholder="사유 (선택)" style="flex:1;min-width:0" /><button class="pri" id="ban-go">정지</button><button id="ban-off"${left ? '' : ' disabled'}>정지 해제</button></div></div></div>`;
+    const guard = async (btn: HTMLElement, f: () => Promise<void>): Promise<void> => { const b = btn as HTMLButtonElement; if (b.disabled) return; b.disabled = true; try { await f(); } catch (err) { console.error('[admin account]', err); status(`오류: ${(err as Error).message}`, 'bad'); } finally { b.disabled = false; } };
+    const done = (r: { skins?: string[]; pushed?: boolean }, msg: string): void => { admSkinOwned = r.skins ?? admSkinOwned; status(msg + (r.pushed ? ' (접속 중 — 즉시 반영)' : ''), 'good'); toast(msg, 'good'); draw(); };
+    const credit = (sign: 1 | -1) => (e: Event) => void guard(e.currentTarget as HTMLElement, async () => {
+      const n = Math.floor(Number($<HTMLInputElement>('adm-amt').value)); if (!Number.isFinite(n) || n <= 0) { status('1 이상의 수량을 입력하세요.', 'bad'); return; }
+      const r = await net.call<{ before: number; after: number }>('admin:credits', { id: u.id, delta: sign * n }); if (!r.ok) { fail(r); return; }
+      u.credits = r.after ?? u.credits; done({}, `크레딧 ◈ ${fmt(r.before ?? 0)} → ${fmt(r.after ?? 0)}`);
+    });
+    $('adm-add').onclick = credit(1); $('adm-sub').onclick = credit(-1);
+    $('rp-set').onclick = (e) => void guard(e.currentTarget as HTMLElement, async () => {
+      const v = Number($<HTMLInputElement>('rp-val').value); if (!Number.isInteger(v) || v < 0 || v > 1000000) { status('랭크 점수는 0 ~ 1,000,000 사이 정수여야 합니다.', 'bad'); return; }
+      if (!confirm(`${u.nickname} 의 랭크 점수를 ${fmt(v)} 로 설정할까요?`)) return;
+      const r = await net.call<{ before: number; after: number; pushed: boolean }>('admin:rank', { id: u.id, rp: v }); if (!r.ok) { fail(r); return; }
+      u.rank_points = r.after ?? v; done(r, `랭크 점수 ${fmt(r.before ?? 0)} → ${fmt(r.after ?? v)}`);
+    });
+    $('sk-grant').onclick = (e) => void guard(e.currentTarget as HTMLElement, async () => {
       const id = $<HTMLSelectElement>('sk-pick').value, r = await net.call<{ added: number; skins: string[]; pushed: boolean }>('admin:skin:grant', { id: u.id, skinId: id });
-      if (!r.ok) toast(SKIN_ERR[r.error ?? ''] ?? supMsg(r.error), 'bad'); else done(r, r.added ? `${getSkin(id)?.name ?? id} 지급 완료` : '이미 보유 중인 스킨입니다.');
-    };
-    $('sk-all').onclick = async () => {
+      if (!r.ok) fail(r); else done(r, r.added ? `${getSkin(id)?.name ?? id} 지급 완료` : '이미 보유 중인 스킨입니다.');
+    });
+    $('sk-all').onclick = (e) => void guard(e.currentTarget as HTMLElement, async () => {
       if (!confirm(`${u.nickname} 계정에 카탈로그의 모든 스킨을 해금할까요?`)) return;
       const r = await net.call<{ added: number; skins: string[]; pushed: boolean }>('admin:skin:grant', { id: u.id, skinId: 'ALL' });
-      if (!r.ok) toast(SKIN_ERR[r.error ?? ''] ?? supMsg(r.error), 'bad'); else done(r, `일괄 해금 완료 (신규 ${r.added ?? 0}종)`);
-    };
-    box.querySelectorAll<HTMLElement>('[data-rv]').forEach((b) => (b.onclick = async () => {
+      if (!r.ok) fail(r); else done(r, `일괄 해금 완료 (신규 ${r.added ?? 0}종)`);
+    });
+    box.querySelectorAll<HTMLElement>('[data-rv]').forEach((b) => (b.onclick = () => void guard(b, async () => {
       const id = b.dataset.rv!; if (!confirm(`${getSkin(id)?.name ?? id} 을(를) 회수할까요?`)) return;
-      const r = await net.call<{ skins: string[]; pushed: boolean }>('admin:skin:revoke', { id: u.id, skinId: id });
-      if (!r.ok) toast(SKIN_ERR[r.error ?? ''] ?? supMsg(r.error), 'bad'); else done(r, '회수 완료');
-    }));
+      const r = await net.call<{ skins: string[]; pushed: boolean }>('admin:skin:revoke', { id: u.id, skinId: id }); if (!r.ok) fail(r); else done(r, '회수 완료');
+    })));
+    $<HTMLSelectElement>('ban-pre').onchange = (e) => $('ban-min').classList.toggle('hidden', (e.target as HTMLSelectElement).value !== 'custom');
+    const ban = (minutes: () => number) => (e: Event) => void guard(e.currentTarget as HTMLElement, async () => {
+      const mins = minutes(); if (!Number.isInteger(mins) || mins < 0) { status('정지 기간(분)을 올바르게 입력하세요.', 'bad'); return; }
+      if (mins > 0 && !confirm(`${u.nickname} 계정을 ${banLeft(new Date(Date.now() + mins * 60000).toISOString())} 동안 정지할까요? (접속 중이면 즉시 강제 종료)`)) return;
+      const r = await net.call<{ banned_until: string | null; ban_reason: string | null; kicked: boolean }>('admin:ban', { id: u.id, minutes: mins, reason: $<HTMLInputElement>('ban-why').value });
+      if (!r.ok) { fail(r); return; }
+      u.banned_until = r.banned_until ?? null; u.ban_reason = r.ban_reason ?? null; done({}, mins > 0 ? `정지 완료 (${banLeft(u.banned_until)})${r.kicked ? ' — 접속 종료됨' : ''}` : '정지 해제 완료');
+    });
+    $('ban-go').onclick = ban(() => { const v = $<HTMLSelectElement>('ban-pre').value; const m = v === 'custom' ? Math.floor(Number($<HTMLInputElement>('ban-min').value)) : +v; return m > 0 ? m : NaN; });
+    $('ban-off').onclick = ban(() => 0);
   };
   const search = async (): Promise<void> => {
     const q = $<HTMLInputElement>('sk-q').value.trim(), btn = $<HTMLButtonElement>('sk-search');
@@ -983,15 +985,15 @@ function renderAdminSkins(): void {
       const r = await net.call<{ user: AdminUser; skins: string[]; others: number; message: string }>('admin:skins', { q });
       if (!r.ok || !r.user) {
         admSkinUser = null; admSkinOwned = []; draw();
-        const m = r.message || (r.error === 'NOT_CONNECTED' ? '서버에 연결되어 있지 않습니다.' : r.error === 'TIMEOUT' ? '서버 응답 시간이 초과되었습니다. (서버가 최신 버전인지 확인하세요)' : supMsg(r.error));
+        const m = r.message || (r.error === 'NOT_CONNECTED' ? '서버에 연결되어 있지 않습니다.' : r.error === 'TIMEOUT' ? '서버 응답이 없습니다. 서버가 최신 버전으로 재시작/배포되었는지 확인하세요.' : supMsg(r.error));
         status(`조회 실패: ${m}`, 'bad'); toast(m, 'bad'); return;
       }
       admSkinUser = r.user; admSkinOwned = r.skins ?? [];
       status(`조회 완료: ${r.user.nickname} (보유 스킨 ${admSkinOwned.length}개)` + (r.others ? ` — 유사 계정 ${r.others}건 더 있음` : ''), 'good');
-      try { draw(); } catch (err) { console.error('[admin skins draw]', err); status(`조회 완료: ${r.user.nickname} (보유 스킨 ${admSkinOwned.length}개) — 표시 오류: ${(err as Error).message}`, 'bad'); }
+      try { draw(); } catch (err) { console.error('[admin account draw]', err); status(`조회 완료: ${r.user.nickname} — 표시 오류: ${(err as Error).message}`, 'bad'); }
     } catch (err) {
-      console.error('[admin skins]', err); status(`조회 실패: ${(err as Error).message || '알 수 없는 오류'}`, 'bad'); toast('조회 중 오류가 발생했습니다.', 'bad');
-    } finally { btn.disabled = false; btn.textContent = '조회'; }
+      console.error('[admin account]', err); status(`조회 실패: ${(err as Error).message || '알 수 없는 오류'}`, 'bad'); toast('조회 중 오류가 발생했습니다.', 'bad');
+    } finally { btn.disabled = false; btn.textContent = '계정 조회'; }
   };
   $('sk-search').onclick = () => void search();
   $('sk-q').addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter' && !(e as KeyboardEvent).isComposing) void search(); });

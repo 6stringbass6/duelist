@@ -14,7 +14,7 @@ test.describe('배포 스모크: 로그인 → 상점 → 개발자 패널 계�
       await page.click('#btn-support');
       await page.fill('#sup-input', DEV_SECRET_CODE); await page.click('#sup-send');
       await expect(page.locator('#sup-title')).toHaveText('개발자 모드', { timeout: 15_000 });
-      await page.getByRole('button', { name: '계정 스킨 관리' }).click();
+      await page.getByRole('button', { name: '계정 조회', exact: true }).click();
       await page.fill('#sk-q', E2E_USER!); await page.click('#sk-search');
       await expect(page.locator('#sk-status')).toContainText('조회 완료', { timeout: 15_000 });
       await page.screenshot({ path: 'test-results/dev-skins.png' });
