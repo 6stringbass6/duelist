@@ -875,6 +875,7 @@ async function renderSupport(): Promise<void> { if (devMode) renderDev(); else a
 async function renderChat(): Promise<void> {
   $('sup-title').textContent = '고객센터'; show('sup-foot', true);
   const r = await net.call<{ items: Ticket[] }>('support:list');
+  if (devMode) return; // 응답을 기다리는 사이 개발자 모드로 전환됐다면 채팅 화면이 덮어쓰지 않도록
   if (!r.ok) { $('sup-body').innerHTML = `<div class="mut">${esc(supMsg(r.error))}</div>`; return; }
   $('sup-body').innerHTML = `<div class="sup-msg sys">안녕하세요, DUELIST 고객센터입니다.<br>불편 사항이나 건의 내용을 남겨 주시면 확인 후 반영하겠습니다.</div>`
     + (r.items ?? []).map((t) => `<div class="sup-msg me"><div>${esc(t.message)}</div><small>${fmtTime(t.created_at)} · ${t.status === 'done' ? '처리 완료' : '접수됨'}</small></div>`).join('');
