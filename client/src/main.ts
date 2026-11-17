@@ -853,9 +853,9 @@ $('btn-settings').onclick = () => openSettings();
 
 // ───────────────────────────── 고객센터 / 개발자 모드 ─────────────────────────────
 interface Ticket { id: number; message: string; status: 'open' | 'done'; created_at: string; user_id?: string; nickname?: string }
-interface AdminUser { id: string; nickname: string; username?: string | null; credits: number }
+interface AdminUser { id: string; nickname: string; username?: string | null; credits: number; email?: string }
 const SUP_ERR: Record<string, string> = { LOGIN_REQUIRED: '로그인 후 이용할 수 있습니다.', RATE_LIMIT: '잠시 후 다시 시도해 주세요.', TICKET_LIMIT: '문의 전송 한도를 초과했습니다. 잠시 후 다시 시도해 주세요.',
-  TOO_LONG: '500자 이내로 작성해 주세요.', EMPTY: '내용을 입력해 주세요.', FORBIDDEN: '권한이 없습니다.', USER_NOT_FOUND: '해당 유저를 찾을 수 없습니다.', BAD_REQUEST: '잘못된 요청입니다.', NO_DB: '서버 DB가 연결되지 않았습니다.' };
+  TOO_LONG: '500자 이내로 작성해 주세요.', EMPTY: '내용을 입력해 주세요.', FORBIDDEN: '권한이 없습니다. 개발자 모드를 다시 인증해 주세요.', EMPTY_QUERY: '검색어(닉네임·이메일·UUID)를 입력해 주세요.', USER_NOT_FOUND: '해당 유저를 찾을 수 없습니다.', BAD_REQUEST: '잘못된 요청입니다. (대상 ID/스킨 ID 형식 오류)', NO_DB: '서버 DB가 연결되지 않았습니다.' };
 const supMsg = (c?: string): string => SUP_ERR[c ?? ''] ?? ackMsg(c);
 const fmtTime = (iso: string): string => new Date(iso).toLocaleString('ko-KR', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 let devMode = false, devTab: 'inbox' | 'credits' | 'skins' = 'inbox', adminSel: AdminUser | null = null, adminResults: AdminUser[] = [];
@@ -950,11 +950,11 @@ function renderAdminSkins(): void {
   const pane = $('dev-pane'), weaponName = (id: string): string => SKIN_WEAPONS.find((w) => w.id === id)?.name ?? id;
   const opts = [...SKINS].sort((a, b) => TIERS[b.tier].order - TIERS[a.tier].order || a.weaponId.localeCompare(b.weaponId) || a.sort - b.sort)
     .map((s) => `<option value="${esc(s.id)}">[${TIERS[s.tier].name}] ${esc(s.name)} · ${weaponName(s.weaponId)}${s.glb ? ' ★' : ''}</option>`).join('');
-  pane.innerHTML = `<div class="row" style="gap:8px"><input id="sk-q" placeholder="닉네임 또는 계정 ID(UUID)" style="flex:1" autocomplete="off" value="${esc(admSkinUser?.nickname ?? '')}" /><button class="pri" id="sk-search">조회</button></div><div id="sk-box" style="margin-top:10px"></div>`;
+  pane.innerHTML = `<div class="row" style="gap:8px"><input id="sk-q" placeholder="닉네임 · 이메일 · 계정 ID(UUID)" style="flex:1" autocomplete="off" value="${esc(admSkinUser?.nickname ?? '')}" /><button class="pri" id="sk-search">조회</button></div><div id="sk-box" style="margin-top:10px"></div>`;
   const draw = (): void => {
     const u = admSkinUser, box = $('sk-box'); if (!u) { box.innerHTML = ''; return; }
     const tags = admSkinOwned.map((id) => { const s = getSkin(id); return `<span class="tierchip" style="--tc:${s ? TIERS[s.tier].color : '#8b97ab'};margin:2px">${s ? tierEmblemSvg(s.tier, 13) : ''}<b>${esc(s?.name ?? id)}</b><button class="sm ghost" data-rv="${esc(id)}" title="회수" style="padding:0 6px">×</button></span>`; }).join('');
-    box.innerHTML = `<div class="tk"><div class="row"><b>${esc(u.nickname)}</b><span class="mut" style="font-size:11px;margin-left:8px">${esc(u.id)}</span><span class="right">◈ ${fmt(u.credits)}</span></div>
+    box.innerHTML = `<div class="tk"><div class="row"><b>${esc(u.nickname)}</b><span class="mut" style="font-size:11px;margin-left:8px">${esc(u.email ? u.email + ' · ' : '')}${esc(u.id)}</span><span class="right">◈ ${fmt(u.credits)}</span></div>
       <div class="row" style="gap:8px;margin:10px 0"><select id="sk-pick" style="flex:1;min-width:0">${opts}</select><button class="pri" id="sk-grant">선택 스킨 해금</button><button id="sk-all">모든 스킨 일괄 해금</button></div>
       <div class="mut" style="font-size:12px;margin-bottom:6px">보유 스킨 ${admSkinOwned.length}종 — × 로 회수</div><div>${tags || '<span class="mut">보유 스킨이 없습니다.</span>'}</div></div>`;
     const done = (r: { skins?: string[]; added?: number; pushed?: boolean }, msg: string): void => { admSkinOwned = r.skins ?? admSkinOwned; toast(msg + (r.pushed ? ' (접속 중 — 즉시 반영)' : ''), 'good'); draw(); };
@@ -974,7 +974,8 @@ function renderAdminSkins(): void {
     }));
   };
   const search = async (): Promise<void> => {
-    const r = await net.call<{ user: AdminUser; skins: string[]; others: number }>('admin:skins', { q: $<HTMLInputElement>('sk-q').value });
+    const q = $<HTMLInputElement>('sk-q').value.trim(); if (!q) { toast(SUP_ERR.EMPTY_QUERY, 'bad'); return; }
+    const r = await net.call<{ user: AdminUser; skins: string[]; others: number }>('admin:skins', { q });
     if (!r.ok || !r.user) { admSkinUser = null; draw(); toast(supMsg(r.error), 'bad'); return; }
     admSkinUser = r.user; admSkinOwned = r.skins ?? []; draw();
     if (r.others) toast(`유사한 계정 ${r.others}건 더 있음 — 정확한 닉네임/ID 로 조회하세요.`, 'good');

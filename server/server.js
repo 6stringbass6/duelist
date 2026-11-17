@@ -1138,6 +1138,35 @@ async function loadProfile(sess) {
   sess.rankPos = null;
   if (sess.rp >= 3600) { const { data } = await supabase.rpc('rank_position', { p_user: sess.userId }); sess.rankPos = data || null; }
 }
+/** 관리자 계정 검색: UUID / 이메일(auth.users) / 닉네임·아이디(부분 일치) 모두 지원. [{id,nickname,username,credits,email?}] 반환 */
+const PROFILE_COLS = 'id,nickname,username,credits';
+async function findAccounts(rawIn) {
+  const raw = String(rawIn ?? '').normalize('NFC').trim().replace(/^["'<\s]+|["'>\s]+$/g, '').slice(0, 80);
+  if (!raw) return [];
+  if (UUID_RE.test(raw)) { const { data, error } = await supabase.from('profiles').select(PROFILE_COLS).eq('id', raw.toLowerCase()); if (error) throw error; return data; }
+  const ids = new Set(), emails = new Map();
+  if (raw.includes('@')) { // 이메일: service_role 로 auth.users 를 훑어 일치/부분 일치 계정을 찾는다
+    const want = raw.toLowerCase();
+    for (let page = 1; page <= 20; page++) {
+      const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
+      if (error) { console.error('[admin] listUsers', error.message); break; }
+      for (const u of data.users) if (u.email && u.email.toLowerCase().includes(want)) { ids.add(u.id); emails.set(u.id, u.email); }
+      if (data.users.length < 1000) break;
+    }
+  }
+  const local = raw.split('@')[0].replace(/[^A-Za-z0-9가-힣_.-]/g, ''), term = raw.includes('@') ? local : raw.replace(/[^A-Za-z0-9가-힣_.-]/g, '');
+  let out = [];
+  if (ids.size) { const { data, error } = await supabase.from('profiles').select(PROFILE_COLS).in('id', [...ids].slice(0, 20)); if (error) throw error; out = data; }
+  if (!out.length && term) { // 닉네임·간편가입 아이디 (대소문자 무시)
+    const { data, error } = await supabase.from('profiles').select(PROFILE_COLS).or(`nickname.ilike.%${term}%,username.ilike.%${term}%`).limit(10);
+    if (error) throw error; out = data;
+  }
+  for (const u of out) {
+    if (emails.has(u.id)) { u.email = emails.get(u.id); continue; }
+    try { const r = await supabase.auth.admin.getUserById(u.id); if (r.data?.user?.email) u.email = r.data.user.email; } catch { /* 이메일은 표시용 — 실패 무시 */ }
+  }
+  return out;
+}
 function allow(socket, key, max) {
   const n = Date.now(), rl = socket.data.rl || (socket.data.rl = {}), b = rl[key] || (rl[key] = { t: n, c: 0 });
   if (n - b.t >= 1000) { b.t = n; b.c = 0; }
@@ -1331,14 +1360,7 @@ on('room:config', 4, inGame((room, e, m) => {
     });
     onA('admin:search', 6, async (m) => {
       const e = needDev(); if (e) return { ok: false, error: e };
-      const raw = String(m.q ?? '').trim().slice(0, 40);
-      if (!raw) return { ok: true, items: [] };
-      let query = supabase.from('profiles').select('id,nickname,username,credits').limit(10);
-      if (UUID_RE.test(raw)) query = query.eq('id', raw.toLowerCase());
-      else { const q = raw.replace(/[^A-Za-z0-9가-힣_.-]/g, ''); if (!q) return { ok: true, items: [] }; query = query.or(`nickname.ilike.%${q}%,username.ilike.%${q}%`); }
-      const { data, error } = await query;
-      if (error) throw error;
-      return { ok: true, items: data };
+      return { ok: true, items: await findAccounts(m.q ?? m.query ?? m.id) };
     });
     // 크레딧 증감: {id:uuid, delta:int(±)} → DB 원자 갱신, 접속 중이면 즉시 클라이언트 반영
     onA('admin:credits', 6, async (m) => {
@@ -1370,20 +1392,17 @@ on('room:config', 4, inGame((room, e, m) => {
     // 대상 조회: {q:닉네임|UUID} → 기본 정보 + 보유 스킨 ID 목록 (닉네임 정확히 일치 우선)
     onA('admin:skins', 8, async (m) => {
       const e = needDev(); if (e) return { ok: false, error: e };
-      const raw = String(m.q ?? '').trim().slice(0, 40); if (!raw) return { ok: false, error: 'BAD_REQUEST' };
-      let query = supabase.from('profiles').select('id,nickname,username,credits').limit(10);
-      if (UUID_RE.test(raw)) query = query.eq('id', raw.toLowerCase());
-      else { const q = raw.replace(/[^A-Za-z0-9가-힣_.-]/g, ''); if (!q) return { ok: false, error: 'USER_NOT_FOUND' }; query = query.or(`nickname.ilike.%${q}%,username.ilike.%${q}%`); }
-      const { data, error } = await query; if (error) throw error;
-      if (!data.length) return { ok: false, error: 'USER_NOT_FOUND' };
-      const user = data.find((u) => u.nickname.toLowerCase() === raw.toLowerCase()) || data[0];
+      const raw = String(m.q ?? m.query ?? m.id ?? m.nickname ?? m.email ?? m.userId ?? '').trim();
+      if (!raw) return { ok: false, error: 'EMPTY_QUERY' };
+      const found = await findAccounts(raw); if (!found.length) return { ok: false, error: 'USER_NOT_FOUND' };
+      const lc = raw.toLowerCase(), user = found.find((u) => u.id === lc || (u.email || '').toLowerCase() === lc || u.nickname.toLowerCase() === lc || (u.username || '').toLowerCase() === lc) || found[0];
       const rows = await ownedSkins(user.id);
-      return { ok: true, user, skins: rows.map((r) => r.skin_id), others: data.length - 1, online: online.has(user.id) };
+      return { ok: true, user, skins: rows.map((r) => r.skin_id), others: found.length - 1, online: online.has(user.id) };
     });
     // 지급: {id, skinId | 'ALL'} — 카탈로그에 있는(active) 스킨만, 중복 없이 추가
     onA('admin:skin:grant', 8, async (m) => {
       const e = needDev(); if (e) return { ok: false, error: e };
-      const id = String(m.id ?? '').toLowerCase(), skinId = String(m.skinId ?? '');
+      const id = String(m.id ?? m.userId ?? '').trim().toLowerCase(), skinId = String(m.skinId ?? m.skin ?? '').trim();
       if (!UUID_RE.test(id) || (skinId !== 'ALL' && !SKIN_ID_RE.test(skinId))) return { ok: false, error: 'BAD_REQUEST' };
       const pr = await supabase.from('profiles').select('id').eq('id', id).maybeSingle(); if (pr.error) throw pr.error;
       if (!pr.data) return { ok: false, error: 'USER_NOT_FOUND' };
@@ -1401,7 +1420,7 @@ on('room:config', 4, inGame((room, e, m) => {
     // 회수: {id, skinId} — 장착 중이면 행 삭제로 장착도 함께 해제
     onA('admin:skin:revoke', 8, async (m) => {
       const e = needDev(); if (e) return { ok: false, error: e };
-      const id = String(m.id ?? '').toLowerCase(), skinId = String(m.skinId ?? '');
+      const id = String(m.id ?? m.userId ?? '').trim().toLowerCase(), skinId = String(m.skinId ?? m.skin ?? '').trim();
       if (!UUID_RE.test(id) || !SKIN_ID_RE.test(skinId)) return { ok: false, error: 'BAD_REQUEST' };
       const { data, error } = await supabase.from('user_skins').delete().eq('user_id', id).eq('skin_id', skinId).select('skin_id');
       if (error) throw error;
