@@ -43,7 +43,7 @@ export const EMPTY_STATS: CareerStats = { matches: 0, wins: 0, losses: 0, kills:
 const ERROR_KO: Record<string, string> = {
   NOT_CONFIGURED: '서버 설정이 완료되지 않았습니다. 게스트로 플레이해 주세요.',
   NOT_AUTHENTICATED: '로그인이 필요합니다.', GUEST_NOT_ALLOWED: '게스트는 이용할 수 없습니다. 로그인해 주세요.',
-  INVALID_ID: '아이디는 영문 소문자·숫자·밑줄 4~16자입니다.', INVALID_PASSWORD: '비밀번호는 6자 이상이어야 합니다.',
+  INVALID_ID: '아이디는 4~16자여야 합니다. (공백 제외, 문자 제한 없음)', INVALID_PASSWORD: '비밀번호는 6자 이상이어야 합니다.',
   INVALID_NICKNAME: '닉네임은 한글·영문·숫자·밑줄 2~16자입니다.', NICKNAME_TAKEN: '이미 사용 중인 닉네임입니다.', SAME_NICKNAME: '현재 닉네임과 같습니다.',
   NOT_ENOUGH_CREDITS: '크레딧이 부족합니다.', ALREADY_OWNED: '이미 보유한 스킨입니다.', NOT_FOR_SALE: '현재 판매 중인 스킨이 아닙니다.',
   SKIN_NOT_FOUND: '존재하지 않는 스킨입니다.', SKIN_NOT_OWNED: '보유하지 않은 스킨입니다.', NO_LOOTBOX: '보유한 랜덤박스가 없습니다.',
@@ -71,8 +71,16 @@ async function rpc<T>(fn: string, args?: Record<string, unknown>): Promise<T> {
 
 // ───────────────────────────── 검증 ─────────────────────────────
 export const AUTH_EMAIL_DOMAIN = 'game.local';
-export const idToEmail = (id: string): string => `${id.trim().toLowerCase()}@${AUTH_EMAIL_DOMAIN}`;
-export const isValidId = (id: string): boolean => /^[a-z0-9_]{4,16}$/.test(id.trim().toLowerCase());
+/** 아이디: 공백·제어문자 제외 아무 문자 4~16자. 기존 영문소문자·숫자·밑줄 아이디는 그대로 id@game.local,
+ *  그 외 문자가 섞이면 이메일 로컬파트로 쓸 수 없으므로 SHA-256 앞 32자(h-접두, 기존 형식과 충돌 불가)로 변환한다. */
+export const normalizeId = (id: string): string => id.trim().toLowerCase();
+export const isValidId = (id: string): boolean => { const n = normalizeId(id), len = [...n].length; return len >= 4 && len <= 16 && !/[\s\p{C}]/u.test(n); };
+export async function idToEmail(id: string): Promise<string> {
+  const n = normalizeId(id);
+  if (/^[a-z0-9_]+$/.test(n)) return `${n}@${AUTH_EMAIL_DOMAIN}`;
+  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(n));
+  return `h-${[...new Uint8Array(h)].slice(0, 16).map((b) => b.toString(16).padStart(2, '0')).join('')}@${AUTH_EMAIL_DOMAIN}`;
+}
 export const isValidPassword = (pw: string): boolean => pw.length >= 6 && pw.length <= 72;
 export const isValidNickname = (n: string): boolean => /^[A-Za-z0-9가-힣_]{2,16}$/.test(n.trim());
 export function sanitizeLoadout(l: unknown): Loadout {
@@ -131,14 +139,15 @@ export async function signUpWithId(id: string, password: string, nickname: strin
   const c = client();
   const { data: taken } = await c.from('public_profiles').select('id').ilike('nickname', nickname.trim()).maybeSingle();
   if (taken) throw new GameError('NICKNAME_TAKEN');
-  const { data, error } = await c.auth.signUp({ email: idToEmail(id), password, options: { data: { nickname: nickname.trim() } } });
+  const email = await idToEmail(id);
+  const { data, error } = await c.auth.signUp({ email, password, options: { data: { nickname: nickname.trim() } } });
   if (error) throw toError(error);
-  if (!data.session) { const r = await c.auth.signInWithPassword({ email: idToEmail(id), password }); if (r.error) throw toError(r.error); }
+  if (!data.session) { const r = await c.auth.signInWithPassword({ email, password }); if (r.error) throw toError(r.error); }
   return loadProfile();
 }
 export async function signInWithId(id: string, password: string): Promise<Profile> {
   if (!isValidId(id)) throw new GameError('INVALID_ID');
-  const { error } = await client().auth.signInWithPassword({ email: idToEmail(id), password });
+  const { error } = await client().auth.signInWithPassword({ email: await idToEmail(id), password });
   if (error) throw toError(error);
   return loadProfile();
 }
