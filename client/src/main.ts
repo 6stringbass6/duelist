@@ -15,7 +15,7 @@ import {
 } from './config/weapons';
 import { preloadWeaponModels } from './game/weaponModels';
 import { skinSwatchUrl } from './game/skinTextures';
-import { FEATURED_BANNER, LOOTBOXES, SKIN_WEAPONS, TIERS, TIER_ORDER, buildGachaReel, featuredSkins, getSkin, lootboxOdds, normalizeTier, resolveSkinId, skinsForWeapon, tierEmblemSvg, type SkinDef } from './config/skins';
+import { FEATURED_BANNER, LOOTBOXES, SKINS, SKIN_WEAPONS, TIERS, TIER_ORDER, buildGachaReel, featuredSkins, getSkin, lootboxOdds, normalizeTier, resolveSkinId, skinsForWeapon, tierEmblemSvg, type SkinDef } from './config/skins';
 import { SkinPreview } from './game/skinPreview';
 import {
   GameError, buySkin, changeNickname, claimDailyLogin, claimMission, equipSkin, equipTitle, fetchBundle, fetchMatchHistory, getNicknameChangeCost, getProfile,
@@ -858,9 +858,10 @@ const SUP_ERR: Record<string, string> = { LOGIN_REQUIRED: '로그인 후 이용�
   TOO_LONG: '500자 이내로 작성해 주세요.', EMPTY: '내용을 입력해 주세요.', FORBIDDEN: '권한이 없습니다.', USER_NOT_FOUND: '해당 유저를 찾을 수 없습니다.', BAD_REQUEST: '잘못된 요청입니다.', NO_DB: '서버 DB가 연결되지 않았습니다.' };
 const supMsg = (c?: string): string => SUP_ERR[c ?? ''] ?? ackMsg(c);
 const fmtTime = (iso: string): string => new Date(iso).toLocaleString('ko-KR', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-let devMode = false, devTab: 'inbox' | 'credits' = 'inbox', adminSel: AdminUser | null = null, adminResults: AdminUser[] = [];
+let devMode = false, devTab: 'inbox' | 'credits' | 'skins' = 'inbox', adminSel: AdminUser | null = null, adminResults: AdminUser[] = [];
 net.onCredits = (c) => patchProfile({ credits: c });
-function endDevMode(): void { if (devMode) { devMode = false; adminSel = null; adminResults = []; void net.call('admin:exit'); } }
+net.onSkinsUpdate = () => { needReconnect = true; toast('보유 스킨이 갱신되었습니다.', 'good'); void loadBundle(); };
+function endDevMode(): void { if (devMode) { devMode = false; adminSel = null; adminResults = []; admSkinUser = null; admSkinOwned = []; void net.call('admin:exit'); } }
 
 async function openSupport(): Promise<void> {
   if (getProfile()?.isGuest) { toast('고객센터는 로그인 후 이용할 수 있습니다.', 'bad'); return; }
@@ -890,10 +891,10 @@ $('sup-input').addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key
 
 function renderDev(): void {
   $('sup-title').textContent = '개발자 모드'; show('sup-foot', false);
-  $('sup-body').innerHTML = `<div class="tabs"><button data-dt="inbox" class="${devTab === 'inbox' ? 'on' : ''}">전체 문의함</button><button data-dt="credits" class="${devTab === 'credits' ? 'on' : ''}">크레딧 관리</button><button class="sm ghost" id="dev-exit" style="margin-left:auto">개발자 모드 종료</button></div><div id="dev-pane" style="margin-top:12px"></div>`;
+  $('sup-body').innerHTML = `<div class="tabs"><button data-dt="inbox" class="${devTab === 'inbox' ? 'on' : ''}">전체 문의함</button><button data-dt="credits" class="${devTab === 'credits' ? 'on' : ''}">크레딧 관리</button><button data-dt="skins" class="${devTab === 'skins' ? 'on' : ''}">계정 스킨 관리</button><button class="sm ghost" id="dev-exit" style="margin-left:auto">개발자 모드 종료</button></div><div id="dev-pane" style="margin-top:12px"></div>`;
   $('sup-body').querySelectorAll<HTMLElement>('[data-dt]').forEach((b) => (b.onclick = () => { devTab = b.dataset.dt as typeof devTab; renderDev(); }));
   $('dev-exit').onclick = () => { endDevMode(); void renderSupport(); };
-  if (devTab === 'inbox') void renderInbox(); else renderCredits();
+  if (devTab === 'inbox') void renderInbox(); else if (devTab === 'skins') renderAdminSkins(); else renderCredits();
 }
 async function renderInbox(): Promise<void> {
   const pane = $('dev-pane'); pane.innerHTML = '<div class="mut">불러오는 중…</div>';
@@ -941,6 +942,46 @@ function renderCredits(): void {
   $('adm-search').onclick = () => void search();
   $('adm-q').addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter' && !(e as KeyboardEvent).isComposing) void search(); });
   drawResults(); drawSel();
+}
+// ── [계정 스킨 관리] 개발자 모드 — 서버가 DEV 인증(소켓)을 검증하므로 UI 는 호출만 한다
+let admSkinUser: AdminUser | null = null, admSkinOwned: string[] = [];
+const SKIN_ERR: Record<string, string> = { SKIN_NOT_FOUND: '카탈로그에 없는 스킨입니다.', SKIN_NOT_OWNED: '해당 유저가 보유하지 않은 스킨입니다.' };
+function renderAdminSkins(): void {
+  const pane = $('dev-pane'), weaponName = (id: string): string => SKIN_WEAPONS.find((w) => w.id === id)?.name ?? id;
+  const opts = [...SKINS].sort((a, b) => TIERS[b.tier].order - TIERS[a.tier].order || a.weaponId.localeCompare(b.weaponId) || a.sort - b.sort)
+    .map((s) => `<option value="${esc(s.id)}">[${TIERS[s.tier].name}] ${esc(s.name)} · ${weaponName(s.weaponId)}${s.glb ? ' ★' : ''}</option>`).join('');
+  pane.innerHTML = `<div class="row" style="gap:8px"><input id="sk-q" placeholder="닉네임 또는 계정 ID(UUID)" style="flex:1" autocomplete="off" value="${esc(admSkinUser?.nickname ?? '')}" /><button class="pri" id="sk-search">조회</button></div><div id="sk-box" style="margin-top:10px"></div>`;
+  const draw = (): void => {
+    const u = admSkinUser, box = $('sk-box'); if (!u) { box.innerHTML = ''; return; }
+    const tags = admSkinOwned.map((id) => { const s = getSkin(id); return `<span class="tierchip" style="--tc:${s ? TIERS[s.tier].color : '#8b97ab'};margin:2px">${s ? tierEmblemSvg(s.tier, 13) : ''}<b>${esc(s?.name ?? id)}</b><button class="sm ghost" data-rv="${esc(id)}" title="회수" style="padding:0 6px">×</button></span>`; }).join('');
+    box.innerHTML = `<div class="tk"><div class="row"><b>${esc(u.nickname)}</b><span class="mut" style="font-size:11px;margin-left:8px">${esc(u.id)}</span><span class="right">◈ ${fmt(u.credits)}</span></div>
+      <div class="row" style="gap:8px;margin:10px 0"><select id="sk-pick" style="flex:1;min-width:0">${opts}</select><button class="pri" id="sk-grant">선택 스킨 해금</button><button id="sk-all">모든 스킨 일괄 해금</button></div>
+      <div class="mut" style="font-size:12px;margin-bottom:6px">보유 스킨 ${admSkinOwned.length}종 — × 로 회수</div><div>${tags || '<span class="mut">보유 스킨이 없습니다.</span>'}</div></div>`;
+    const done = (r: { skins?: string[]; added?: number; pushed?: boolean }, msg: string): void => { admSkinOwned = r.skins ?? admSkinOwned; toast(msg + (r.pushed ? ' (접속 중 — 즉시 반영)' : ''), 'good'); draw(); };
+    $('sk-grant').onclick = async () => {
+      const id = $<HTMLSelectElement>('sk-pick').value, r = await net.call<{ added: number; skins: string[]; pushed: boolean }>('admin:skin:grant', { id: u.id, skinId: id });
+      if (!r.ok) toast(SKIN_ERR[r.error ?? ''] ?? supMsg(r.error), 'bad'); else done(r, r.added ? `${getSkin(id)?.name ?? id} 지급 완료` : '이미 보유 중인 스킨입니다.');
+    };
+    $('sk-all').onclick = async () => {
+      if (!confirm(`${u.nickname} 계정에 카탈로그의 모든 스킨을 해금할까요?`)) return;
+      const r = await net.call<{ added: number; skins: string[]; pushed: boolean }>('admin:skin:grant', { id: u.id, skinId: 'ALL' });
+      if (!r.ok) toast(SKIN_ERR[r.error ?? ''] ?? supMsg(r.error), 'bad'); else done(r, `일괄 해금 완료 (신규 ${r.added ?? 0}종)`);
+    };
+    box.querySelectorAll<HTMLElement>('[data-rv]').forEach((b) => (b.onclick = async () => {
+      const id = b.dataset.rv!; if (!confirm(`${getSkin(id)?.name ?? id} 을(를) 회수할까요?`)) return;
+      const r = await net.call<{ skins: string[]; pushed: boolean }>('admin:skin:revoke', { id: u.id, skinId: id });
+      if (!r.ok) toast(SKIN_ERR[r.error ?? ''] ?? supMsg(r.error), 'bad'); else done(r, '회수 완료');
+    }));
+  };
+  const search = async (): Promise<void> => {
+    const r = await net.call<{ user: AdminUser; skins: string[]; others: number }>('admin:skins', { q: $<HTMLInputElement>('sk-q').value });
+    if (!r.ok || !r.user) { admSkinUser = null; draw(); toast(supMsg(r.error), 'bad'); return; }
+    admSkinUser = r.user; admSkinOwned = r.skins ?? []; draw();
+    if (r.others) toast(`유사한 계정 ${r.others}건 더 있음 — 정확한 닉네임/ID 로 조회하세요.`, 'good');
+  };
+  $('sk-search').onclick = () => void search();
+  $('sk-q').addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter' && !(e as KeyboardEvent).isComposing) void search(); });
+  draw();
 }
 function openSettings(): void { show('m-pause', false); if (document.pointerLockElement) document.exitPointerLock(); renderSettings(); show('m-settings'); }
 const SET_TABS: [SetTab, string][] = [['sens', '감도 · FOV'], ['xhair', '조준선'], ['keys', '키 설정'], ['gfx', '그래픽'], ['etc', '모바일 · 사운드']];

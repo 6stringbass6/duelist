@@ -1352,6 +1352,65 @@ on('room:config', 4, inGame((room, e, m) => {
       return { ok: true, before: data.before, after: data.after };
     });
 
+    // ───── 계정 스킨 관리 (개발자 모드 전용 — needDev 로 DEV_SECRET_CODE 인증된 소켓만, DB 는 service_role 클라이언트)
+    const SKIN_ID_RE = /^[a-z0-9_]{3,64}$/;
+    const ownedSkins = async (id) => {
+      const { data, error } = await supabase.from('user_skins').select('skin_id,weapon_id,equipped').eq('user_id', id);
+      if (error) throw error;
+      return data;
+    };
+    // 접속 중인 대상: 보관함 갱신 이벤트 + 매치 입장 시 쓰이는 장착 스킨 캐시 재계산
+    const pushSkins = async (id) => {
+      const t = online.get(id); if (!t) return false;
+      const rows = await ownedSkins(id);
+      if (t.data.sess) t.data.sess.skins = Object.fromEntries(rows.filter((r) => r.equipped).map((r) => [r.weapon_id, r.skin_id]));
+      t.emit('skins:update', { skins: rows.map((r) => r.skin_id) });
+      return true;
+    };
+    // 대상 조회: {q:닉네임|UUID} → 기본 정보 + 보유 스킨 ID 목록 (닉네임 정확히 일치 우선)
+    onA('admin:skins', 8, async (m) => {
+      const e = needDev(); if (e) return { ok: false, error: e };
+      const raw = String(m.q ?? '').trim().slice(0, 40); if (!raw) return { ok: false, error: 'BAD_REQUEST' };
+      let query = supabase.from('profiles').select('id,nickname,username,credits').limit(10);
+      if (UUID_RE.test(raw)) query = query.eq('id', raw.toLowerCase());
+      else { const q = raw.replace(/[^A-Za-z0-9가-힣_.-]/g, ''); if (!q) return { ok: false, error: 'USER_NOT_FOUND' }; query = query.or(`nickname.ilike.%${q}%,username.ilike.%${q}%`); }
+      const { data, error } = await query; if (error) throw error;
+      if (!data.length) return { ok: false, error: 'USER_NOT_FOUND' };
+      const user = data.find((u) => u.nickname.toLowerCase() === raw.toLowerCase()) || data[0];
+      const rows = await ownedSkins(user.id);
+      return { ok: true, user, skins: rows.map((r) => r.skin_id), others: data.length - 1, online: online.has(user.id) };
+    });
+    // 지급: {id, skinId | 'ALL'} — 카탈로그에 있는(active) 스킨만, 중복 없이 추가
+    onA('admin:skin:grant', 8, async (m) => {
+      const e = needDev(); if (e) return { ok: false, error: e };
+      const id = String(m.id ?? '').toLowerCase(), skinId = String(m.skinId ?? '');
+      if (!UUID_RE.test(id) || (skinId !== 'ALL' && !SKIN_ID_RE.test(skinId))) return { ok: false, error: 'BAD_REQUEST' };
+      const pr = await supabase.from('profiles').select('id').eq('id', id).maybeSingle(); if (pr.error) throw pr.error;
+      if (!pr.data) return { ok: false, error: 'USER_NOT_FOUND' };
+      let cat = supabase.from('skin_catalog').select('skin_id,weapon_id').eq('active', true);
+      if (skinId !== 'ALL') cat = cat.eq('skin_id', skinId);
+      const { data: items, error: ce } = await cat; if (ce) throw ce;
+      if (!items.length) return { ok: false, error: 'SKIN_NOT_FOUND' };
+      const have = new Set((await ownedSkins(id)).map((r) => r.skin_id));
+      const rows = items.filter((s) => !have.has(s.skin_id)).map((s) => ({ user_id: id, skin_id: s.skin_id, weapon_id: s.weapon_id, source: 'reward' }));
+      if (rows.length) { const { error } = await supabase.from('user_skins').upsert(rows, { onConflict: 'user_id,skin_id', ignoreDuplicates: true }); if (error) throw error; }
+      console.log(`[admin] skin grant ${skinId} added=${rows.length} target=${id} by=${sess.userId}`);
+      const pushed = await pushSkins(id);
+      return { ok: true, added: rows.length, total: items.length, skins: (await ownedSkins(id)).map((r) => r.skin_id), pushed };
+    });
+    // 회수: {id, skinId} — 장착 중이면 행 삭제로 장착도 함께 해제
+    onA('admin:skin:revoke', 8, async (m) => {
+      const e = needDev(); if (e) return { ok: false, error: e };
+      const id = String(m.id ?? '').toLowerCase(), skinId = String(m.skinId ?? '');
+      if (!UUID_RE.test(id) || !SKIN_ID_RE.test(skinId)) return { ok: false, error: 'BAD_REQUEST' };
+      const { data, error } = await supabase.from('user_skins').delete().eq('user_id', id).eq('skin_id', skinId).select('skin_id');
+      if (error) throw error;
+      if (!data.length) return { ok: false, error: 'SKIN_NOT_OWNED' };
+      console.log(`[admin] skin revoke ${skinId} target=${id} by=${sess.userId}`);
+      const pushed = await pushSkins(id);
+      return { ok: true, skins: (await ownedSkins(id)).map((r) => r.skin_id), pushed };
+    });
+
     socket.on('disconnect', () => {
       try { removeHuman(sess, clock.now()); } catch (err) { console.error('[disconnect]', err); }
       if (sess.userId && online.get(sess.userId) === socket) online.delete(sess.userId);
