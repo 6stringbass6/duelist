@@ -1,0 +1,19 @@
+{
+  "name": "duelist-tools",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "db:push": "node --env-file-if-exists=.env.local scripts/db-push.mjs",
+    "db:push:dry": "node --env-file-if-exists=.env.local scripts/db-push.mjs --dry",
+    "db:baseline": "node --env-file-if-exists=.env.local scripts/db-push.mjs --baseline",
+    "deploy:status": "node --env-file-if-exists=.env.local scripts/deploy-status.mjs",
+    "check": "node --check server/server.js && npm --prefix client run build",
+    "e2e": "node --env-file-if-exists=.env.local node_modules/@playwright/test/cli.js test -c e2e/playwright.config.ts",
+    "e2e:headed": "node --env-file-if-exists=.env.local node_modules/@playwright/test/cli.js test -c e2e/playwright.config.ts --headed",
+    "e2e:install": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "pg": "^8.13.0"
+  }
+}
