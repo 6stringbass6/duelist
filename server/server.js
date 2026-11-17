@@ -1390,14 +1390,18 @@ on('room:config', 4, inGame((room, e, m) => {
       return true;
     };
     // 대상 조회: {q:닉네임|UUID} → 기본 정보 + 보유 스킨 ID 목록 (닉네임 정확히 일치 우선)
+    const SKIN_QUERY_MSG = { FORBIDDEN: '권한이 없습니다. 개발자 모드를 다시 인증해 주세요.', EMPTY_QUERY: '검색어(닉네임·이메일·UUID)를 입력해 주세요.', USER_NOT_FOUND: '해당 유저를 찾을 수 없습니다.', SERVER_ERROR: '서버 오류로 조회하지 못했습니다.' };
+    const skinFail = (error) => ({ ok: false, error, message: SKIN_QUERY_MSG[error] || error, user: null, ownedSkins: [], skins: [] });
     onA('admin:skins', 8, async (m) => {
-      const e = needDev(); if (e) return { ok: false, error: e };
+      const e = needDev(); if (e) return skinFail(e);
       const raw = String(m.q ?? m.query ?? m.id ?? m.nickname ?? m.email ?? m.userId ?? '').trim();
-      if (!raw) return { ok: false, error: 'EMPTY_QUERY' };
-      const found = await findAccounts(raw); if (!found.length) return { ok: false, error: 'USER_NOT_FOUND' };
-      const lc = raw.toLowerCase(), user = found.find((u) => u.id === lc || (u.email || '').toLowerCase() === lc || u.nickname.toLowerCase() === lc || (u.username || '').toLowerCase() === lc) || found[0];
-      const rows = await ownedSkins(user.id);
-      return { ok: true, user, skins: rows.map((r) => r.skin_id), others: found.length - 1, online: online.has(user.id) };
+      if (!raw) return skinFail('EMPTY_QUERY');
+      try {
+        const found = await findAccounts(raw); if (!found.length) return skinFail('USER_NOT_FOUND');
+        const lc = raw.toLowerCase(), user = found.find((u) => u.id === lc || (u.email || '').toLowerCase() === lc || u.nickname.toLowerCase() === lc || (u.username || '').toLowerCase() === lc) || found[0];
+        const skins = (await ownedSkins(user.id)).map((r) => r.skin_id);
+        return { ok: true, message: `조회 완료: ${user.nickname} (보유 스킨 ${skins.length}개)`, user, userId: user.id, nickname: user.nickname, ownedSkins: skins, skins, others: found.length - 1, online: online.has(user.id) };
+      } catch (err) { console.error('[admin:skins]', err); return skinFail('SERVER_ERROR'); }
     });
     // 지급: {id, skinId | 'ALL'} — 카탈로그에 있는(active) 스킨만, 중복 없이 추가
     onA('admin:skin:grant', 8, async (m) => {

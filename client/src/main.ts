@@ -950,7 +950,8 @@ function renderAdminSkins(): void {
   const pane = $('dev-pane'), weaponName = (id: string): string => SKIN_WEAPONS.find((w) => w.id === id)?.name ?? id;
   const opts = [...SKINS].sort((a, b) => TIERS[b.tier].order - TIERS[a.tier].order || a.weaponId.localeCompare(b.weaponId) || a.sort - b.sort)
     .map((s) => `<option value="${esc(s.id)}">[${TIERS[s.tier].name}] ${esc(s.name)} · ${weaponName(s.weaponId)}${s.glb ? ' ★' : ''}</option>`).join('');
-  pane.innerHTML = `<div class="row" style="gap:8px"><input id="sk-q" placeholder="닉네임 · 이메일 · 계정 ID(UUID)" style="flex:1" autocomplete="off" value="${esc(admSkinUser?.nickname ?? '')}" /><button class="pri" id="sk-search">조회</button></div><div id="sk-box" style="margin-top:10px"></div>`;
+  pane.innerHTML = `<div class="row" style="gap:8px"><input id="sk-q" placeholder="닉네임 · 이메일 · 계정 ID(UUID)" style="flex:1" autocomplete="off" value="${esc(admSkinUser?.nickname ?? '')}" /><button class="pri" id="sk-search">조회</button></div><div id="sk-status" class="mut" style="margin-top:8px;font-size:13px;min-height:18px"></div><div id="sk-box" style="margin-top:10px"></div>`;
+  const status = (msg: string, kind: 'good' | 'bad' | '' = ''): void => { const el = $('sk-status'); el.textContent = msg; el.style.color = kind === 'bad' ? '#ff6b6b' : kind === 'good' ? '#5ddc8a' : ''; };
   const draw = (): void => {
     const u = admSkinUser, box = $('sk-box'); if (!u) { box.innerHTML = ''; return; }
     const tags = admSkinOwned.map((id) => { const s = getSkin(id); return `<span class="tierchip" style="--tc:${s ? TIERS[s.tier].color : '#8b97ab'};margin:2px">${s ? tierEmblemSvg(s.tier, 13) : ''}<b>${esc(s?.name ?? id)}</b><button class="sm ghost" data-rv="${esc(id)}" title="회수" style="padding:0 6px">×</button></span>`; }).join('');
@@ -974,11 +975,23 @@ function renderAdminSkins(): void {
     }));
   };
   const search = async (): Promise<void> => {
-    const q = $<HTMLInputElement>('sk-q').value.trim(); if (!q) { toast(SUP_ERR.EMPTY_QUERY, 'bad'); return; }
-    const r = await net.call<{ user: AdminUser; skins: string[]; others: number }>('admin:skins', { q });
-    if (!r.ok || !r.user) { admSkinUser = null; draw(); toast(supMsg(r.error), 'bad'); return; }
-    admSkinUser = r.user; admSkinOwned = r.skins ?? []; draw();
-    if (r.others) toast(`유사한 계정 ${r.others}건 더 있음 — 정확한 닉네임/ID 로 조회하세요.`, 'good');
+    const q = $<HTMLInputElement>('sk-q').value.trim(), btn = $<HTMLButtonElement>('sk-search');
+    if (!q) { status(SUP_ERR.EMPTY_QUERY, 'bad'); toast(SUP_ERR.EMPTY_QUERY, 'bad'); return; }
+    if (btn.disabled) return;
+    btn.disabled = true; btn.textContent = '조회 중...'; status('조회 중...');
+    try {
+      const r = await net.call<{ user: AdminUser; skins: string[]; others: number; message: string }>('admin:skins', { q });
+      if (!r.ok || !r.user) {
+        admSkinUser = null; admSkinOwned = []; draw();
+        const m = r.message || (r.error === 'NOT_CONNECTED' ? '서버에 연결되어 있지 않습니다.' : r.error === 'TIMEOUT' ? '서버 응답 시간이 초과되었습니다. (서버가 최신 버전인지 확인하세요)' : supMsg(r.error));
+        status(`조회 실패: ${m}`, 'bad'); toast(m, 'bad'); return;
+      }
+      admSkinUser = r.user; admSkinOwned = r.skins ?? [];
+      status(`조회 완료: ${r.user.nickname} (보유 스킨 ${admSkinOwned.length}개)` + (r.others ? ` — 유사 계정 ${r.others}건 더 있음` : ''), 'good');
+      try { draw(); } catch (err) { console.error('[admin skins draw]', err); status(`조회 완료: ${r.user.nickname} (보유 스킨 ${admSkinOwned.length}개) — 표시 오류: ${(err as Error).message}`, 'bad'); }
+    } catch (err) {
+      console.error('[admin skins]', err); status(`조회 실패: ${(err as Error).message || '알 수 없는 오류'}`, 'bad'); toast('조회 중 오류가 발생했습니다.', 'bad');
+    } finally { btn.disabled = false; btn.textContent = '조회'; }
   };
   $('sk-search').onclick = () => void search();
   $('sk-q').addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter' && !(e as KeyboardEvent).isComposing) void search(); });
