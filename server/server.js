@@ -1169,6 +1169,10 @@ async function findAccountsRaw(rawIn) {
     const { data, error } = await supabase.from('profiles').select(PROFILE_COLS).or(`nickname.ilike.%${term}%,username.ilike.%${term}%`).limit(10);
     if (error) throw error; out = data;
   }
+  if (!out.length && !raw.includes('@')) { // 영문·숫자·밑줄 외 문자가 섞인 아이디는 해시(h-…)로 저장됨 — 같은 해시로 조회
+    const { data, error } = await supabase.from('profiles').select(PROFILE_COLS).eq('username', 'h-' + crypto.createHash('sha256').update(raw.toLowerCase()).digest('hex').slice(0, 32)).limit(1);
+    if (error) throw error; out = data;
+  }
   for (const u of out) {
     if (emails.has(u.id)) { u.email = emails.get(u.id); continue; }
     try { const r = await supabase.auth.admin.getUserById(u.id); if (r.data?.user?.email) u.email = r.data.user.email; } catch { /* 이메일은 표시용 — 실패 무시 */ }
