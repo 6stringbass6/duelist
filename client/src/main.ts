@@ -922,7 +922,7 @@ function renderAdminAccount(): void {
   const pane = $('dev-pane'), weaponName = (id: string): string => SKIN_WEAPONS.find((w) => w.id === id)?.name ?? id;
   const opts = [...SKINS].sort((a, b) => TIERS[b.tier].order - TIERS[a.tier].order || a.weaponId.localeCompare(b.weaponId) || a.sort - b.sort)
     .map((s) => `<option value="${esc(s.id)}">[${TIERS[s.tier].name}] ${esc(s.name)} · ${weaponName(s.weaponId)}${s.glb ? ' ★' : ''}</option>`).join('');
-  pane.innerHTML = `<div class="row" style="gap:8px"><input id="sk-q" placeholder="닉네임 · 이메일 · 계정 ID(UUID)" style="flex:1" autocomplete="off" value="${esc(admSkinUser?.nickname ?? '')}" /><button class="pri" id="sk-search">계정 조회</button></div><div id="sk-status" class="mut" style="margin-top:8px;font-size:13px;min-height:18px"></div><div id="sk-box" style="margin-top:10px"></div>`;
+  pane.innerHTML = `<div class="row" style="gap:8px"><input id="adm-q" placeholder="닉네임 · 이메일 · 계정 ID(UUID)" style="flex:1" autocomplete="off" value="${esc(admSkinUser?.nickname ?? '')}" /><button class="pri" id="sk-search">계정 조회</button></div><div id="sk-status" class="mut" style="margin-top:8px;font-size:13px;min-height:18px"></div><div id="sk-box" style="margin-top:10px"></div>`;
   const status = (msg: string, kind: 'good' | 'bad' | '' = ''): void => { const el = $('sk-status'); el.textContent = msg; el.style.color = kind === 'bad' ? '#ff6b6b' : kind === 'good' ? '#5ddc8a' : ''; };
   const fail = (r: { error?: string; message?: string }): void => { const m = r.message || SKIN_ERR[r.error ?? ''] || supMsg(r.error); status(m, 'bad'); toast(m, 'bad'); };
   const draw = (): void => {
@@ -977,7 +977,7 @@ function renderAdminAccount(): void {
     $('ban-off').onclick = ban(() => 0);
   };
   const search = async (): Promise<void> => {
-    const q = $<HTMLInputElement>('sk-q').value.trim(), btn = $<HTMLButtonElement>('sk-search');
+    const q = $<HTMLInputElement>('adm-q').value.trim(), btn = $<HTMLButtonElement>('sk-search');
     if (!q) { status(SUP_ERR.EMPTY_QUERY, 'bad'); toast(SUP_ERR.EMPTY_QUERY, 'bad'); return; }
     if (btn.disabled) return;
     btn.disabled = true; btn.textContent = '조회 중...'; status('조회 중...');
@@ -996,7 +996,7 @@ function renderAdminAccount(): void {
     } finally { btn.disabled = false; btn.textContent = '계정 조회'; }
   };
   $('sk-search').onclick = () => void search();
-  $('sk-q').addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter' && !(e as KeyboardEvent).isComposing) void search(); });
+  $('adm-q').addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter' && !(e as KeyboardEvent).isComposing) void search(); });
   draw();
 }
 function openSettings(): void { show('m-pause', false); if (document.pointerLockElement) document.exitPointerLock(); renderSettings(); show('m-settings'); }
