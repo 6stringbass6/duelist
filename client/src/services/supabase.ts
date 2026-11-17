@@ -136,13 +136,14 @@ export async function signUpWithId(id: string, password: string, nickname: strin
   if (!isValidId(id)) throw new GameError('INVALID_ID');
   if (!isValidPassword(password)) throw new GameError('INVALID_PASSWORD');
   if (!isValidNickname(nickname)) throw new GameError('INVALID_NICKNAME');
-  const c = client();
-  const { data: taken } = await c.from('public_profiles').select('id').ilike('nickname', nickname.trim()).maybeSingle();
-  if (taken) throw new GameError('NICKNAME_TAKEN');
-  const email = await idToEmail(id);
-  const { data, error } = await c.auth.signUp({ email, password, options: { data: { nickname: nickname.trim() } } });
-  if (error) throw toError(error);
-  if (!data.session) { const r = await c.auth.signInWithPassword({ email, password }); if (r.error) throw toError(r.error); }
+  const c = client(), email = await idToEmail(id);
+  // 확인 메일 없이 즉시 생성 — 서버(admin API)가 계정을 만든 뒤 바로 로그인
+  let res: Response;
+  try { res = await fetch(`${SERVER_URL}/auth/signup`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: normalizeId(id), password, nickname: nickname.trim() }) }); }
+  catch { throw new GameError('SIGNUP_UNREACHABLE'); }
+  const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; message?: string };
+  if (!res.ok || !j.ok) throw new GameError(j.error ?? 'SERVER_ERROR');
+  const r = await c.auth.signInWithPassword({ email, password }); if (r.error) throw toError(r.error);
   return loadProfile();
 }
 export async function signInWithId(id: string, password: string): Promise<Profile> {

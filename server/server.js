@@ -1482,11 +1482,39 @@ on('room:config', 4, inGame((room, e, m) => {
 // ───────────────────────────── 13. 부트스트랩 ─────────────────────────────
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
+  // 이메일 없는 간편가입: 아이디+비번+닉네임만으로 계정 생성 (확인 메일을 보내지 않도록 admin API + email_confirm)
+  const signupHits = new Map();
+  const signupHandler = (req, res) => {
+    const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' };
+    const out = (code, body) => { res.writeHead(code, { 'Content-Type': 'application/json', ...cors }); res.end(JSON.stringify(body)); };
+    if (req.method === 'OPTIONS') { res.writeHead(204, cors); return res.end(); }
+    if (req.method !== 'POST') return out(405, { ok: false, error: 'METHOD' });
+    if (!supabase) return out(503, { ok: false, error: 'NOT_CONFIGURED' });
+    const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(), now = Date.now();
+    const hits = (signupHits.get(ip) || []).filter((t) => now - t < 3600e3); if (hits.length >= 20) return out(429, { ok: false, error: 'RATE_LIMIT' });
+    let raw = ''; req.on('data', (c) => { raw += c; if (raw.length > 2000) req.destroy(); });
+    req.on('end', async () => {
+      try {
+        const b = JSON.parse(raw || '{}'), id = String(b.id ?? '').trim().toLowerCase(), pw = String(b.password ?? ''), nick = String(b.nickname ?? '').trim();
+        if ([...id].length < 4 || [...id].length > 16 || /[\s\p{C}]/u.test(id)) return out(400, { ok: false, error: 'INVALID_ID' });
+        if (pw.length < 6 || pw.length > 72) return out(400, { ok: false, error: 'INVALID_PASSWORD' });
+        if (!/^[A-Za-z0-9가-힣_]{2,16}$/.test(nick)) return out(400, { ok: false, error: 'INVALID_NICKNAME' });
+        const email = (/^[a-z0-9_]+$/.test(id) ? id : 'h-' + crypto.createHash('sha256').update(id).digest('hex').slice(0, 32)) + '@game.local';
+        const { data: taken } = await supabase.from('profiles').select('id').ilike('nickname', nick).maybeSingle();
+        if (taken) return out(409, { ok: false, error: 'NICKNAME_TAKEN' });
+        signupHits.set(ip, [...hits, now]);
+        const { error } = await supabase.auth.admin.createUser({ email, password: pw, email_confirm: true, user_metadata: { nickname: nick } });
+        if (error) { const dup = /already|registered|exists/i.test(error.message); return out(dup ? 409 : 500, { ok: false, error: dup ? 'ID_TAKEN' : 'SERVER_ERROR', message: error.message }); }
+        out(200, { ok: true });
+      } catch (err) { console.error('[auth/signup]', err); out(500, { ok: false, error: 'SERVER_ERROR' }); }
+    });
+  };
   const httpServer = http.createServer((req, res) => {
     if (req.url === '/health' || req.url === '/') {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify({ ok: true, rooms: rooms.size, players: io ? io.engine.clientsCount : 0, supabase: !!supabase }));
-    } else { res.writeHead(404); res.end(); }
+    } else if (req.url === '/auth/signup') signupHandler(req, res);
+    else { res.writeHead(404); res.end(); }
   });
   attach(new Server(httpServer, {
     cors: { origin: ORIGINS.includes('*') ? true : ORIGINS, methods: ['GET', 'POST'] },
