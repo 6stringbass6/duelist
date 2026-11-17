@@ -147,11 +147,11 @@ function renderTop(): void {
   $('lb-credits').textContent = `◈ ${fmt(p.credits)}`; $('lb-boxes').textContent = `🎁 ${p.lootboxes}`;
   $('btn-logout').textContent = p.isGuest ? '로그인' : '로그아웃';
 }
-const NAV: [typeof lobbyTab, string][] = [['home', '홈'], ['shop', '상점'], ['inventory', '보관함'], ['missions', '미션·출석'], ['achievements', '업적·칭호'], ['stats', '전적']];
+const NAV: [typeof lobbyTab, string, string][] = [['home', '홈', 'HOME'], ['shop', '상점', 'STORE'], ['inventory', '보관함', 'LOADOUT'], ['missions', '미션·출석', 'MISSION'], ['achievements', '업적·칭호', 'ACHIEVE'], ['stats', '전적', 'CAREER']];
 function renderLobby(): void {
   if (view !== 'lobby') return;
   renderTop();
-  $('lobby-nav').innerHTML = NAV.map(([k, n]) => `<button data-tab="${k}" class="${k === lobbyTab ? 'on' : ''}">${n}</button>`).join('');
+  $('lobby-nav').innerHTML = NAV.map(([k, n, en], i) => `<button data-tab="${k}" class="${k === lobbyTab ? 'on' : ''}"><i>0${i + 1}</i>${n}<small>${en}</small></button>`).join('');
   $('lobby-nav').querySelectorAll<HTMLElement>('button').forEach((b) => (b.onclick = () => { lobbyTab = b.dataset.tab as typeof lobbyTab; if (lobbyTab === 'stats') void loadHistory(); renderLobby(); }));
   const body = $('lobby-body'), p = getProfile();
   if (!p) return;
@@ -191,13 +191,14 @@ function htmlHome(): string {
   const p = getProfile()!, st = bundle?.stats, tp = tierProgress(p.rank_points), t = tierInfo(tierLevel(p.rank_points));
   const fb = FEATURED_BANNER;
   return `
-  ${fb ? `<div class="banner" style="margin-top:14px;background:linear-gradient(110deg,#07070c,${hex(fb.accent)}55 70%,${hex(fb.accent)}aa)"><div class="tag">NEW · FEATURED</div><h3>${esc(fb.title)} 컬렉션</h3><div class="mut">${esc(fb.blurb)}</div><button class="pri" style="margin-top:12px" data-goto="shop">상점에서 보기</button></div>` : ''}
-  <h2>내 랭크</h2>
-  <div class="card"><div class="row"><b style="font-size:22px;color:${t.color}">${t.labelKo}</b><span class="mut">${fmt(p.rank_points)} RP</span><span class="right mut">${tp.toNext ? `다음 승급까지 ${tp.toNext} RP` : '최상위 티어'}</span></div><div class="bar" style="margin-top:10px"><i style="width:${tp.progress * 100}%"></i></div></div>
-  <h2>요약</h2>
-  <div class="grid"><div class="stat"><span class="mut">K/D</span><b>${st?.kd ?? 0}</b></div><div class="stat"><span class="mut">헤드샷 비율</span><b>${st?.hs_pct ?? 0}%</b></div><div class="stat"><span class="mut">승률</span><b>${st?.win_rate ?? 0}%</b></div><div class="stat"><span class="mut">매치</span><b>${st?.matches ?? 0}</b></div></div>
-  <h2>바로 시작</h2>
-  <div class="row" style="flex-wrap:wrap"><button class="pri" data-quick="range">사격장</button><button data-quick="tdm">팀 데스매치 3v3</button><button data-quick="classic">클래식 1v1</button><button data-quick="ranked">경쟁전 1v1</button></div>`;
+  <div class="home">
+    <div class="side">
+      <div class="rank"><h2 style="margin-top:0">Rank</h2><b class="t" style="color:${t.color}">${t.labelKo}</b><div class="mut" style="font-family:var(--c-mono);margin-top:4px">${fmt(p.rank_points)} RP · ${tp.toNext ? `다음 승급까지 ${tp.toNext} RP` : '최상위 티어'}</div><div class="bar" style="margin-top:12px"><i style="width:${tp.progress * 100}%"></i></div></div>
+      <div><h2 style="margin-top:0">Summary</h2><div class="mini"><div><span>K/D</span><b>${st?.kd ?? 0}</b></div><div><span>HS%</span><b>${st?.hs_pct ?? 0}%</b></div><div><span>Win</span><b>${st?.win_rate ?? 0}%</b></div><div><span>Matches</span><b>${st?.matches ?? 0}</b></div></div></div>
+      <div><h2 style="margin-top:0">Quick Start</h2><div class="quick"><button class="pri" data-quick="range">사격장</button><button data-quick="tdm">팀 데스매치 3v3</button><button data-quick="classic">클래식 1v1</button><button data-quick="ranked">경쟁전 1v1</button></div></div>
+    </div>
+    <div class="stage">${fb ? `<span class="tag">NEW · FEATURED</span><h3>${esc(fb.title)} 컬렉션</h3><div class="mut">${esc(fb.blurb)}</div><div class="quick"><button class="pri" data-goto="shop">상점에서 보기</button></div>` : `<span class="tag">DUELIST</span><h3>READY</h3>`}</div>
+  </div>`;
 }
 function htmlShop(): string {
   const fb = FEATURED_BANNER, p = getProfile()!;
@@ -1149,4 +1150,4 @@ addEventListener('pointerdown', () => { if (TOUCH) void (screen.orientation as u
   setView('auth');
   const p = await initAuth();   // 세션 복원 (Google 리다이렉트 복귀 포함) + 설정 클라우드 동기화 시작
   if (p) await enterLobby();
-})();
+})();
