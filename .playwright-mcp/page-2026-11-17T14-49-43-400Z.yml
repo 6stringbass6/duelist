@@ -1,0 +1,75 @@
+- generic [ref=f7e19]:
+  - generic [ref=f7e20]:
+    - generic [ref=f7e21]: DUELIST
+    - generic [ref=f7e22]:
+      - button "01 홈 HOME" [ref=f7e23] [cursor=pointer]:
+        - generic [ref=f7e24]: "01"
+        - text: 홈
+        - generic [ref=f7e25]: HOME
+      - button "02 상점 STORE" [ref=f7e26] [cursor=pointer]:
+        - generic [ref=f7e27]: "02"
+        - text: 상점
+        - generic [ref=f7e28]: STORE
+      - button "03 보관함 LOADOUT" [ref=f7e29] [cursor=pointer]:
+        - generic [ref=f7e30]: "03"
+        - text: 보관함
+        - generic [ref=f7e31]: LOADOUT
+      - button "04 미션·출석 MISSION" [ref=f7e32] [cursor=pointer]:
+        - generic [ref=f7e33]: "04"
+        - text: 미션·출석
+        - generic [ref=f7e34]: MISSION
+      - button "05 업적·칭호 ACHIEVE" [ref=f7e35] [cursor=pointer]:
+        - generic [ref=f7e36]: "05"
+        - text: 업적·칭호
+        - generic [ref=f7e37]: ACHIEVE
+      - button "06 전적 CAREER" [ref=f7e38] [cursor=pointer]:
+        - generic [ref=f7e39]: "06"
+        - text: 전적
+        - generic [ref=f7e40]: CAREER
+    - generic [ref=f7e41]:
+      - button "PLAY" [ref=f7e42] [cursor=pointer]
+      - generic [ref=f7e43]: ◈ 0
+      - generic [ref=f7e44]: 🎁 0
+      - generic [ref=f7e45]:
+        - text: Guest7991
+        - generic [ref=f7e46] [cursor=pointer]: ✎
+      - generic [ref=f7e47]: 게스트
+      - generic [ref=f7e48]:
+        - generic [ref=f7e49]: 브론즈 I
+        - text: 0 RP
+      - button "고객센터" [ref=f7e50] [cursor=pointer]
+      - button "설정" [ref=f7e51] [cursor=pointer]
+      - button "로그인" [ref=f7e52] [cursor=pointer]
+  - generic [ref=f7e54]:
+    - generic [ref=f7e55]:
+      - generic [ref=f7e56]:
+        - heading "Rank" [level=2] [ref=f7e57]
+        - text: 브론즈 I
+        - generic [ref=f7e58]: 0 RP · 다음 승급까지 200 RP
+      - generic [ref=f7e60]:
+        - heading "Summary" [level=2] [ref=f7e61]
+        - generic [ref=f7e62]:
+          - generic [ref=f7e63]:
+            - generic [ref=f7e64]: K/D
+            - text: "0"
+          - generic [ref=f7e65]:
+            - generic [ref=f7e66]: HS%
+            - text: 0%
+          - generic [ref=f7e67]:
+            - generic [ref=f7e68]: Win
+            - text: 0%
+          - generic [ref=f7e69]:
+            - generic [ref=f7e70]: Matches
+            - text: "0"
+      - generic [ref=f7e71]:
+        - heading "Quick Start" [level=2] [ref=f7e72]
+        - generic [ref=f7e73]:
+          - button "사격장" [ref=f7e74] [cursor=pointer]
+          - button "팀 데스매치 3v3" [ref=f7e75] [cursor=pointer]
+          - button "클래식 1v1" [ref=f7e76] [cursor=pointer]
+          - button "경쟁전 1v1" [ref=f7e77] [cursor=pointer]
+    - generic [ref=f7e78]:
+      - generic [ref=f7e79]: NEW · FEATURED
+      - heading "솔라 프라임 컬렉션" [level=3] [ref=f7e80]
+      - generic [ref=f7e81]: 신규 출시 — 백색 세라믹과 황금 인레이 사이로 태양의 용암이 흐른다.
+      - button "상점에서 보기" [ref=f7e83] [cursor=pointer]

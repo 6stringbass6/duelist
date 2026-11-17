@@ -1,0 +1,4 @@
+[     677ms] TypeError: Cannot set properties of null (setting 'onclick')
+    at http://localhost:5173/src/main.ts:327:22
+[     671ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:5173/:1
+[     735ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5173/favicon.ico:1

@@ -1,0 +1,30 @@
+- generic [ref=e2]:
+  - generic:
+    - generic [ref=e1118]:
+      - 'button "봇 이동: OFF" [ref=e1119] [cursor=pointer]'
+      - button "무기 변경" [ref=e1120] [cursor=pointer]
+      - button "나가기" [ref=e1121] [cursor=pointer]
+    - generic: 화면을 클릭하면 조작이 시작됩니다
+    - generic: "150"
+    - generic:
+      - generic:
+        - generic: Q
+        - generic: ⇧
+        - generic: 상승기류 3/3
+      - generic:
+        - generic: E
+        - generic: »
+        - generic: 이속 증가 2/2
+      - generic:
+        - generic: X
+        - generic: ☄
+        - generic: 그림자 습격 0/6
+    - generic: 궁극기 0/6 · 킬/데스/라운드 +1
+    - generic:
+      - generic: ∞
+      - generic: 단검
+      - generic [ref=e1122]:
+        - generic [ref=e1123]: 1 주무기
+        - generic [ref=e1124]: 2 보조
+        - generic [ref=e1125]: 3 근접
+        - generic [ref=e1126]: 4 투척

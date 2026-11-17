@@ -1,0 +1,86 @@
+- generic [ref=e2]:
+  - generic:
+    - generic [ref=e1118]:
+      - 'button "봇 이동: OFF" [ref=e1119] [cursor=pointer]'
+      - button "무기 변경" [ref=e1120] [cursor=pointer]
+      - button "나가기" [ref=e1121] [cursor=pointer]
+    - generic: "150"
+    - generic:
+      - generic:
+        - generic: Q
+        - generic: ⇧
+        - generic: 상승기류 3/3
+      - generic:
+        - generic: E
+        - generic: »
+        - generic: 이속 증가 2/2
+      - generic:
+        - generic: X
+        - generic: ☄
+        - generic: 그림자 습격 0/6
+    - generic: 궁극기 0/6 · 킬/데스/라운드 +1
+    - generic:
+      - generic: 25 / 25
+      - generic: 밴달
+      - generic [ref=e1122]:
+        - generic [ref=e1123]: 1 주무기
+        - generic [ref=e1124]: 2 보조
+        - generic [ref=e1125]: 3 근접
+        - generic [ref=e1126]: 4 투척
+  - generic [ref=e1127]:
+    - generic [ref=e1128]:
+      - heading "로드아웃" [level=3] [ref=e1129]
+      - generic [ref=e1130]: "사격장: 모든 무기를 즉시 교체해 테스트"
+      - button "✕" [ref=e1131] [cursor=pointer]
+    - generic [ref=e1132]:
+      - generic [ref=e1133]: 1 · 주무기
+      - generic [ref=e1134]:
+        - button "밴달 머리 52 · 몸 26 · 25발" [ref=e1135] [cursor=pointer]:
+          - text: 밴달
+          - generic [ref=e1136]: 머리 52 · 몸 26 · 25발
+        - button "팬텀 머리 46 · 몸 23 · 30발" [ref=e1137] [cursor=pointer]:
+          - text: 팬텀
+          - generic [ref=e1138]: 머리 46 · 몸 23 · 30발
+        - button "마샬 머리 202 · 몸 101 · 5발" [ref=e1139] [cursor=pointer]:
+          - text: 마샬
+          - generic [ref=e1140]: 머리 202 · 몸 101 · 5발
+    - generic [ref=e1141]:
+      - generic [ref=e1142]: 2 · 보조
+      - generic [ref=e1143]:
+        - button "클래식 머리 50 · 몸 20 · 12발" [ref=e1144] [cursor=pointer]:
+          - text: 클래식
+          - generic [ref=e1145]: 머리 50 · 몸 20 · 12발
+        - button "쇼티 머리 30 · 몸 10 ×12 · 2발" [ref=e1146] [cursor=pointer]:
+          - text: 쇼티
+          - generic [ref=e1147]: 머리 30 · 몸 10 ×12 · 2발
+        - button "프렌지 머리 40 · 몸 18 · 13발" [ref=e1148] [cursor=pointer]:
+          - text: 프렌지
+          - generic [ref=e1149]: 머리 40 · 몸 18 · 13발
+        - button "고스트 머리 52 · 몸 23 · 15발" [ref=e1150] [cursor=pointer]:
+          - text: 고스트
+          - generic [ref=e1151]: 머리 52 · 몸 23 · 15발
+        - button "셰리프 머리 78 · 몸 37 · 6발" [ref=e1152] [cursor=pointer]:
+          - text: 셰리프
+          - generic [ref=e1153]: 머리 78 · 몸 37 · 6발
+    - generic [ref=e1154]:
+      - generic [ref=e1155]: 3 · 근접
+      - generic [ref=e1156]:
+        - button "주먹 피해 25 · 2.5회/초 · 이속 ×1.15" [ref=e1157] [cursor=pointer]:
+          - text: 주먹
+          - generic [ref=e1158]: 피해 25 · 2.5회/초 · 이속 ×1.15
+        - button "단검 피해 35 · 3.3회/초 · 이속 ×1.2" [ref=e1159] [cursor=pointer]:
+          - text: 단검
+          - generic [ref=e1160]: 피해 35 · 3.3회/초 · 이속 ×1.2
+        - button "장검 피해 95 · 1.0회/초 · 이속 ×1.12" [ref=e1161] [cursor=pointer]:
+          - text: 장검
+          - generic [ref=e1162]: 피해 95 · 1.0회/초 · 이속 ×1.12
+    - generic [ref=e1163]:
+      - generic [ref=e1164]: 4 · 투척
+      - generic [ref=e1165]:
+        - button "수류탄 범위 폭발 130 · 2개" [ref=e1166] [cursor=pointer]:
+          - text: 수류탄
+          - generic [ref=e1167]: 범위 폭발 130 · 2개
+        - 'button "섬광탄 좌: 원거리 / 우: 언더핸드 · 2개" [ref=e1168] [cursor=pointer]':
+          - text: 섬광탄
+          - generic [ref=e1169]: "좌: 원거리 / 우: 언더핸드 · 2개"
+    - button "확인" [ref=e1171] [cursor=pointer]

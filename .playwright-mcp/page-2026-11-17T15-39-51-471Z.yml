@@ -1,0 +1,177 @@
+- generic [ref=e19]:
+  - banner [ref=e20]:
+    - generic [ref=e21]: DUELIST
+    - navigation "메인 메뉴" [ref=e23]:
+      - button "01 Play 플레이" [ref=e157] [cursor=pointer]:
+        - generic [ref=e158]: "01"
+        - generic [ref=e159]: Play
+        - generic [ref=e160]: 플레이
+      - button "02 Loadout 보관함" [ref=e161] [cursor=pointer]:
+        - generic [ref=e162]: "02"
+        - generic [ref=e163]: Loadout
+        - generic [ref=e164]: 보관함
+      - button "03 Store 상점" [ref=e165] [cursor=pointer]:
+        - generic [ref=e166]: "03"
+        - generic [ref=e167]: Store
+        - generic [ref=e168]: 상점
+      - button "04 Career 전적" [ref=e169] [cursor=pointer]:
+        - generic [ref=e170]: "04"
+        - generic [ref=e171]: Career
+        - generic [ref=e172]: 전적
+      - button "05 Settings 설정" [ref=e173] [cursor=pointer]:
+        - generic [ref=e174]: "05"
+        - generic [ref=e175]: Settings
+        - generic [ref=e176]: 설정
+    - generic [ref=e44]:
+      - button "보유 크레딧 · 상점으로" [ref=e45] [cursor=pointer]:
+        - generic [ref=e47]: "0"
+      - button "계정 메뉴" [ref=e48] [cursor=pointer]:
+        - generic [ref=e49]: G
+        - generic [ref=e51]:
+          - generic [ref=e52]: Guest7991
+          - generic [ref=e53]: 브론즈 I · 0 RP
+  - main [ref=e54]:
+    - generic [ref=e177]:
+      - generic [ref=e178]:
+        - generic [ref=e179]: Loadout
+        - generic [ref=e180]: 보관함 · 슬롯을 고르고 보유 스킨을 장착하세요
+      - generic [ref=e181]:
+        - generic [ref=e182]:
+          - generic [ref=e183]:
+            - button "01 Primary 주무기 밴달 · 팬텀 · 마샬 밴달 · 기본 외형" [ref=e184] [cursor=pointer]:
+              - generic [ref=e185]: "01"
+              - generic [ref=e186]: Primary 주무기
+              - generic [ref=e187]: 밴달 · 팬텀 · 마샬
+              - generic [ref=e188]: 밴달 · 기본 외형
+            - button "02 Sidearm 보조 클래식 · 쇼티 · 프렌지 · 고스트 · 셰리프 클래식 · 기본 외형" [ref=e189] [cursor=pointer]:
+              - generic [ref=e190]: "02"
+              - generic [ref=e191]: Sidearm 보조
+              - generic [ref=e192]: 클래식 · 쇼티 · 프렌지 · 고스트 · 셰리프
+              - generic [ref=e193]: 클래식 · 기본 외형
+            - button "03 Melee 근접 주먹 · 단검 · 장검 단검 · 기본 외형" [ref=e194] [cursor=pointer]:
+              - generic [ref=e195]: "03"
+              - generic [ref=e196]: Melee 근접
+              - generic [ref=e197]: 주먹 · 단검 · 장검
+              - generic [ref=e198]: 단검 · 기본 외형
+            - button "04 Utility 투척 수류탄 · 섬광탄 수류탄 · 기본 외형" [ref=e199] [cursor=pointer]:
+              - generic [ref=e200]: "04"
+              - generic [ref=e201]: Utility 투척
+              - generic [ref=e202]: 수류탄 · 섬광탄
+              - generic [ref=e203]: 수류탄 · 기본 외형
+          - generic [ref=e204]:
+            - generic [ref=e205]: Abilities
+            - generic [ref=e206]: 스킬 · 다음 매치부터 적용
+          - generic [ref=e207]:
+            - button "Q Ability 스킬 쿨타임 7초 · 라운드당 3회 ⇧ 상승기류" [ref=e208] [cursor=pointer]:
+              - generic [ref=e209]: Q
+              - generic [ref=e210]: Ability 스킬
+              - generic [ref=e211]: 쿨타임 7초 · 라운드당 3회
+              - generic [ref=e212]: ⇧ 상승기류
+            - button "E Ability 스킬 쿨타임 8초 · 라운드당 2회 » 이속 증가" [ref=e213] [cursor=pointer]:
+              - generic [ref=e214]: E
+              - generic [ref=e215]: Ability 스킬
+              - generic [ref=e216]: 쿨타임 8초 · 라운드당 2회
+              - generic [ref=e217]: » 이속 증가
+            - button "X Ultimate 궁극기 궁극기 포인트 6 필요 ☄ 그림자 습격" [ref=e218] [cursor=pointer]:
+              - generic [ref=e219]: X
+              - generic [ref=e220]: Ultimate 궁극기
+              - generic [ref=e221]: 궁극기 포인트 6 필요
+              - generic [ref=e222]: ☄ 그림자 습격
+        - generic [ref=e223]:
+          - group "무기 선택" [ref=e224]:
+            - button "밴달" [ref=e225] [cursor=pointer]
+            - button "팬텀" [ref=e226] [cursor=pointer]
+            - button "마샬" [ref=e227] [cursor=pointer]
+          - group "스킨 등급 필터" [ref=e228]:
+            - button "전체 13" [ref=e229] [cursor=pointer]:
+              - text: 전체
+              - generic [ref=e231]: "13"
+            - button "셀렉트 3" [ref=e232] [cursor=pointer]:
+              - text: 셀렉트
+              - generic [ref=e234]: "3"
+            - button "디럭스 3" [ref=e235] [cursor=pointer]:
+              - text: 디럭스
+              - generic [ref=e237]: "3"
+            - button "프리미엄 3" [ref=e238] [cursor=pointer]:
+              - text: 프리미엄
+              - generic [ref=e240]: "3"
+            - button "익스클루시브 2" [ref=e241] [cursor=pointer]:
+              - text: 익스클루시브
+              - generic [ref=e243]: "2"
+            - button "울트라 2" [ref=e244] [cursor=pointer]:
+              - text: 울트라
+              - generic [ref=e246]: "2"
+          - generic [ref=e247]:
+            - generic [ref=e248]:
+              - generic [ref=e260]: EQUIPPED
+              - generic [ref=e261]:
+                - generic [ref=e262]: STANDARD
+                - generic [ref=e263]: 밴달 기본 외형
+                - generic [ref=e264]: 밴달 · 기본
+                - generic [ref=e265]: 장착 중
+            - generic [ref=e279]:
+              - generic [ref=e280]: ULTRA
+              - generic [ref=e281]: 솔라 프라임 밴달
+              - generic [ref=e282]: 밴달 · 울트라
+              - generic [ref=e283]: 미보유 · 상점에서 구매
+            - generic [ref=e297]:
+              - generic [ref=e298]: ULTRA
+              - generic [ref=e299]: 어비스 코어 밴달
+              - generic [ref=e300]: 밴달 · 울트라
+              - generic [ref=e301]: 미보유 · 상점에서 구매
+            - generic [ref=e315]:
+              - generic [ref=e316]: EXCLUSIVE
+              - generic [ref=e317]: 플럭스 밴달
+              - generic [ref=e318]: 밴달 · 익스클루시브
+              - generic [ref=e319]: 미보유 · 상점에서 구매
+            - generic [ref=e333]:
+              - generic [ref=e334]: EXCLUSIVE
+              - generic [ref=e335]: 오로라 밴달
+              - generic [ref=e336]: 밴달 · 익스클루시브
+              - generic [ref=e337]: 미보유 · 상점에서 구매
+            - generic [ref=e351]:
+              - generic [ref=e352]: PREMIUM
+              - generic [ref=e353]: 네온 서킷 밴달
+              - generic [ref=e354]: 밴달 · 프리미엄
+              - generic [ref=e355]: 미보유 · 상점에서 구매
+            - generic [ref=e369]:
+              - generic [ref=e370]: PREMIUM
+              - generic [ref=e371]: 글리치 버스트 밴달
+              - generic [ref=e372]: 밴달 · 프리미엄
+              - generic [ref=e373]: 미보유 · 상점에서 구매
+            - generic [ref=e387]:
+              - generic [ref=e388]: PREMIUM
+              - generic [ref=e389]: 캔디 크롬 밴달
+              - generic [ref=e390]: 밴달 · 프리미엄
+              - generic [ref=e391]: 미보유 · 상점에서 구매
+            - generic [ref=e405]:
+              - generic [ref=e406]: DELUXE
+              - generic [ref=e407]: 아노다이즈 밴달
+              - generic [ref=e408]: 밴달 · 디럭스
+              - generic [ref=e409]: 미보유 · 상점에서 구매
+            - generic [ref=e423]:
+              - generic [ref=e424]: DELUXE
+              - generic [ref=e425]: 헥사 아머 밴달
+              - generic [ref=e426]: 밴달 · 디럭스
+              - generic [ref=e427]: 미보유 · 상점에서 구매
+            - generic [ref=e441]:
+              - generic [ref=e442]: DELUXE
+              - generic [ref=e443]: 투톤 레이싱 밴달
+              - generic [ref=e444]: 밴달 · 디럭스
+              - generic [ref=e445]: 미보유 · 상점에서 구매
+            - generic [ref=e459]:
+              - generic [ref=e460]: SELECT
+              - generic [ref=e461]: 택티컬 매트 밴달
+              - generic [ref=e462]: 밴달 · 셀렉트
+              - generic [ref=e463]: 미보유 · 상점에서 구매
+            - generic [ref=e477]:
+              - generic [ref=e478]: SELECT
+              - generic [ref=e479]: 디지털 카모 밴달
+              - generic [ref=e480]: 밴달 · 셀렉트
+              - generic [ref=e481]: 미보유 · 상점에서 구매
+            - generic [ref=e495]:
+              - generic [ref=e496]: SELECT
+              - generic [ref=e497]: 브러시드 스틸 밴달
+              - generic [ref=e498]: 밴달 · 셀렉트
+              - generic [ref=e499]: 미보유 · 상점에서 구매
+          - generic [ref=e501]: 전체 스킨 13종 중 0종 보유

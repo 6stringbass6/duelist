@@ -1,0 +1,153 @@
+- generic [ref=e19]:
+  - banner [ref=e20]:
+    - generic [ref=e21]: DUELIST
+    - navigation "메인 메뉴" [ref=e23]:
+      - button "01 Play 플레이" [ref=e552] [cursor=pointer]:
+        - generic [ref=e553]: "01"
+        - generic [ref=e554]: Play
+        - generic [ref=e555]: 플레이
+      - button "02 Loadout 보관함" [ref=e556] [cursor=pointer]:
+        - generic [ref=e557]: "02"
+        - generic [ref=e558]: Loadout
+        - generic [ref=e559]: 보관함
+      - button "03 Store 상점" [ref=e560] [cursor=pointer]:
+        - generic [ref=e561]: "03"
+        - generic [ref=e562]: Store
+        - generic [ref=e563]: 상점
+      - button "04 Career 전적" [ref=e564] [cursor=pointer]:
+        - generic [ref=e565]: "04"
+        - generic [ref=e566]: Career
+        - generic [ref=e567]: 전적
+      - button "05 Settings 설정" [ref=e568] [cursor=pointer]:
+        - generic [ref=e569]: "05"
+        - generic [ref=e570]: Settings
+        - generic [ref=e571]: 설정
+    - generic [ref=e44]:
+      - button "보유 크레딧 · 상점으로" [ref=e45] [cursor=pointer]:
+        - generic [ref=e47]: "0"
+      - button "계정 메뉴" [ref=e48] [cursor=pointer]:
+        - generic [ref=e49]: G
+        - generic [ref=e51]:
+          - generic [ref=e52]: Guest7991
+          - generic [ref=e53]: 브론즈 I · 0 RP
+  - main [ref=e54]:
+    - generic [ref=e572]:
+      - generic [ref=e573]:
+        - generic [ref=e574]: Settings
+        - generic [ref=e575]: 설정 · 변경 사항은 즉시 저장됩니다
+      - navigation "설정 섹션" [ref=e576]:
+        - button "01 Sensitivity 감도 · FOV" [ref=e729] [cursor=pointer]:
+          - generic [ref=e730]: "01"
+          - text: Sensitivity
+          - generic [ref=e731]: 감도 · FOV
+        - button "02 Crosshair 조준선" [ref=e732] [cursor=pointer]:
+          - generic [ref=e733]: "02"
+          - text: Crosshair
+          - generic [ref=e734]: 조준선
+        - button "03 Keybinds 키 설정" [ref=e735] [cursor=pointer]:
+          - generic [ref=e736]: "03"
+          - text: Keybinds
+          - generic [ref=e737]: 키 설정
+        - button "04 Graphics 그래픽" [ref=e738] [cursor=pointer]:
+          - generic [ref=e739]: "04"
+          - text: Graphics
+          - generic [ref=e740]: 그래픽
+        - button "05 Mobile · Audio 모바일 · 사운드" [ref=e741] [cursor=pointer]:
+          - generic [ref=e742]: "05"
+          - text: Mobile · Audio
+          - generic [ref=e743]: 모바일 · 사운드
+      - generic [ref=e592]:
+        - generic [ref=e744]: 칸을 클릭한 뒤 키·마우스 버튼·휠을 입력하세요. 모든 동작에 주 키 + 보조 키 2개까지 지정됩니다. (우클릭 = 해제)
+        - generic [ref=e745]:
+          - generic [ref=e746]: 동작
+          - generic [ref=e747]: 주 키
+          - generic [ref=e748]: 보조 키
+        - generic [ref=e749]:
+          - generic [ref=e750]: 앞으로
+          - button "W" [ref=e751] [cursor=pointer]
+          - button "입력 대기…" [ref=e752] [cursor=pointer]
+        - generic [ref=e753]:
+          - generic [ref=e754]: 뒤로
+          - button "S" [ref=e755] [cursor=pointer]
+          - button "↓" [ref=e756] [cursor=pointer]
+        - generic [ref=e757]:
+          - generic [ref=e758]: 왼쪽
+          - button "A" [ref=e759] [cursor=pointer]
+          - button "←" [ref=e760] [cursor=pointer]
+        - generic [ref=e761]:
+          - generic [ref=e762]: 오른쪽
+          - button "D" [ref=e763] [cursor=pointer]
+          - button "→" [ref=e764] [cursor=pointer]
+        - generic [ref=e765]:
+          - generic [ref=e766]: 점프
+          - button "Space" [ref=e767] [cursor=pointer]
+          - button "휠 아래" [ref=e768] [cursor=pointer]
+        - generic [ref=e769]:
+          - generic [ref=e770]: 앉기
+          - button "L-Ctrl" [ref=e771] [cursor=pointer]
+          - button "—" [ref=e772] [cursor=pointer]
+        - generic [ref=e773]:
+          - generic [ref=e774]: 슬라이딩
+          - button "C" [ref=e775] [cursor=pointer]
+          - button "—" [ref=e776] [cursor=pointer]
+        - generic [ref=e777]:
+          - generic [ref=e778]: 스킬 Q
+          - button "Q" [ref=e779] [cursor=pointer]
+          - button "—" [ref=e780] [cursor=pointer]
+        - generic [ref=e781]:
+          - generic [ref=e782]: 스킬 E
+          - button "E" [ref=e783] [cursor=pointer]
+          - button "—" [ref=e784] [cursor=pointer]
+        - generic [ref=e785]:
+          - generic [ref=e786]: 궁극기 (X)
+          - button "X" [ref=e787] [cursor=pointer]
+          - button "—" [ref=e788] [cursor=pointer]
+        - generic [ref=e789]:
+          - generic [ref=e790]: 사격
+          - button "좌클릭" [ref=e791] [cursor=pointer]
+          - button "—" [ref=e792] [cursor=pointer]
+        - generic [ref=e793]:
+          - generic [ref=e794]: 줌 / 보조 사격
+          - button "우클릭" [ref=e795] [cursor=pointer]
+          - button "—" [ref=e796] [cursor=pointer]
+        - generic [ref=e797]:
+          - generic [ref=e798]: 재장전
+          - button "R" [ref=e799] [cursor=pointer]
+          - button "—" [ref=e800] [cursor=pointer]
+        - generic [ref=e801]:
+          - generic [ref=e802]: 주무기
+          - button "1" [ref=e803] [cursor=pointer]
+          - button "—" [ref=e804] [cursor=pointer]
+        - generic [ref=e805]:
+          - generic [ref=e806]: 보조무기
+          - button "2" [ref=e807] [cursor=pointer]
+          - button "—" [ref=e808] [cursor=pointer]
+        - generic [ref=e809]:
+          - generic [ref=e810]: 근접무기
+          - button "3" [ref=e811] [cursor=pointer]
+          - button "—" [ref=e812] [cursor=pointer]
+        - generic [ref=e813]:
+          - generic [ref=e814]: 투척류
+          - button "4" [ref=e815] [cursor=pointer]
+          - button "—" [ref=e816] [cursor=pointer]
+        - generic [ref=e817]:
+          - generic [ref=e818]: 다음 무기
+          - button "—" [ref=e819] [cursor=pointer]
+          - button "—" [ref=e820] [cursor=pointer]
+        - generic [ref=e821]:
+          - generic [ref=e822]: 이전 무기
+          - button "휠 위" [ref=e823] [cursor=pointer]
+          - button "—" [ref=e824] [cursor=pointer]
+        - generic [ref=e825]:
+          - generic [ref=e826]: 스코어보드
+          - button "Tab" [ref=e827] [cursor=pointer]
+          - button "—" [ref=e828] [cursor=pointer]
+        - generic [ref=e829]:
+          - generic [ref=e830]: 로드아웃
+          - button "B" [ref=e831] [cursor=pointer]
+          - button "—" [ref=e832] [cursor=pointer]
+        - generic [ref=e833]:
+          - generic [ref=e834]: 메뉴
+          - button "Esc" [ref=e835] [cursor=pointer]
+          - button "—" [ref=e836] [cursor=pointer]
+        - button "이 탭 초기화" [ref=e837] [cursor=pointer]

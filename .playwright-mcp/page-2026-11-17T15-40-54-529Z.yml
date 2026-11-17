@@ -1,0 +1,115 @@
+- generic [ref=e19]:
+  - banner [ref=e20]:
+    - generic [ref=e21]: DUELIST
+    - navigation "메인 메뉴" [ref=e23]:
+      - button "01 Play" [ref=e1427] [cursor=pointer]:
+        - generic [ref=e1428]: "01"
+        - generic [ref=e1429]: Play
+      - button "02 Loadout" [ref=e1430] [cursor=pointer]:
+        - generic [ref=e1431]: "02"
+        - generic [ref=e1432]: Loadout
+      - button "03 Store" [ref=e1433] [cursor=pointer]:
+        - generic [ref=e1434]: "03"
+        - generic [ref=e1435]: Store
+      - button "04 Career" [ref=e1436] [cursor=pointer]:
+        - generic [ref=e1437]: "04"
+        - generic [ref=e1438]: Career
+      - button "05 Settings" [ref=e1439] [cursor=pointer]:
+        - generic [ref=e1440]: "05"
+        - generic [ref=e1441]: Settings
+    - generic [ref=e44]:
+      - button "보유 크레딧 · 상점으로" [ref=e45] [cursor=pointer]:
+        - generic [ref=e47]: "0"
+      - button "계정 메뉴" [ref=e48] [cursor=pointer]:
+        - generic [ref=e49]: G
+        - generic [ref=e51]:
+          - generic [ref=e52]: Guest7991
+          - generic [ref=e53]: 브론즈 I · 0 RP
+  - main [ref=e54]:
+    - generic [ref=e1443]:
+      - generic [ref=e1444]:
+        - generic [ref=e1445]:
+          - generic [ref=e1446]:
+            - generic [ref=e1447]: Mode
+            - generic [ref=e1448]: 모드 선택
+          - button "01 Classic클래식 라운드제 팀 데스매치 · 5선승 · 랭크 변동 없음 · 방 코드 내전" [ref=e1449] [cursor=pointer]:
+            - generic [ref=e1450]: "01"
+            - generic [ref=e1451]:
+              - generic [ref=e1452]: Classic클래식
+              - generic [ref=e1453]: 라운드제 팀 데스매치 · 5선승 · 랭크 변동 없음 · 방 코드 내전
+          - button "02 Competitive경쟁전 최대 3v3 · 티어 포인트 변동 · 티어별 AI 봇 매칭" [ref=e1455] [cursor=pointer]:
+            - generic [ref=e1456]: "02"
+            - generic [ref=e1457]:
+              - generic [ref=e1458]: Competitive경쟁전
+              - generic [ref=e1459]: 최대 3v3 · 티어 포인트 변동 · 티어별 AI 봇 매칭
+          - button "03 Deathmatch팀 데스매치 즉시 부활 · 목표 킬 선취 승리" [ref=e1461] [cursor=pointer]:
+            - generic [ref=e1462]: "03"
+            - generic [ref=e1463]:
+              - generic [ref=e1464]: Deathmatch팀 데스매치
+              - generic [ref=e1465]: 즉시 부활 · 목표 킬 선취 승리
+          - button "04 The Range사격장 솔로 연습 · 5m~150m 거리 표시 · 전 무기 테스트" [ref=e1467] [cursor=pointer]:
+            - generic [ref=e1468]: "04"
+            - generic [ref=e1469]:
+              - generic [ref=e1470]: The Range사격장
+              - generic [ref=e1471]: 솔로 연습 · 5m~150m 거리 표시 · 전 무기 테스트
+          - generic [ref=e1473]:
+            - generic [ref=e1474]:
+              - generic [ref=e1475]: 인원
+              - generic [ref=e1476]:
+                - button "1v1" [ref=e1477] [cursor=pointer]
+                - button "2v2" [ref=e1478] [cursor=pointer]
+                - button "3v3" [ref=e1479] [cursor=pointer]
+                - button "4v4" [ref=e1480] [cursor=pointer]
+                - button "5v5" [ref=e1481] [cursor=pointer]
+                - button "6v6" [ref=e1482] [cursor=pointer]
+            - generic [ref=e1483]:
+              - generic [ref=e1484]: 맵
+              - generic [ref=e1485]:
+                - button "자동" [ref=e1486] [cursor=pointer]
+                - button "GRID" [ref=e1487] [cursor=pointer]
+                - button "ARENA" [ref=e1488] [cursor=pointer]
+        - generic [ref=e1489]:
+          - generic [ref=e1490]:
+            - generic [ref=e1491]: Party
+            - generic [ref=e1492]: 1 / 3
+          - generic [ref=e1493]:
+            - generic [ref=e1494]:
+              - generic [ref=e1495]: G
+              - generic [ref=e1496]: Guest7991
+            - button "파티원 초대" [ref=e1497] [cursor=pointer]:
+              - generic [ref=e1498]: +
+              - generic [ref=e1499]: 초대
+            - button "파티원 초대" [ref=e1500] [cursor=pointer]:
+              - generic [ref=e1501]: +
+              - generic [ref=e1502]: 초대
+          - generic [ref=e1503]:
+            - button "친구 목록" [ref=e1504] [cursor=pointer]
+            - button "사설 방 · 코드 입장" [ref=e1505] [cursor=pointer]
+        - generic [ref=e1506]:
+          - generic [ref=e1507]:
+            - generic [ref=e1508]: Abilities
+            - generic [ref=e1509]: 스킬
+          - generic [ref=e1510]:
+            - button "Q 상승기류 3회 · 7s" [ref=e1511] [cursor=pointer]:
+              - generic [ref=e1512]: Q
+              - generic [ref=e1513]: 상승기류
+              - generic [ref=e1514]: 3회 · 7s
+            - button "E 이속 증가 2회 · 8s" [ref=e1515] [cursor=pointer]:
+              - generic [ref=e1516]: E
+              - generic [ref=e1517]: 이속 증가
+              - generic [ref=e1518]: 2회 · 8s
+            - button "X 그림자 습격 궁극기 · 6P" [ref=e1519] [cursor=pointer]:
+              - generic [ref=e1520]: X
+              - generic [ref=e1521]: 그림자 습격
+              - generic [ref=e1522]: 궁극기 · 6P
+      - region "무기 쇼케이스" [ref=e1523]:
+        - generic [ref=e1528]: PRIMARY — SLOT 01FINISH / VANDAL_STANDARD
+        - generic [ref=e1529]: 3D SHOWCASE / 드래그 회전
+        - generic [ref=e1533]:
+          - generic [ref=e1534]: Equipped Finish · 장착 스킨
+          - generic [ref=e1535]: 밴달 기본 외형
+          - generic [ref=e1536]: Standard · 기본
+        - button "Play 클래식 · 1v1 · 매칭 시작" [ref=e1537] [cursor=pointer]:
+          - generic [ref=e1538]:
+            - generic [ref=e1539]: Play
+            - generic [ref=e1540]: 클래식 · 1v1 · 매칭 시작

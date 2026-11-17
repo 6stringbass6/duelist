@@ -1,0 +1,12 @@
+- generic [ref=f13e6]:
+  - generic [ref=f13e7]:
+    - heading "DUELIST" [level=1] [ref=f13e8]
+    - generic [ref=f13e9]: 링크 접속만으로 즐기는 웹 3D FPS
+  - generic [ref=f13e10]:
+    - button "로그인" [ref=f13e11] [cursor=pointer]
+    - button "회원가입" [ref=f13e12] [cursor=pointer]
+  - textbox "아이디 (4~16자, 문자 제한 없음)" [ref=f13e13]
+  - textbox "비밀번호 (6자 이상)" [ref=f13e14]
+  - button "로그인" [ref=f13e16] [cursor=pointer]
+  - button "Continue with Google" [ref=f13e17] [cursor=pointer]
+  - button "게스트로 바로 플레이" [ref=f13e18] [cursor=pointer]

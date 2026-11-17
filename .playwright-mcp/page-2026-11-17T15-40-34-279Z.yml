@@ -1,0 +1,38 @@
+- generic [ref=e19]:
+  - banner [ref=e20]:
+    - generic [ref=e21]: DUELIST
+    - navigation "메인 메뉴" [ref=e23]:
+      - button "01 Play 플레이" [ref=e947] [cursor=pointer]:
+        - generic [ref=e948]: "01"
+        - generic [ref=e949]: Play
+        - generic [ref=e950]: 플레이
+      - button "02 Loadout 보관함" [ref=e951] [cursor=pointer]:
+        - generic [ref=e952]: "02"
+        - generic [ref=e953]: Loadout
+        - generic [ref=e954]: 보관함
+      - button "03 Store 상점" [ref=e955] [cursor=pointer]:
+        - generic [ref=e956]: "03"
+        - generic [ref=e957]: Store
+        - generic [ref=e958]: 상점
+      - button "04 Career 전적" [ref=e959] [cursor=pointer]:
+        - generic [ref=e960]: "04"
+        - generic [ref=e961]: Career
+        - generic [ref=e962]: 전적
+      - button "05 Settings 설정" [ref=e963] [cursor=pointer]:
+        - generic [ref=e964]: "05"
+        - generic [ref=e965]: Settings
+        - generic [ref=e966]: 설정
+    - generic [ref=e44]:
+      - button "보유 크레딧 · 상점으로" [ref=e45] [cursor=pointer]:
+        - generic [ref=e47]: "0"
+      - button "계정 메뉴" [ref=e48] [cursor=pointer]:
+        - generic [ref=e49]: G
+        - generic [ref=e51]:
+          - generic [ref=e52]: Guest7991
+          - generic [ref=e53]: 브론즈 I · 0 RP
+  - main [ref=e54]:
+    - generic [ref=e967]:
+      - generic [ref=e968]:
+        - generic [ref=e969]: Career
+        - generic [ref=e970]: 게스트 제한
+      - generic [ref=e971]: 게스트는 전적·상점·미션이 저장되지 않습니다. 로그인하면 클라우드에 모두 저장됩니다.

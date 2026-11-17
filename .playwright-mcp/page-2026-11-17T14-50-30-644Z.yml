@@ -1,0 +1,113 @@
+- generic [ref=e2]:
+  - generic [ref=e19]:
+    - generic [ref=e20]:
+      - generic [ref=e21]: DUELIST
+      - generic [ref=e22]:
+        - button "01 홈" [ref=e23] [cursor=pointer]:
+          - generic [ref=e24]: "01"
+          - text: 홈
+        - button "02 상점" [ref=e25] [cursor=pointer]:
+          - generic [ref=e26]: "02"
+          - text: 상점
+        - button "03 보관함" [ref=e27] [cursor=pointer]:
+          - generic [ref=e28]: "03"
+          - text: 보관함
+        - button "04 미션·출석" [ref=e29] [cursor=pointer]:
+          - generic [ref=e30]: "04"
+          - text: 미션·출석
+        - button "05 업적·칭호" [ref=e31] [cursor=pointer]:
+          - generic [ref=e32]: "05"
+          - text: 업적·칭호
+        - button "06 전적" [ref=e33] [cursor=pointer]:
+          - generic [ref=e34]: "06"
+          - text: 전적
+      - generic [ref=e35]:
+        - button "PLAY" [ref=e36] [cursor=pointer]
+        - generic [ref=e37]: ◈ 0
+        - generic [ref=e38]: 🎁 0
+        - generic [ref=e39]:
+          - text: Guest7991
+          - generic [ref=e40] [cursor=pointer]: ✎
+        - generic [ref=e41]: 게스트
+        - generic [ref=e42]:
+          - generic [ref=e43]: 브론즈 I
+          - text: 0 RP
+        - button "고객센터" [ref=e44] [cursor=pointer]
+        - button "설정" [ref=e45] [cursor=pointer]
+        - button "로그인" [ref=e46] [cursor=pointer]
+    - generic [ref=e48]:
+      - generic [ref=e49]:
+        - generic [ref=e50]:
+          - heading "Rank" [level=2] [ref=e51]
+          - text: 브론즈 I
+          - generic [ref=e52]: 0 RP · 다음 승급까지 200 RP
+        - generic [ref=e54]:
+          - heading "Summary" [level=2] [ref=e55]
+          - generic [ref=e56]:
+            - generic [ref=e57]:
+              - generic [ref=e58]: K/D
+              - text: "0"
+            - generic [ref=e59]:
+              - generic [ref=e60]: HS%
+              - text: 0%
+            - generic [ref=e61]:
+              - generic [ref=e62]: Win
+              - text: 0%
+            - generic [ref=e63]:
+              - generic [ref=e64]: Matches
+              - text: "0"
+        - generic [ref=e65]:
+          - heading "Quick Start" [level=2] [ref=e66]
+          - generic [ref=e67]:
+            - button "사격장" [ref=e68] [cursor=pointer]
+            - button "팀 데스매치 3v3" [ref=e69] [cursor=pointer]
+            - button "클래식 1v1" [ref=e70] [cursor=pointer]
+            - button "경쟁전 1v1" [ref=e71] [cursor=pointer]
+      - generic [ref=e72]:
+        - generic [ref=e73]: NEW · FEATURED
+        - heading "솔라 프라임 컬렉션" [level=3] [ref=e74]
+        - generic [ref=e75]: 신규 출시 — 백색 세라믹과 황금 인레이 사이로 태양의 용암이 흐른다.
+        - button "상점에서 보기" [ref=e77] [cursor=pointer]
+  - generic [ref=e79]:
+    - generic [ref=e80]:
+      - heading "설정" [level=3] [ref=e81]
+      - button "✕" [ref=e82] [cursor=pointer]
+    - generic [ref=e83]:
+      - button "감도 · FOV" [ref=e165] [cursor=pointer]
+      - button "조준선" [ref=e166] [cursor=pointer]
+      - button "키 설정" [ref=e167] [cursor=pointer]
+      - button "그래픽" [ref=e168] [cursor=pointer]
+      - button "모바일 · 사운드" [ref=e169] [cursor=pointer]
+    - generic [ref=e89]:
+      - heading "모바일" [level=3] [ref=e170]
+      - generic [ref=e171]:
+        - generic [ref=e172]: Auto-Fire (조준 시 자동 사격)
+        - checkbox [checked] [ref=e174]
+      - generic [ref=e175]:
+        - generic [ref=e176]: 왼손 모드
+        - checkbox [ref=e178]
+      - generic [ref=e179]:
+        - generic [ref=e180]: 조이스틱 크기
+        - slider [ref=e181]: "120"
+        - spinbutton [ref=e182]: "120"
+      - generic [ref=e183]:
+        - generic [ref=e184]: 버튼 크기
+        - slider [ref=e185]: "1"
+        - spinbutton [ref=e186]: "1"
+      - generic [ref=e187]:
+        - generic [ref=e188]: 버튼 불투명도
+        - slider [ref=e189]: "0.6"
+        - spinbutton [ref=e190]: "0.6"
+      - heading "사운드" [level=3] [ref=e191]
+      - generic [ref=e192]:
+        - generic [ref=e193]: 마스터 볼륨
+        - slider [ref=e194]: "0.8"
+        - spinbutton [ref=e195]: "0.8"
+      - generic [ref=e196]:
+        - generic [ref=e197]: 효과음
+        - slider [ref=e198]: "1"
+        - spinbutton [ref=e199]: "1"
+      - generic [ref=e200]:
+        - generic [ref=e201]: UI
+        - slider [ref=e202]: "0.7"
+        - spinbutton [ref=e203]: "0.7"

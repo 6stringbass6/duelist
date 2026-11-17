@@ -1,0 +1,107 @@
+- generic [ref=e2]:
+  - generic [ref=e19]:
+    - generic [ref=e20]:
+      - generic [ref=e21]: DUELIST
+      - generic [ref=e22]:
+        - button "01 홈" [ref=e23] [cursor=pointer]:
+          - generic [ref=e24]: "01"
+          - text: 홈
+        - button "02 상점" [ref=e25] [cursor=pointer]:
+          - generic [ref=e26]: "02"
+          - text: 상점
+        - button "03 보관함" [ref=e27] [cursor=pointer]:
+          - generic [ref=e28]: "03"
+          - text: 보관함
+        - button "04 미션·출석" [ref=e29] [cursor=pointer]:
+          - generic [ref=e30]: "04"
+          - text: 미션·출석
+        - button "05 업적·칭호" [ref=e31] [cursor=pointer]:
+          - generic [ref=e32]: "05"
+          - text: 업적·칭호
+        - button "06 전적" [ref=e33] [cursor=pointer]:
+          - generic [ref=e34]: "06"
+          - text: 전적
+      - generic [ref=e35]:
+        - button "PLAY" [ref=e36] [cursor=pointer]
+        - generic [ref=e37]: ◈ 0
+        - generic [ref=e38]: 🎁 0
+        - generic [ref=e39]:
+          - text: Guest7991
+          - generic [ref=e40] [cursor=pointer]: ✎
+        - generic [ref=e41]: 게스트
+        - generic [ref=e42]:
+          - generic [ref=e43]: 브론즈 I
+          - text: 0 RP
+        - button "고객센터" [ref=e44] [cursor=pointer]
+        - button "설정" [active] [ref=e45] [cursor=pointer]
+        - button "로그인" [ref=e46] [cursor=pointer]
+    - generic [ref=e48]:
+      - generic [ref=e49]:
+        - generic [ref=e50]:
+          - heading "Rank" [level=2] [ref=e51]
+          - text: 브론즈 I
+          - generic [ref=e52]: 0 RP · 다음 승급까지 200 RP
+        - generic [ref=e54]:
+          - heading "Summary" [level=2] [ref=e55]
+          - generic [ref=e56]:
+            - generic [ref=e57]:
+              - generic [ref=e58]: K/D
+              - text: "0"
+            - generic [ref=e59]:
+              - generic [ref=e60]: HS%
+              - text: 0%
+            - generic [ref=e61]:
+              - generic [ref=e62]: Win
+              - text: 0%
+            - generic [ref=e63]:
+              - generic [ref=e64]: Matches
+              - text: "0"
+        - generic [ref=e65]:
+          - heading "Quick Start" [level=2] [ref=e66]
+          - generic [ref=e67]:
+            - button "사격장" [ref=e68] [cursor=pointer]
+            - button "팀 데스매치 3v3" [ref=e69] [cursor=pointer]
+            - button "클래식 1v1" [ref=e70] [cursor=pointer]
+            - button "경쟁전 1v1" [ref=e71] [cursor=pointer]
+      - generic [ref=e72]:
+        - generic [ref=e73]: NEW · FEATURED
+        - heading "솔라 프라임 컬렉션" [level=3] [ref=e74]
+        - generic [ref=e75]: 신규 출시 — 백색 세라믹과 황금 인레이 사이로 태양의 용암이 흐른다.
+        - button "상점에서 보기" [ref=e77] [cursor=pointer]
+  - generic [ref=e79]:
+    - generic [ref=e80]:
+      - heading "설정" [level=3] [ref=e81]
+      - button "✕" [ref=e82] [cursor=pointer]
+    - generic [ref=e83]:
+      - button "감도 · FOV" [ref=e84] [cursor=pointer]
+      - button "조준선" [ref=e85] [cursor=pointer]
+      - button "키 설정" [ref=e86] [cursor=pointer]
+      - button "그래픽" [ref=e87] [cursor=pointer]
+      - button "모바일 · 사운드" [ref=e88] [cursor=pointer]
+    - generic [ref=e89]:
+      - generic [ref=e90]:
+        - generic [ref=e91]: 감도 (발로란트 수치)
+        - slider [ref=e92]: "0.4"
+        - spinbutton [ref=e93]: "0.4"
+      - generic [ref=e94]: Yaw = Sens × 0.07° → 1카운트당 0.0280° · 800 DPI 기준 40.8 cm/360° (eDPI 320)
+      - generic [ref=e95]:
+        - generic [ref=e96]: 줌 감도 배율
+        - slider [ref=e97]: "1"
+        - spinbutton [ref=e98]: "1"
+      - generic [ref=e99]:
+        - generic [ref=e100]: 모바일 감도
+        - slider [ref=e101]: "1"
+        - spinbutton [ref=e102]: "1"
+      - generic [ref=e103]:
+        - generic [ref=e104]: 모바일 줌 감도
+        - slider [ref=e105]: "0.7"
+        - spinbutton [ref=e106]: "0.7"
+      - generic [ref=e107]:
+        - generic [ref=e108]: 상하 반전
+        - checkbox [ref=e110]
+      - generic [ref=e111]:
+        - generic [ref=e112]: 수평 FOV (16:9 기준)
+        - slider [ref=e113]: "103"
+        - spinbutton [ref=e114]: "103"
+      - generic [ref=e115]: 발로란트 기본값은 103° Horizontal FOV 입니다.
+      - button "이 탭 초기화" [ref=e116] [cursor=pointer]

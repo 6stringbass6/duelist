@@ -12,7 +12,9 @@ import { getSkin } from '../config/skins';
 /** 무기 → FBX 파일, 정규화 전체 길이(m, 개머리판~총구) */
 /** file 에 확장자(.glb/.gltf)가 있으면 GLTFLoader, 없으면 FBXLoader(.fbx).
  *  grip = 뒤쪽 끝에서 손잡이 위치(0~1, 모델 길이 비율) → 그 지점이 뷰모델 원점, roll = 길이축 회전(rad, 평평한 면을 카메라 쪽으로) */
-export const WEAPON_MODELS: Partial<Record<WeaponId, { file: string; length: number; grip?: number; roll?: number }>> = {
+export const WEAPON_MODELS: Partial<Record<WeaponId, ModelDef>> = {
+  // M9 Bayonet(FBX, 단위 ≈ mm, 날끝 +X, 손잡이 -X, 내장 UV/베이크 텍스처) — 기본 스킨은 원본 텍스처 유지, 구매 스킨은 평면 UV 로 재질 교체
+  dagger: { file: 'm9_bayonet', length: 0.3, grip: 0.15, own: true },
   classic: { file: 'Pistol_1', length: 0.3 },
   shorty: { file: 'Shotgun_SawedOff', length: 0.42 },
   frenzy: { file: 'SubmachineGun_4', length: 0.34 },
@@ -23,6 +25,8 @@ export const WEAPON_MODELS: Partial<Record<WeaponId, { file: string; length: num
   marshal: { file: 'SniperRifle_4', length: 1.05 },
 };
 
+/** own = FBX 라도 내장 UV/텍스처를 유지(GLB 와 동일 취급). 스킨 적용 시에만 평면 UV 사용 */
+type ModelDef = { file: string; length: number; grip?: number; roll?: number; own?: boolean };
 type Role = 'base' | 'accent' | 'dark' | 'glass';
 interface Source { glb: boolean; root: THREE.Object3D; roles: Map<string, Role>; scale: number; offset: THREE.Vector3; muzzle: THREE.Vector3 }
 export interface SkinSet { base: THREE.Material; accent: THREE.Material; skinned: boolean }
@@ -67,7 +71,6 @@ function prepare(root: THREE.Object3D, length: number, glb: boolean, grip?: numb
   return { glb, root, roles, scale: length / size.x, offset: new THREE.Vector3(ox, -ctr.y, -ctr.z), muzzle: mz };
 }
 
-type ModelDef = { file: string; length: number; grip?: number; roll?: number };
 /** 스킨 전용 모델(GLB)이 있으면 그것, 없으면 무기 기본 모델 */
 const modelFor = (id: WeaponId, skinId?: string | null): ModelDef | undefined => getSkin(skinId)?.glb ?? WEAPON_MODELS[id];
 
@@ -77,7 +80,7 @@ function load(def: ModelDef | undefined): Promise<Source | null> {
   if (!p) {
     const glb = isGlb(def.file);
     const raw: Promise<THREE.Object3D> = glb ? gltfLoader.loadAsync(BASE + def.file).then((g) => g.scene) : fbxLoader.loadAsync(`${BASE}${def.file}.fbx`);
-    p = raw.then((root) => { const s = prepare(root, def.length, glb, def.grip); ready.set(def.file, s); return s; })
+    p = raw.then((root) => { const s = prepare(root, def.length, glb || !!def.own, def.grip); ready.set(def.file, s); return s; })
       .catch((e) => { console.warn('[weaponModels] 모델 로드 실패 → 박스 모델 폴백:', def.file, e); return null; });
     pending.set(def.file, p);
   }
@@ -88,8 +91,8 @@ export function preloadWeaponModels(): void { for (const id of Object.keys(WEAPO
 
 const nativeCache = new Map<string, THREE.MeshStandardMaterial>();
 const native = (m: THREE.Material): THREE.MeshStandardMaterial => {
-  const col = (m as THREE.MeshPhongMaterial).color, k = m.name + '|' + (col?.getHexString() ?? ''); let r = nativeCache.get(k);
-  if (!r) { const metal = /Metal/i.test(m.name); r = new THREE.MeshStandardMaterial({ color: col ?? 0x888888, metalness: metal ? 0.85 : 0.25, roughness: metal ? 0.38 : 0.6 }); nativeCache.set(k, r); }
+  const ph = m as THREE.MeshPhongMaterial, col = ph.color, map = ph.map, k = m.name + '|' + (col?.getHexString() ?? '') + '|' + (map?.uuid ?? ''); let r = nativeCache.get(k);
+  if (!r) { const metal = /Metal/i.test(m.name) || !!map; r = new THREE.MeshStandardMaterial({ color: col ?? 0x888888, map: map ?? null, metalness: metal ? 0.7 : 0.25, roughness: metal ? 0.4 : 0.6 }); nativeCache.set(k, r); }
   return r;
 };
 

@@ -1,0 +1,75 @@
+- generic [ref=f13e2]:
+  - generic [ref=f13e19]:
+    - generic [ref=f13e20]:
+      - generic [ref=f13e21]: DUELIST
+      - generic [ref=f13e22]:
+        - button "01 홈" [ref=f13e93] [cursor=pointer]:
+          - generic [ref=f13e94]: "01"
+          - text: 홈
+        - button "02 상점" [ref=f13e95] [cursor=pointer]:
+          - generic [ref=f13e96]: "02"
+          - text: 상점
+        - button "03 보관함" [ref=f13e97] [cursor=pointer]:
+          - generic [ref=f13e98]: "03"
+          - text: 보관함
+        - button "04 미션·출석" [ref=f13e99] [cursor=pointer]:
+          - generic [ref=f13e100]: "04"
+          - text: 미션·출석
+        - button "05 업적·칭호" [ref=f13e101] [cursor=pointer]:
+          - generic [ref=f13e102]: "05"
+          - text: 업적·칭호
+        - button "06 전적" [ref=f13e103] [cursor=pointer]:
+          - generic [ref=f13e104]: "06"
+          - text: 전적
+      - generic [ref=f13e35]:
+        - button "PLAY" [ref=f13e36] [cursor=pointer]
+        - generic [ref=f13e37]: ◈ 0
+        - generic [ref=f13e38]: 🎁 0
+        - generic [ref=f13e39]:
+          - text: Guest7991
+          - generic [ref=f13e105] [cursor=pointer]: ✎
+        - generic [ref=f13e41]: 게스트
+        - generic [ref=f13e42]:
+          - generic [ref=f13e106]: 브론즈 I
+          - text: 0 RP
+        - button "고객센터" [ref=f13e44] [cursor=pointer]
+        - button "설정" [active] [ref=f13e45] [cursor=pointer]
+        - button "로그인" [ref=f13e46] [cursor=pointer]
+    - generic [ref=f13e47]: 게스트는 전적·상점·미션이 저장되지 않습니다. 로그인하면 클라우드에 모두 저장됩니다.
+  - generic [ref=f13e109]:
+    - generic [ref=f13e110]:
+      - heading "설정" [level=3] [ref=f13e111]
+      - button "✕" [ref=f13e112] [cursor=pointer]
+    - generic [ref=f13e113]:
+      - button "감도 · FOV" [ref=f13e114] [cursor=pointer]
+      - button "조준선" [ref=f13e115] [cursor=pointer]
+      - button "키 설정" [ref=f13e116] [cursor=pointer]
+      - button "그래픽" [ref=f13e117] [cursor=pointer]
+      - button "모바일 · 사운드" [ref=f13e118] [cursor=pointer]
+    - generic [ref=f13e119]:
+      - generic [ref=f13e120]:
+        - generic [ref=f13e121]: 감도 (발로란트 수치)
+        - slider [ref=f13e122]: "0.4"
+        - spinbutton [ref=f13e123]: "0.4"
+      - generic [ref=f13e124]: Yaw = Sens × 0.07° → 1카운트당 0.0280° · 800 DPI 기준 40.8 cm/360° (eDPI 320)
+      - generic [ref=f13e125]:
+        - generic [ref=f13e126]: 줌 감도 배율
+        - slider [ref=f13e127]: "1"
+        - spinbutton [ref=f13e128]: "1"
+      - generic [ref=f13e129]:
+        - generic [ref=f13e130]: 모바일 감도
+        - slider [ref=f13e131]: "1"
+        - spinbutton [ref=f13e132]: "1"
+      - generic [ref=f13e133]:
+        - generic [ref=f13e134]: 모바일 줌 감도
+        - slider [ref=f13e135]: "0.7"
+        - spinbutton [ref=f13e136]: "0.7"
+      - generic [ref=f13e137]:
+        - generic [ref=f13e138]: 상하 반전
+        - checkbox [ref=f13e140]
+      - generic [ref=f13e141]:
+        - generic [ref=f13e142]: 수평 FOV (16:9 기준)
+        - slider [ref=f13e143]: "103"
+        - spinbutton [ref=f13e144]: "103"
+      - generic [ref=f13e145]: 발로란트 기본값은 103° Horizontal FOV 입니다.
+      - button "이 탭 초기화" [ref=f13e146] [cursor=pointer]

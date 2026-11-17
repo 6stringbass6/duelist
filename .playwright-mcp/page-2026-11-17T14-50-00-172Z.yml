@@ -1,0 +1,37 @@
+- generic [ref=f13e19]:
+  - generic [ref=f13e20]:
+    - generic [ref=f13e21]: DUELIST
+    - generic [ref=f13e22]:
+      - button "01 홈" [ref=f13e78] [cursor=pointer]:
+        - generic [ref=f13e79]: "01"
+        - text: 홈
+      - button "02 상점" [ref=f13e80] [cursor=pointer]:
+        - generic [ref=f13e81]: "02"
+        - text: 상점
+      - button "03 보관함" [ref=f13e82] [cursor=pointer]:
+        - generic [ref=f13e83]: "03"
+        - text: 보관함
+      - button "04 미션·출석" [ref=f13e84] [cursor=pointer]:
+        - generic [ref=f13e85]: "04"
+        - text: 미션·출석
+      - button "05 업적·칭호" [ref=f13e86] [cursor=pointer]:
+        - generic [ref=f13e87]: "05"
+        - text: 업적·칭호
+      - button "06 전적" [ref=f13e88] [cursor=pointer]:
+        - generic [ref=f13e89]: "06"
+        - text: 전적
+    - generic [ref=f13e35]:
+      - button "PLAY" [ref=f13e36] [cursor=pointer]
+      - generic [ref=f13e37]: ◈ 0
+      - generic [ref=f13e38]: 🎁 0
+      - generic [ref=f13e39]:
+        - text: Guest7991
+        - generic [ref=f13e90] [cursor=pointer]: ✎
+      - generic [ref=f13e41]: 게스트
+      - generic [ref=f13e42]:
+        - generic [ref=f13e91]: 브론즈 I
+        - text: 0 RP
+      - button "고객센터" [ref=f13e44] [cursor=pointer]
+      - button "설정" [ref=f13e45] [cursor=pointer]
+      - button "로그인" [ref=f13e46] [cursor=pointer]
+  - generic [ref=f13e47]: 게스트는 전적·상점·미션이 저장되지 않습니다. 로그인하면 클라우드에 모두 저장됩니다.

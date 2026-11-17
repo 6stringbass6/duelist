@@ -1,0 +1,85 @@
+- generic [ref=e19]:
+  - banner [ref=e20]:
+    - generic [ref=e21]: DUELIST
+    - navigation "메인 메뉴" [ref=e23]:
+      - button "01 Play 플레이" [ref=e552] [cursor=pointer]:
+        - generic [ref=e553]: "01"
+        - generic [ref=e554]: Play
+        - generic [ref=e555]: 플레이
+      - button "02 Loadout 보관함" [ref=e556] [cursor=pointer]:
+        - generic [ref=e557]: "02"
+        - generic [ref=e558]: Loadout
+        - generic [ref=e559]: 보관함
+      - button "03 Store 상점" [ref=e560] [cursor=pointer]:
+        - generic [ref=e561]: "03"
+        - generic [ref=e562]: Store
+        - generic [ref=e563]: 상점
+      - button "04 Career 전적" [ref=e564] [cursor=pointer]:
+        - generic [ref=e565]: "04"
+        - generic [ref=e566]: Career
+        - generic [ref=e567]: 전적
+      - button "05 Settings 설정" [ref=e568] [cursor=pointer]:
+        - generic [ref=e569]: "05"
+        - generic [ref=e570]: Settings
+        - generic [ref=e571]: 설정
+    - generic [ref=e44]:
+      - button "보유 크레딧 · 상점으로" [ref=e45] [cursor=pointer]:
+        - generic [ref=e47]: "0"
+      - button "계정 메뉴" [ref=e48] [cursor=pointer]:
+        - generic [ref=e49]: G
+        - generic [ref=e51]:
+          - generic [ref=e52]: Guest7991
+          - generic [ref=e53]: 브론즈 I · 0 RP
+  - main [ref=e54]:
+    - generic [ref=e572]:
+      - generic [ref=e573]:
+        - generic [ref=e574]: Settings
+        - generic [ref=e575]: 설정 · 변경 사항은 즉시 저장됩니다
+      - navigation "설정 섹션" [ref=e576]:
+        - button "01 Sensitivity 감도 · FOV" [ref=e577] [cursor=pointer]:
+          - generic [ref=e578]: "01"
+          - text: Sensitivity
+          - generic [ref=e579]: 감도 · FOV
+        - button "02 Crosshair 조준선" [ref=e580] [cursor=pointer]:
+          - generic [ref=e581]: "02"
+          - text: Crosshair
+          - generic [ref=e582]: 조준선
+        - button "03 Keybinds 키 설정" [ref=e583] [cursor=pointer]:
+          - generic [ref=e584]: "03"
+          - text: Keybinds
+          - generic [ref=e585]: 키 설정
+        - button "04 Graphics 그래픽" [ref=e586] [cursor=pointer]:
+          - generic [ref=e587]: "04"
+          - text: Graphics
+          - generic [ref=e588]: 그래픽
+        - button "05 Mobile · Audio 모바일 · 사운드" [ref=e589] [cursor=pointer]:
+          - generic [ref=e590]: "05"
+          - text: Mobile · Audio
+          - generic [ref=e591]: 모바일 · 사운드
+      - generic [ref=e592]:
+        - generic [ref=e593]:
+          - generic [ref=e594]: 감도 (발로란트 수치)
+          - slider [ref=e595]: "0.4"
+          - spinbutton [ref=e596]: "0.4"
+        - generic [ref=e597]: Yaw = Sens × 0.07° → 1카운트당 0.0280° · 800 DPI 기준 40.8 cm/360° (eDPI 320)
+        - generic [ref=e598]:
+          - generic [ref=e599]: 줌 감도 배율
+          - slider [ref=e600]: "1"
+          - spinbutton [ref=e601]: "1"
+        - generic [ref=e602]:
+          - generic [ref=e603]: 모바일 감도
+          - slider [ref=e604]: "1"
+          - spinbutton [ref=e605]: "1"
+        - generic [ref=e606]:
+          - generic [ref=e607]: 모바일 줌 감도
+          - slider [ref=e608]: "0.7"
+          - spinbutton [ref=e609]: "0.7"
+        - generic [ref=e610]:
+          - generic [ref=e611]: 상하 반전
+          - checkbox [ref=e613]
+        - generic [ref=e614]:
+          - generic [ref=e615]: 수평 FOV (16:9 기준)
+          - slider [ref=e616]: "103"
+          - spinbutton [ref=e617]: "103"
+        - generic [ref=e618]: 발로란트 기본값은 103° Horizontal FOV 입니다.
+        - button "이 탭 초기화" [ref=e619] [cursor=pointer]
