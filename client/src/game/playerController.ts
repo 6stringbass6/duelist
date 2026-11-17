@@ -298,7 +298,7 @@ export class PlayerController {
     add(window, 'keyup', (e: KeyboardEvent) => { const a = this.lookup.get(e.code); if (a) this.setAction(a, false); });
     add(this.dom, 'mousedown', (e: MouseEvent) => {
       this.audio.resume();
-      if (!this.locked) { if (this.captureEnabled && e.pointerType !== 'touch') void this.dom.requestPointerLock?.(); return; }
+      if (!this.locked) { if (this.captureEnabled && (e as PointerEvent).pointerType !== 'touch') void this.dom.requestPointerLock?.(); return; }
       e.preventDefault(); const a = this.lookup.get(bindFromEvent(e) ?? ''); if (a) this.setAction(a, true);
     });
     add(window, 'mouseup', (e: MouseEvent) => { const a = this.lookup.get(bindFromEvent(e) ?? ''); if (a) this.setAction(a, false); });

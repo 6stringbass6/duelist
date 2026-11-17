@@ -3,7 +3,7 @@
 // env: VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, VITE_SERVER_URL
 // 쓰기는 전부 RPC(SECURITY DEFINER) — 클라이언트가 직접 고칠 수 있는 건 settings / loadout 뿐.
 // =====================================================================
-import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
+import { createClient, type RealtimeChannel, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import { DEFAULT_LOADOUT, WEAPONS, SLOT_KEYS, type Loadout } from '../config/weapons';
 import { SKILLS, SKILL_IDS, ULTS } from '../config/skills';
 import { getSettings, onSettingsChange, replaceSettings, type Settings } from '../config/settings';
@@ -48,6 +48,8 @@ const ERROR_KO: Record<string, string> = {
   NOT_ENOUGH_CREDITS: '크레딧이 부족합니다.', ALREADY_OWNED: '이미 보유한 스킨입니다.', NOT_FOR_SALE: '현재 판매 중인 스킨이 아닙니다.',
   SKIN_NOT_FOUND: '존재하지 않는 스킨입니다.', SKIN_NOT_OWNED: '보유하지 않은 스킨입니다.', NO_LOOTBOX: '보유한 랜덤박스가 없습니다.',
   BOX_NOT_FOUND: '존재하지 않는 박스입니다.', TITLE_LOCKED: '아직 해금되지 않은 칭호입니다.',
+  FRIEND_NOT_FOUND: '해당 닉네임의 플레이어를 찾을 수 없습니다.', FRIEND_SELF: '자기 자신에게는 친구 요청을 보낼 수 없습니다.', FRIEND_EXISTS: '이미 친구이거나 요청을 보낸 상대입니다.',
+  FRIEND_LIMIT: '친구는 최대 100명까지 추가할 수 있습니다.', REQUEST_NOT_FOUND: '요청을 찾을 수 없습니다.', INVITE_FAILED: '초대를 보내지 못했습니다. 잠시 후 다시 시도해 주세요.',
   MISSION_INCOMPLETE: '미션이 아직 완료되지 않았습니다.', ALREADY_CLAIMED: '이미 보상을 받았습니다.', MISSION_NOT_FOUND: '미션을 찾을 수 없습니다.',
   'Invalid login credentials': '아이디 또는 비밀번호가 올바르지 않습니다.', 'User already registered': '이미 사용 중인 아이디입니다.',
 };
@@ -326,4 +328,57 @@ export async function refreshProfile(): Promise<Profile | null> {
   const { data } = await supabase.from('profiles').select('credits,lootboxes,rank_points,peak_rank_points,nickname,equipped_title,login_streak').eq('id', currentProfile.id).maybeSingle();
   if (data) patchProfile(data as Partial<Profile>);
   return currentProfile;
+}
+
+// ───────────────────────────── 친구 · 파티 초대 ─────────────────────────────
+// 관계: friendships 테이블 + RPC(supabase_friends.sql). 접속 상태: Realtime presence. 초대: Realtime broadcast(개인 수신함 채널).
+export interface FriendRow { id: number; friend_id: string; nickname: string; rank_points: number; status: 'pending' | 'accepted'; outgoing: boolean; created_at: string }
+export interface PartyInvite { from: string; nickname: string; code: string; mode: string; at: number }
+export async function fetchFriends(): Promise<FriendRow[]> {
+  if (!currentProfile || currentProfile.isGuest || !supabase) return [];
+  return ((await rpc<FriendRow[] | null>('list_friends')) ?? []).map((f) => ({ ...f, id: Number(f.id), rank_points: Number(f.rank_points) || 0 }));
+}
+export async function sendFriendRequest(nickname: string): Promise<{ status: 'pending' | 'accepted' }> {
+  const n = nickname.trim(); if (!isValidNickname(n)) throw new GameError('FRIEND_NOT_FOUND');
+  return rpc('send_friend_request', { p_nickname: n });
+}
+export async function respondFriendRequest(id: number, accept: boolean): Promise<void> { await rpc('respond_friend_request', { p_id: id, p_accept: accept }); }
+export async function removeFriend(id: number): Promise<void> { await rpc('remove_friend', { p_id: id }); }
+
+let presenceCh: RealtimeChannel | null = null, inboxCh: RealtimeChannel | null = null;
+const INBOX = (userId: string): string => `duelist:inbox:${userId}`;
+/** 로그인 동안 접속 상태를 알리고 개인 수신함(파티 초대)을 구독한다 */
+export function startSocial(onOnline: (ids: Set<string>) => void, onInvite: (inv: PartyInvite) => void): void {
+  stopSocial();
+  const p = currentProfile; if (!supabase || !p || p.isGuest) return;
+  const pc = supabase.channel('duelist:online', { config: { presence: { key: p.id } } });
+  presenceCh = pc;
+  pc.on('presence', { event: 'sync' }, () => onOnline(new Set(Object.keys(pc.presenceState()))))
+    .subscribe((st) => { if (st === 'SUBSCRIBED') void pc.track({ nickname: p.nickname, at: Date.now() }); });
+  inboxCh = supabase.channel(INBOX(p.id));
+  inboxCh.on('broadcast', { event: 'invite' }, ({ payload }) => {
+    const v = (payload ?? {}) as Partial<PartyInvite>;
+    if (typeof v.from !== 'string' || v.from === p.id || typeof v.code !== 'string' || !/^\d{4}$/.test(v.code)) return;
+    onInvite({ from: v.from, nickname: String(v.nickname ?? '').slice(0, 16), code: v.code, mode: String(v.mode ?? ''), at: Date.now() });
+  }).subscribe();
+}
+export function stopSocial(): void {
+  if (supabase) { if (presenceCh) void supabase.removeChannel(presenceCh); if (inboxCh) void supabase.removeChannel(inboxCh); }
+  presenceCh = null; inboxCh = null;
+}
+/** 친구의 수신함 채널로 사설 방 코드를 보낸다 */
+export async function sendPartyInvite(toId: string, code: string, mode: string): Promise<void> {
+  const p = currentProfile; if (!supabase || !p || p.isGuest) throw new GameError('GUEST_NOT_ALLOWED');
+  const ch = supabase.channel(INBOX(toId));
+  try {
+    await new Promise<void>((res, rej) => {
+      const t = setTimeout(() => rej(new GameError('INVITE_FAILED')), 6000);
+      ch.subscribe((st) => {
+        if (st === 'SUBSCRIBED') { clearTimeout(t); res(); }
+        else if (st === 'CHANNEL_ERROR' || st === 'TIMED_OUT' || st === 'CLOSED') { clearTimeout(t); rej(new GameError('INVITE_FAILED')); }
+      });
+    });
+    const r = await ch.send({ type: 'broadcast', event: 'invite', payload: { from: p.id, nickname: p.nickname, code, mode } });
+    if (r !== 'ok') throw new GameError('INVITE_FAILED');
+  } finally { void supabase.removeChannel(ch); }
 }

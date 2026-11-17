@@ -1,5 +1,5 @@
 // =====================================================================
-// GRIDSTRIKE — 애플리케이션 진입점: 계정 · 로비/상점/미션/업적 · 설정 · 인게임 HUD · 터치 컨트롤 · 렌더 루프
+// DUELIST — 애플리케이션 진입점: 계정 · 로비/상점/미션/업적 · 설정 · 인게임 HUD · 터치 컨트롤 · 렌더 루프
 // =====================================================================
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
@@ -15,12 +15,13 @@ import {
 } from './config/weapons';
 import { preloadWeaponModels } from './game/weaponModels';
 import { skinSwatchUrl } from './game/skinTextures';
-import { FEATURED_BANNER, LOOTBOXES, SKINS, SKIN_WEAPONS, TIERS, TIER_ORDER, buildGachaReel, featuredSkins, getSkin, lootboxOdds, normalizeTier, resolveSkinId, skinsForWeapon, tierEmblemSvg, type SkinDef } from './config/skins';
+import { FEATURED_BANNER, LOOTBOXES, SKINS, SKIN_WEAPONS, TIERS, TIER_ORDER, buildGachaReel, featuredSkins, getSkin, lootboxOdds, normalizeTier, resolveSkinId, skinsForWeapon, tierEmblemSvg, type SkinDef, type Tier } from './config/skins';
 import { SkinPreview } from './game/skinPreview';
 import {
   GameError, buySkin, changeNickname, claimDailyLogin, claimMission, equipSkin, equipTitle, fetchBundle, fetchMatchHistory, getNicknameChangeCost, getProfile,
   initAuth, isSupabaseConfigured, onProfileChange, openLootbox, patchProfile, refreshProfile, saveLoadout, setGuestNickname, signInWithGoogle, signInWithId, signOut, signUpWithId, startGuest,
-  type AccountBundle, type DailyLoginResult, type MatchRow,
+  fetchFriends, removeFriend, respondFriendRequest, sendFriendRequest, sendPartyInvite, startSocial, stopSocial,
+  type AccountBundle, type DailyLoginResult, type FriendRow, type MatchRow, type PartyInvite,
 } from './services/supabase';
 import { SKILLS, SKILL_IDS, ULTS, ULT_IDS, ULT_COST, type SkillId, type UltId } from './config/skills';
 import { GameClient, type MatchEnd, type MatchPlayerResult, type MatchReward, type PlayerInfo, type RoomState } from './game/network';
@@ -82,7 +83,7 @@ onSettingsChange(applyGraphics);
 type View = 'auth' | 'lobby' | 'room' | 'game';
 let view: View = 'auth';
 let bundle: AccountBundle | null = null;
-let lobbyTab: 'home' | 'shop' | 'inventory' | 'missions' | 'achievements' | 'stats' = 'home';
+let lobbyTab: 'play' | 'loadout' | 'shop' | 'stats' | 'settings' = 'play';
 let history: MatchRow[] = [];
 let pendingReward: MatchReward | null = null;
 /** 매치 종료 연출/결과 화면이 떠 있는 동안의 스냅샷 (방이 닫혀도 결과를 유지) */
@@ -118,7 +119,7 @@ $('auth-submit').onclick = async () => {
 $('auth-pw').addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter') $('auth-submit').click(); });
 $('auth-google').onclick = () => { void guard(signInWithGoogle); };
 $('auth-guest').onclick = () => { startGuest(); net.disconnect(); void enterLobby(); };
-$('btn-logout').onclick = async () => { net.disconnect(); await signOut(); bundle = null; setView('auth'); };
+$('btn-logout').onclick = async () => { net.disconnect(); stopSocial(); socialFor = null; friends = []; invites.length = 0; await signOut(); bundle = null; setView('auth'); };
 if (!isSupabaseConfigured) { $('auth-err').textContent = '서버 미설정: 게스트 모드만 이용할 수 있습니다.'; }
 
 // ───────────────────────────── 로비 ─────────────────────────────
@@ -127,7 +128,7 @@ async function loadBundle(): Promise<void> {
   renderLobby();
 }
 async function enterLobby(): Promise<void> {
-  setView('lobby'); renderTop(); await loadBundle();
+  setView('lobby'); renderTop(); syncSocial(); await loadBundle();
   const p = getProfile();
   if (p && !p.isGuest) { // 연속 로그인 보상 (하루 1회)
     const r = await guard(claimDailyLogin);
@@ -136,174 +137,384 @@ async function enterLobby(): Promise<void> {
 }
 onProfileChange(() => { if (view === 'lobby') renderTop(); });
 
-function renderTop(): void {
-  const p = getProfile(); if (!p) return;
-  const t = tierInfo(tierLevel(p.rank_points));
-  $('lb-nick').innerHTML = `${esc(p.nickname)} <a style="cursor:pointer;color:var(--acc2)" id="lb-nick-edit">✎</a>`;
-  $('lb-nick-edit').onclick = openNickModal;
-  const title = bundle?.achievements.find((a) => a.achievement_id === p.equipped_title)?.title;
-  $('lb-title').textContent = title ? `「${title}」` : p.isGuest ? '게스트' : '칭호 없음';
-  $('lb-tier').innerHTML = `<b style="color:${t.color}">${t.labelKo}</b> ${fmt(p.rank_points)} RP`;
-  $('lb-credits').textContent = `◈ ${fmt(p.credits)}`; $('lb-boxes').textContent = `🎁 ${p.lootboxes}`;
-  $('btn-logout').textContent = p.isGuest ? '로그인' : '로그아웃';
+// ───────────────────────────── 시안 C 공용 조각 ─────────────────────────────
+const initial = (n: string): string => ([...(n ?? '')][0] ?? 'D').toUpperCase();
+const GUN_PATHS: Record<'rifle' | 'pistol' | 'knife' | 'nade', string> = {
+  rifle: '<polygon class="c-p1" points="12,44 78,38 96,46 96,72 76,76 20,84"></polygon><rect class="c-p2" x="94" y="34" width="166" height="32"></rect><rect class="c-p1" x="118" y="24" width="112" height="10"></rect><rect class="c-p2" x="258" y="38" width="74" height="22"></rect><rect class="c-p1" x="330" y="43" width="52" height="9"></rect><rect class="c-p2" x="380" y="40" width="14" height="15"></rect><polygon class="c-p1" points="178,66 204,66 216,108 190,110"></polygon><polygon class="c-p1" points="124,66 146,66 138,100 116,98"></polygon><rect class="c-p3" x="100" y="46" width="150" height="3"></rect>',
+  pistol: '<rect class="c-p2" x="110" y="32" width="190" height="26"></rect><rect class="c-p1" x="122" y="56" width="150" height="14"></rect><polygon class="c-p1" points="132,66 174,66 162,112 116,108"></polygon><rect class="c-p2" x="298" y="38" width="12" height="14"></rect><rect class="c-p3" x="120" y="42" width="170" height="3"></rect>',
+  knife: '<path class="c-p2" d="M120 64 L300 50 Q352 48 372 60 L300 76 L120 78 Z"></path><rect class="c-p1" x="34" y="60" width="86" height="22" rx="6"></rect><rect class="c-p1" x="112" y="50" width="10" height="42"></rect><path class="c-p3" d="M130 72 L300 70 L360 61 L300 66 L130 68 Z"></path>',
+  nade: '<circle class="c-p2" cx="200" cy="68" r="36"></circle><rect class="c-p1" x="184" y="18" width="32" height="18"></rect><rect class="c-p1" x="214" y="22" width="34" height="8"></rect><rect class="c-p3" x="166" y="64" width="68" height="3"></rect>',
+};
+const KAR_SVG = '<svg class="c-kar" viewBox="0 0 360 220" aria-hidden="true"><path class="c-k2" d="M150 120 C190 60 260 30 330 40 C280 60 240 95 205 140 Z"></path><path class="c-k4" d="M190 118 C222 80 262 58 318 46 C276 66 242 94 210 132 Z"></path><path class="c-k1" d="M60 170 L150 112 L206 140 L120 196 Z"></path><circle class="c-k3" cx="52" cy="182" r="22"></circle></svg>';
+function gunKind(w: string): keyof typeof GUN_PATHS {
+  if (WEAPONS_BY_SLOT.primary.includes(w as WeaponId)) return 'rifle';
+  if (WEAPONS_BY_SLOT.secondary.includes(w as WeaponId)) return 'pistol';
+  if (WEAPONS_BY_SLOT.throwable.includes(w as WeaponId)) return 'nade';
+  return 'knife';
 }
-const NAV: [typeof lobbyTab, string, string][] = [['home', '홈', 'HOME'], ['shop', '상점', 'STORE'], ['inventory', '보관함', 'LOADOUT'], ['missions', '미션·출석', 'MISSION'], ['achievements', '업적·칭호', 'ACHIEVE'], ['stats', '전적', 'CAREER']];
-function renderLobby(): void {
-  if (view !== 'lobby') return;
-  renderTop();
-  $('lobby-nav').innerHTML = NAV.map(([k, n, en], i) => `<button data-tab="${k}" class="${k === lobbyTab ? 'on' : ''}"><i>0${i + 1}</i>${n}<small>${en}</small></button>`).join('');
-  $('lobby-nav').querySelectorAll<HTMLElement>('button').forEach((b) => (b.onclick = () => { lobbyTab = b.dataset.tab as typeof lobbyTab; if (lobbyTab === 'stats') void loadHistory(); renderLobby(); }));
-  const body = $('lobby-body'), p = getProfile();
-  if (!p) return;
-  if (p.isGuest && lobbyTab !== 'home') { body.innerHTML = `<div class="card" style="margin-top:20px">게스트는 전적·상점·미션이 저장되지 않습니다. 로그인하면 클라우드에 모두 저장됩니다.</div>`; return; }
-  pvTarget = null;
-  body.innerHTML = { home: htmlHome, shop: htmlShop, inventory: htmlInventory, missions: htmlMissions, achievements: htmlAchievements, stats: htmlStats }[lobbyTab]();
-  bindLobbyBody(); mountPreview();
+/** 스킨 재질 3색(베이스/포인트/발광)으로 칠한 무기 실루엣 */
+function gunSvg(w: string, s: SkinDef | null): string {
+  const g1 = s ? hex(s.material.baseColor) : '#1d1c1a', g2 = s ? hex(s.material.accentColor) : '#3a3732';
+  const g3 = s ? hex(s.emissive.mode === 'none' ? s.material.patternColor : s.emissive.color) : '#6b665c';
+  return `<svg class="c-gun" style="--g1:${g1};--g2:${g2};--g3:${g3}" viewBox="0 0 400 120" aria-hidden="true">${GUN_PATHS[gunKind(w)]}</svg>`;
 }
-const swatch = (s: SkinDef): string => { const u = skinSwatchUrl(s); return u ? `background:url(${u}) center/cover` : `background:linear-gradient(120deg,${hex(s.material.baseColor)} 0%,${hex(s.material.accentColor)} 55%,${hex(s.emissive.mode === 'none' ? s.material.patternColor : s.emissive.color)} 100%)`; };
-/** 스킨 카드: 등급 엠블럼 배지 + 등급색 그라데이션 테두리. 카드를 누르면 3D 미리보기에 올라간다 */
-function skinCard(s: SkinDef, foot: string, selected = false): string {
-  const t = TIERS[s.tier];
-  return `<div class="skin t-${s.tier}${selected ? ' sel' : ''}" style="--tc:${t.color}" data-pv="${s.id}"><div class="sw" style="${swatch(s)}"><span class="badge">${tierEmblemSvg(s.tier, 16)}${t.name}</span></div><div class="inf"><span class="rar" style="color:${t.color}">${t.en} EDITION</span><span class="nm">${esc(s.name)}</span>${foot}</div></div>`;
+const tierBadge = (t: Tier | null, label?: string): string => `<span class="c-badge" style="color:${t ? TIERS[t].color : '#8a857a'}">${esc(label ?? (t ? TIERS[t].en : 'STANDARD'))}</span>`;
+const wName = (w: string): string => (WEAPONS as Record<string, { name: string } | undefined>)[w]?.name ?? w;
+let rarity: 'all' | Tier = 'all';
+function rarityChips(pool: SkinDef[]): string {
+  const opts: ['all' | Tier, string, string][] = [['all', '전체', '#f2efe8'], ...TIER_ORDER.map((k) => [k, TIERS[k].name, TIERS[k].color] as ['all' | Tier, string, string])];
+  return `<div class="c-chips" role="group" aria-label="스킨 등급 필터">${opts.map(([k, n, c]) => `<button type="button" class="c-chip${rarity === k ? ' c-on' : ''}" data-rar="${k}"><span class="c-rd" style="background:${c}"></span>${n}<span class="c-cn">${k === 'all' ? pool.length : pool.filter((s) => s.tier === k).length}</span></button>`).join('')}</div>`;
 }
+const byRarity = (s: SkinDef): boolean => rarity === 'all' || s.tier === rarity;
+/** 해당 무기에 장착 중인 스킨 */
+function equippedSkin(w: string): SkinDef | null { const o = bundle?.skins.find((s) => s.weapon_id === w && s.equipped); return o ? getSkin(o.skin_id) : null; }
 /** 보유 여부 — 구버전 skin_id 로 보유 중이어도 현행 ID 로 환산해 판정 */
 const owned = (id: string): boolean => !!bundle?.skins.some((s) => resolveSkinId(s.skin_id) === id);
+const swatch = (s: SkinDef): string => { const u = skinSwatchUrl(s); return u ? `background:url(${u}) center/cover` : `background:linear-gradient(120deg,${hex(s.material.baseColor)} 0%,${hex(s.material.accentColor)} 55%,${hex(s.emissive.mode === 'none' ? s.material.patternColor : s.emissive.color)} 100%)`; };
 
-// ── 3D 미리보기 패널 (상점/보관함 공용)
+// ── 3D 쇼케이스 (플레이 탭 무대)
 const preview = new SkinPreview();
-let pvShop: string | null = null, pvInv: string | null = null;
 let pvTarget: { weapon: WeaponId; skin: string | null } | null = null;
-function htmlPreview(s: SkinDef | null, weaponName: string, foot: string): string {
-  const t = s ? TIERS[s.tier] : null;
-  const ladder = TIER_ORDER.map((k) => `<span class="${t && TIERS[k].order <= t.order ? 'on' : ''}" title="${TIERS[k].name} · ◈ ${fmt(TIERS[k].price)}">${tierEmblemSvg(k, 18)}</span>`).join('');
-  return `<div class="pv ${s ? 't-' + s.tier : 't-none'}" style="--tc:${t?.color ?? '#8b97ab'}"><div id="pv-slot"></div><div class="pv-info">
-    <div class="pv-tier">${s ? tierEmblemSvg(s.tier, 34) : ''}<div><b>${t ? t.en + ' EDITION' : 'STANDARD'}</b><span>${t ? t.name + ' 에디션' : '기본 외형'}</span></div></div>
-    <div class="pv-name">${esc(s?.name ?? weaponName + ' 기본 외형')}</div><div class="mut">${esc(s?.blurb ?? '스킨을 장착하지 않은 순정 상태입니다.')}</div>
-    <div class="pv-perks">${(t?.perks ?? []).map((k) => `<span>${esc(k)}</span>`).join('')}</div>
-    <div class="pv-ladder">${ladder}</div><div class="row">${foot}</div><div class="mut" style="font-size:11px">드래그로 회전 · 카드를 눌러 미리보기</div></div></div>`;
-}
 function mountPreview(): void {
   const slot = document.getElementById('pv-slot'); if (!slot || !pvTarget) return;
   slot.appendChild(preview.el); preview.show(pvTarget.weapon, pvTarget.skin);
 }
 
-function htmlHome(): string {
-  const p = getProfile()!, st = bundle?.stats, tp = tierProgress(p.rank_points), t = tierInfo(tierLevel(p.rank_points));
-  const fb = FEATURED_BANNER;
-  return `
-  <div class="home">
-    <div class="side">
-      <div class="rank"><h2 style="margin-top:0">Rank</h2><b class="t" style="color:${t.color}">${t.labelKo}</b><div class="mut" style="font-family:var(--c-mono);margin-top:4px">${fmt(p.rank_points)} RP · ${tp.toNext ? `다음 승급까지 ${tp.toNext} RP` : '최상위 티어'}</div><div class="bar" style="margin-top:12px"><i style="width:${tp.progress * 100}%"></i></div></div>
-      <div><h2 style="margin-top:0">Summary</h2><div class="mini"><div><span>K/D</span><b>${st?.kd ?? 0}</b></div><div><span>HS%</span><b>${st?.hs_pct ?? 0}%</b></div><div><span>Win</span><b>${st?.win_rate ?? 0}%</b></div><div><span>Matches</span><b>${st?.matches ?? 0}</b></div></div></div>
-      <div><h2 style="margin-top:0">Quick Start</h2><div class="quick"><button class="pri" data-quick="range">사격장</button><button data-quick="tdm">팀 데스매치 3v3</button><button data-quick="classic">클래식 1v1</button><button data-quick="ranked">경쟁전 1v1</button></div></div>
-    </div>
-    <div class="stage">${fb ? `<span class="tag">NEW · FEATURED</span><h3>${esc(fb.title)} 컬렉션</h3><div class="mut">${esc(fb.blurb)}</div><div class="quick"><button class="pri" data-goto="shop">상점에서 보기</button></div>` : `<span class="tag">DUELIST</span><h3>READY</h3>`}</div>
-  </div>`;
+// ───────────────────────────── 상단 바 ─────────────────────────────
+function renderTop(): void {
+  const p = getProfile(); if (!p) return;
+  const t = tierInfo(tierLevel(p.rank_points));
+  $('lb-credits').textContent = fmt(p.credits);
+  $('lb-ava-t').textContent = initial(p.nickname);
+  $('lb-nick').textContent = p.nickname;
+  $('lb-tier').textContent = `${t.labelKo} · ${fmt(p.rank_points)} RP`;
+  const title = bundle?.achievements.find((a) => a.achievement_id === p.equipped_title)?.title;
+  $('lb-title').textContent = title ? `「${title}」` : p.isGuest ? '게스트' : '칭호 없음';
+  $('lb-boxes').textContent = `보유 박스 ${p.lootboxes}`;
+  $('btn-logout').textContent = p.isGuest ? '로그인' : '로그아웃';
+  const pend = friendsPendingIn();
+  $('lb-fr-dot').classList.toggle('hidden', !pend);
+  $('btn-friends').textContent = pend ? `친구 (요청 ${pend})` : '친구';
 }
-function htmlShop(): string {
-  const fb = FEATURED_BANNER, p = getProfile()!;
-  const buyFoot = (s: SkinDef, price: number, has: boolean): string => (has ? `<span class="mut">보유 중</span>` : `<button class="sm pri" data-buy="${s.id}">◈ ${fmt(price)}</button>`);
-  const dailyItems: { price: number; has: boolean; s: SkinDef }[] = [];
-  for (const it of bundle?.shop ?? []) { const s = getSkin(it.skin_id); if (s) dailyItems.push({ price: it.price, has: it.owned || owned(s.id), s }); }
-  const cur = getSkin(pvShop) ?? featuredSkins().find((s) => s.weaponId === 'vandal') ?? featuredSkins()[0] ?? dailyItems[0]?.s ?? null;
-  pvTarget = cur ? { weapon: cur.weaponId, skin: cur.id } : null;
-  const feat = featuredSkins().map((s) => skinCard(s, buyFoot(s, s.price, owned(s.id)), s.id === cur?.id)).join('');
-  const daily = dailyItems.map((d) => skinCard(d.s, buyFoot(d.s, d.price, d.has), d.s.id === cur?.id)).join('');
-  const curDaily = dailyItems.find((d) => d.s.id === cur?.id);
-  const pvFoot = !cur ? '' : owned(cur.id) || curDaily?.has ? `<span class="mut">보유 중</span>` : curDaily ? buyFoot(cur, curDaily.price, false) : cur.featured ? buyFoot(cur, cur.price, false) : `<span class="mut">일일 상점 · 랜덤 박스에서 획득</span>`;
-  const boxes = Object.values(LOOTBOXES).map((b) => `<div class="card col${b.jackpot ? ' jpbox' : ''}"><h3>🎁 ${esc(b.name)}</h3>${b.desc ? `<div class="mut" style="font-size:12px">${esc(b.desc)}</div>` : ''}<div class="odds">${lootboxOdds(b.id).map((o) => o.jackpot ? `<span class="jp">💎 ${esc(o.label)} ${o.percent}%</span>` : `<span style="color:${o.color}">${tierEmblemSvg(o.tier, 13)}${o.label} ${o.percent}%</span>`).join('')}</div><div class="mut" style="font-size:12px">중복 획득 시 크레딧으로 환급됩니다${b.jackpot ? ` (카람빗 ◈ ${fmt(b.jackpot.refund)})` : ''}.</div><div class="row"><button class="pri" data-box="${b.id}">◈ ${fmt(b.price)} 개봉</button>${b.id === 'standard' ? `<button data-box="${b.id}" data-owned="1" ${p.lootboxes < 1 ? 'disabled' : ''}>보유 박스 사용 (${p.lootboxes})</button>` : ''}</div></div>`).join('');
-  const tiers = TIER_ORDER.map((k) => `<span class="tierchip" style="--tc:${TIERS[k].color}">${tierEmblemSvg(k, 16)}<b>${TIERS[k].name}</b>◈ ${fmt(TIERS[k].price)}</span>`).join('');
-  return `
-  ${cur ? htmlPreview(cur, '', pvFoot) : ''}
-  <div class="tierrow">${tiers}</div>
-  ${fb ? `<h2>신규 스킨 <small class="mut">${esc(fb.title)} 컬렉션 · ${TIERS[fb.tier].name} 에디션</small></h2><div class="grid">${feat}</div>` : ''}
-  <h2>일일 상점 <small class="mut">매일 자정(KST) 갱신</small></h2><div class="grid">${daily || '<div class="mut">상점 정보를 불러오지 못했습니다.</div>'}</div>
-  <h2>랜덤 박스</h2><div class="grid wide">${boxes}</div>`;
+$('lb-prof').onclick = (e) => { e.stopPropagation(); $('lb-menu').classList.toggle('hidden'); };
+$('lb-menu').addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('button')) show('lb-menu', false); });
+document.addEventListener('click', (e) => { if (!(e.target as HTMLElement).closest('#lb-menu')) show('lb-menu', false); });
+$('lb-nick-edit').onclick = () => void openNickModal();
+$('btn-friends').onclick = () => void openFriends();
+$('lb-cred').onclick = () => goTab('shop');
+
+type LobbyTab = 'play' | 'loadout' | 'shop' | 'stats' | 'settings';
+const NAV: [LobbyTab, string, string][] = [['play', 'Play', '플레이'], ['loadout', 'Loadout', '보관함'], ['shop', 'Store', '상점'], ['stats', 'Career', '전적'], ['settings', 'Settings', '설정']];
+let lastTab: LobbyTab | null = null;
+function goTab(t: LobbyTab): void { waitingBind = null; lobbyTab = t; rarity = 'all'; oddsOpen = false; if (t === 'stats') void loadHistory(); renderLobby(); }
+function renderLobby(): void {
+  if (view !== 'lobby') return;
+  renderTop();
+  $('lb-tabs').innerHTML = NAV.map(([k, en, ko], i) => `<button type="button" class="c-tab${k === lobbyTab ? ' c-on' : ''}" data-tab="${k}"><span class="c-ti">0${i + 1}</span><span class="c-t1">${en}</span><span class="c-t2">${ko}</span></button>`).join('');
+  $('lb-tabs').querySelectorAll<HTMLElement>('[data-tab]').forEach((b) => (b.onclick = () => goTab(b.dataset.tab as LobbyTab)));
+  const body = $('lb-body'), p = getProfile();
+  if (!p) return;
+  const fresh = lastTab !== lobbyTab; lastTab = lobbyTab;
+  pvTarget = null;
+  let html: string;
+  if (p.isGuest && (lobbyTab === 'shop' || lobbyTab === 'stats')) html = `<div class="c-sect"><span class="c-h1">${lobbyTab === 'shop' ? 'Store' : 'Career'}</span><span class="c-h2">게스트 제한</span></div><div class="c-empty">게스트는 전적·상점·미션이 저장되지 않습니다. 로그인하면 클라우드에 모두 저장됩니다.</div>`;
+  else if (lobbyTab === 'settings') html = `<div class="c-sect"><span class="c-h1">Settings</span><span class="c-h2">설정 · 변경 사항은 즉시 저장됩니다</span></div><nav class="c-stabs" id="lb-set-tabs" aria-label="설정 섹션"></nav><div class="c-spane1" id="lb-set-body"></div>`;
+  else html = { play: htmlPlay, loadout: htmlLoadout, shop: htmlShop, stats: htmlCareer }[lobbyTab]();
+  body.innerHTML = `<div class="${fresh ? 'c-fade' : ''}">${html}</div>`;
+  if (lobbyTab === 'settings') renderSettings();
+  bindLobbyBody(); mountPreview();
 }
-let invWeapon = 'vandal';
-let skillSlot: 'q' | 'e' | 'x' = 'q';
-function htmlSkillLoadout(): string {
-  const l = getProfile()!.loadout, cur = { q: l.q, e: l.e, x: l.x };
-  const slot = (k: 'q' | 'e' | 'x'): string => {
-    const d = k === 'x' ? ULTS[cur.x] : SKILLS[cur[k as 'q' | 'e']];
-    return `<div class="eqslot ${skillSlot === k ? 'sel' : ''}" data-skslot="${k}"><small>${k === 'x' ? 'X 궁극기' : k.toUpperCase() + ' 스킬'}</small><b>${d.icon} ${esc(d.name)}</b><small>${k === 'x' ? `궁극기 포인트 ${ULT_COST} 필요` : `쿨타임 ${SKILLS[cur[k as 'q' | 'e']].cdMs / 1000}초 · 라운드당 ${SKILLS[cur[k as 'q' | 'e']].uses}회`}</small></div>`;
+
+// ───────────────────────────── 01 PLAY ─────────────────────────────
+const MODE_EN: Record<GameMode, string> = { classic: 'Classic', ranked: 'Competitive', tdm: 'Deathmatch', range: 'The Range' };
+let matching = false;
+function htmlPlay(): string {
+  const p = getProfile()!, l = p.loadout, m = MODES[play.mode];
+  if (!m.teamSizes.includes(play.size)) play.size = m.teamSizes[0];
+  const modes = (Object.keys(MODES) as GameMode[]).map((k, i) => `<button type="button" class="c-mode${k === play.mode ? ' c-on' : ''}" data-mode="${k}"><span class="c-idx">0${i + 1}</span><span><span class="c-mt">${MODE_EN[k]}<span class="c-mk">${MODES[k].name}</span></span><span class="c-md">${esc(MODES[k].desc)}</span></span><span class="c-ar"></span></button>`).join('');
+  const opts = play.mode === 'range' ? '' : `<div class="c-opts"><div class="c-srow"><span>인원</span><div class="c-pills">${m.teamSizes.map((n) => `<button type="button" class="c-pill${n === play.size ? ' c-on' : ''}" data-size="${n}">${n}v${n}</button>`).join('')}</div></div>
+    <div class="c-srow"><span>맵</span><div class="c-pills">${([['', '자동'], ['grid', 'GRID'], ['arena', 'ARENA']] as const).map(([k, n]) => `<button type="button" class="c-pill${k === play.map ? ' c-on' : ''}" data-map="${k}">${n}</button>`).join('')}</div></div></div>`;
+  const plus = `<button type="button" class="c-pslot" data-friends aria-label="파티원 초대"><span class="c-plus">+</span><span>초대</span></button>`;
+  const sk = (k: 'q' | 'e' | 'x'): string => {
+    const d = k === 'x' ? ULTS[l.x] : SKILLS[l[k]];
+    const sub = k === 'x' ? `궁극기 · ${ULT_COST}P` : `${SKILLS[l[k]].uses}회 · ${SKILLS[l[k]].cdMs / 1000}s`;
+    return `<button type="button" class="c-skill" data-goslot="${k}"><span class="c-key">${k.toUpperCase()}</span><span class="c-sn">${esc(d.name)}</span><span class="c-sc">${sub}</span></button>`;
   };
-  const list = skillSlot === 'x'
-    ? ULT_IDS.map((id) => `<div class="skcard ${cur.x === id ? 'on' : ''}"><span class="ic">${ULTS[id].icon}</span><b>${esc(ULTS[id].name)}</b><span class="mut" style="font-size:12px">${esc(ULTS[id].desc)}</span>${cur.x === id ? '<span style="color:var(--ok)">장착 중</span>' : `<button class="sm" data-skpick="${id}">X 에 장착</button>`}</div>`).join('')
-    : SKILL_IDS.map((id) => { const d = SKILLS[id], other = skillSlot === 'q' ? cur.e : cur.q, mine = cur[skillSlot] === id;
-      return `<div class="skcard ${mine ? 'on' : ''}"><span class="ic">${d.icon}</span><b>${esc(d.name)}</b><span class="mut" style="font-size:12px">${esc(d.desc)}</span><span class="mut" style="font-size:11px">쿨타임 ${d.cdMs / 1000}초 · 라운드당 ${d.uses}회</span>${mine ? '<span style="color:var(--ok)">장착 중</span>' : other === id ? `<button class="sm" data-skpick="${id}">${skillSlot.toUpperCase()} 와 교체</button>` : `<button class="sm" data-skpick="${id}">${skillSlot.toUpperCase()} 에 장착</button>`}</div>`; }).join('');
-  return `<h2>스킬 로드아웃 <small class="mut">Q / E / X 슬롯을 선택한 뒤 아래 목록에서 장착 — 다음 매치부터 적용</small></h2><div class="slotrow">${slot('q')}${slot('e')}${slot('x')}</div><div class="grid" style="margin:12px 0 18px">${list}</div>`;
+  const w = l.primary, s = equippedSkin(w);
+  pvTarget = { weapon: w, skin: s?.id ?? null };
+  const sub = matching ? '매칭 중…' : play.mode === 'range' ? '사격장 입장' : `${m.name} · ${play.size}v${play.size} · 매칭 시작`;
+  return `<div class="c-lobby">
+  <div class="c-col">
+    <section class="c-panel"><div class="c-ph"><span class="c-h1">Mode</span><span class="c-h2">모드 선택</span></div>${modes}${opts}</section>
+    <section class="c-panel"><div class="c-ph"><span class="c-h1">Party</span><span class="c-h2">1 / 3</span></div>
+      <div class="c-party"><div class="c-pslot c-me"><div class="c-ava">${esc(initial(p.nickname))}</div><span>${esc(p.nickname)}</span></div>${plus}${plus}</div>
+      ${invitesHtml()}
+      <div class="c-plinks"><button type="button" class="c-link" data-friends>친구 목록${friendsPendingIn() ? ` · 요청 ${friendsPendingIn()}` : ''}</button><button type="button" class="c-link" data-priv>사설 방 · 코드 입장</button></div>
+    </section>
+    <section class="c-panel"><div class="c-ph"><span class="c-h1">Abilities</span><span class="c-h2">스킬</span></div><div class="c-skills">${sk('q')}${sk('e')}${sk('x')}</div></section>
+  </div>
+  <section class="c-stage" aria-label="무기 쇼케이스">
+    <span class="c-corner c-c1"></span><span class="c-corner c-c2"></span><span class="c-corner c-c3"></span><span class="c-corner c-c4"></span>
+    <div class="c-lot">PRIMARY — SLOT 0${SLOT.primary}<br>FINISH / ${esc((s?.id ?? `${w}_standard`).toUpperCase())}</div>
+    <div class="c-mount">3D SHOWCASE / 드래그 회전</div>
+    <div class="c-axis"></div><div class="c-ticks"></div>
+    <div id="pv-slot" class="c-gunwrap"></div>
+    <div class="c-meta"><span class="c-wl">Equipped Finish · 장착 스킨</span><span class="c-wn">${esc(s ? s.name : `${wName(w)} 기본 외형`)}</span>${tierBadge(s?.tier ?? null, s ? `${TIERS[s.tier].en} · ${TIERS[s.tier].name}` : 'Standard · 기본')}</div>
+    <button type="button" class="c-play${matching ? ' c-wait' : ''}" id="c-play"><span class="c-pt"><span class="c-pm">${matching ? 'Wait' : 'Play'}</span><span class="c-ps2">${sub}</span></span><span class="c-arrow"></span></button>
+  </section>
+</div>`;
 }
-function htmlInventory(): string {
-  const chips = SKIN_WEAPONS.map((w) => `<button class="sm ${w.id === invWeapon ? 'on' : ''}" data-invw="${w.id}">${w.name}</button>`).join('');
+
+// ───────────────────────────── 02 LOADOUT ─────────────────────────────
+type LdSlot = SlotKey | 'q' | 'e' | 'x';
+let ldSlot: LdSlot = 'primary';
+const SLOT_ROWS: [SlotKey, string, string][] = [['primary', 'Primary', '주무기'], ['secondary', 'Sidearm', '보조'], ['melee', 'Melee', '근접'], ['throwable', 'Utility', '투척']];
+function htmlLoadout(): string {
+  const l = getProfile()!.loadout;
+  const slots = SLOT_ROWS.map(([k, en, ko]) => {
+    const w = l[k], s = equippedSkin(w);
+    return `<button type="button" class="c-slot${ldSlot === k ? ' c-on' : ''}" data-ldslot="${k}"><span class="c-sk">0${SLOT[k]}</span><span class="c-st">${en} <span class="c-stk">${ko}</span></span><span class="c-sl">${WEAPONS_BY_SLOT[k].map(wName).join(' · ')}</span><span class="c-ss">${esc(wName(w))} · ${esc(s ? s.name : '기본 외형')}</span></button>`;
+  }).join('');
+  const abil = (['q', 'e', 'x'] as const).map((k) => {
+    const d = k === 'x' ? ULTS[l.x] : SKILLS[l[k]];
+    const sl = k === 'x' ? `궁극기 포인트 ${ULT_COST} 필요` : `쿨타임 ${SKILLS[l[k]].cdMs / 1000}초 · 라운드당 ${SKILLS[l[k]].uses}회`;
+    return `<button type="button" class="c-slot${ldSlot === k ? ' c-on' : ''}" data-ldslot="${k}"><span class="c-sk">${k.toUpperCase()}</span><span class="c-st">${k === 'x' ? 'Ultimate' : 'Ability'} <span class="c-stk">${k === 'x' ? '궁극기' : '스킬'}</span></span><span class="c-sl">${sl}</span><span class="c-ss">${d.icon} ${esc(d.name)}</span></button>`;
+  }).join('');
+  const right = ldSlot === 'q' || ldSlot === 'e' || ldSlot === 'x' ? htmlSkillGrid(ldSlot) : htmlSkinGrid(ldSlot);
+  return `<div class="c-sect"><span class="c-h1">Loadout</span><span class="c-h2">보관함 · 슬롯을 고르고 보유 스킨을 장착하세요</span></div>
+  <div class="c-loadout"><div><div class="c-slots">${slots}</div><div class="c-ph c-ph2"><span class="c-h1">Abilities</span><span class="c-h2">스킬 · 다음 매치부터 적용</span></div><div class="c-slots">${abil}</div></div><div>${right}</div></div>`;
+}
+function htmlSkinGrid(k: SlotKey): string {
+  const w = getProfile()!.loadout[k];
+  const wchips = `<div class="c-chips c-wchips" role="group" aria-label="무기 선택">${WEAPONS_BY_SLOT[k].map((id) => `<button type="button" class="c-chip${id === w ? ' c-on' : ''}" data-ldw="${id}">${esc(wName(id))}</button>`).join('')}</div>`;
+  if (k === 'throwable' || w === 'fists') return `${wchips}<div class="c-empty">${k === 'throwable' ? '투척류에는 스킨이 없습니다.' : '주먹에는 스킨이 없습니다.'}</div>`;
   // 보유 목록: 구버전 skin_id 는 현행 스킨으로 환산(같은 스킨으로 겹치면 장착 중인 쪽 우선), 장착 요청은 DB 에 저장된 원본 ID 로 보낸다
-  const byId = new Map<string, { s: SkinDef; raw: string; equipped: boolean }>();
+  const own = new Map<string, { raw: string; equipped: boolean }>();
   for (const o of bundle?.skins ?? []) {
-    const s = getSkin(o.skin_id); if (!s || s.weaponId !== invWeapon) continue;
-    const prev = byId.get(s.id); if (!prev || (o.equipped && !prev.equipped)) byId.set(s.id, { s, raw: o.skin_id, equipped: o.equipped });
+    const s = getSkin(o.skin_id); if (!s || s.weaponId !== w) continue;
+    const prev = own.get(s.id); if (!prev || (o.equipped && !prev.equipped)) own.set(s.id, { raw: o.skin_id, equipped: o.equipped });
   }
-  const mine = [...byId.values()].sort((x, y) => TIERS[y.s.tier].order - TIERS[x.s.tier].order || x.s.sort - y.s.sort), eq = mine.find((x) => x.equipped) ?? null;
-  const sel = pvInv === '' ? null : mine.find((x) => x.s.id === pvInv) ?? eq, wName = SKIN_WEAPONS.find((w) => w.id === invWeapon)?.name ?? '';
-  pvTarget = { weapon: invWeapon as WeaponId, skin: sel?.s.id ?? null };
-  const equipFoot = (x: { raw: string; equipped: boolean } | null): string => ((x ? x.equipped : !eq) ? `<span style="color:var(--ok)">장착 중</span>` : `<button class="sm" data-equip="${x?.raw ?? ''}">장착</button>`);
-  const cards = [`<div class="skin t-none${sel ? '' : ' sel'}" style="--tc:#8b97ab" data-pv=""><div class="sw" style="background:linear-gradient(120deg,#2b2f36,#4b525c)"></div><div class="inf"><span class="rar mut">STANDARD</span><span class="nm">기본 외형</span>${equipFoot(null)}</div></div>`,
-    ...mine.map((x) => skinCard(x.s, equipFoot(x), x.s.id === sel?.s.id))].join('');
-  return `${htmlSkillLoadout()}<h2>보관함</h2><div class="row" style="flex-wrap:wrap">${chips}</div>${htmlPreview(sel?.s ?? null, wName, equipFoot(sel ?? null))}<div class="grid" style="margin-top:12px">${cards}</div><div class="mut" style="margin-top:10px">전체 스킨 ${skinsForWeapon(invWeapon).length}종 중 ${mine.length}종 보유</div>`;
+  const anyEq = [...own.values()].some((x) => x.equipped);
+  const all = [...skinsForWeapon(w)].sort((a, b) => (+own.has(b.id) - +own.has(a.id)) || TIERS[b.tier].order - TIERS[a.tier].order || a.sort - b.sort);
+  const std = `<div class="c-card${anyEq ? '' : ' c-eq'}"><div class="c-vis">${gunSvg(w, null)}</div>${anyEq ? '' : '<span class="c-eqtag">EQUIPPED</span>'}<div class="c-body">${tierBadge(null)}<span class="c-cn2">${esc(wName(w))} 기본 외형</span><span class="c-cw">${esc(wName(w))} · 기본</span><div class="c-row">${anyEq ? '<button type="button" class="c-btn" data-equip="">장착</button>' : '<span class="c-own">장착 중</span>'}</div></div></div>`;
+  const cards = all.filter(byRarity).map((s) => {
+    const o = own.get(s.id), eq = !!o?.equipped;
+    const act = !o ? '<span class="c-lock">미보유 · 상점에서 구매</span>' : eq ? '<span class="c-own">장착 중</span>' : `<button type="button" class="c-btn" data-equip="${esc(o.raw)}">장착</button>`;
+    return `<div class="c-card${eq ? ' c-eq' : ''}"><div class="c-vis">${gunSvg(w, s)}</div>${eq ? '<span class="c-eqtag">EQUIPPED</span>' : ''}<div class="c-body">${tierBadge(s.tier)}<span class="c-cn2">${esc(s.name)}</span><span class="c-cw">${esc(wName(w))} · ${TIERS[s.tier].name}</span><div class="c-row">${act}</div></div></div>`;
+  });
+  const list = (rarity === 'all' ? [std] : []).concat(cards);
+  return `${wchips}${rarityChips(all)}${list.length ? `<div class="c-grid">${list.join('')}</div>` : '<div class="c-empty">이 등급의 스킨이 없습니다.</div>'}<div class="c-foot">전체 스킨 ${all.length}종 중 ${own.size}종 보유</div>`;
 }
-function htmlMissions(): string {
-  const p = getProfile()!, today = ((Math.max(1, p.login_streak) - 1) % 7) + 1;
-  const days = (bundle?.loginRewards ?? []).map((r) => `<div class="day ${r.day < today ? 'done' : r.day === today ? 'today' : ''}"><b>${r.day}일차</b><br />${r.reward_type === 'credits' ? `◈ ${r.reward_amount}` : `🎁 ×${r.reward_amount}`}</div>`).join('');
-  const ms = (bundle?.missions ?? []).map((m) => `<div class="card col"><div class="row"><b>${esc(m.description)}</b><span class="right">${m.reward_type === 'credits' ? `◈ ${m.reward_amount}` : `🎁 랜덤박스 ×${m.reward_amount}`}</span></div><div class="bar"><i style="width:${Math.min(100, (m.progress / m.target) * 100)}%"></i></div><div class="row"><span class="mut">${m.progress} / ${m.target}</span><button class="sm right ${m.progress >= m.target && !m.claimed ? 'pri' : ''}" data-claim="${m.slot}" ${m.claimed || m.progress < m.target ? 'disabled' : ''}>${m.claimed ? '수령 완료' : '보상 받기'}</button></div></div>`).join('');
-  return `<h2>7일 연속 로그인 <small class="mut">현재 ${p.login_streak}일 연속</small></h2><div class="days">${days}</div><h2>일일 미션</h2><div class="grid wide">${ms || '<div class="mut">미션이 없습니다.</div>'}</div>`;
+function htmlSkillGrid(k: 'q' | 'e' | 'x'): string {
+  const l = getProfile()!.loadout;
+  const card = (id: string, icon: string, name: string, desc: string, meta: string, on: boolean, label: string): string =>
+    `<div class="c-card${on ? ' c-eq' : ''}">${on ? '<span class="c-eqtag">EQUIPPED</span>' : ''}<div class="c-body"><span class="c-sico">${icon}</span><span class="c-cn2">${esc(name)}</span><span class="c-cw">${esc(desc)}</span><span class="c-cw c-mono">${meta}</span><div class="c-row">${on ? '<span class="c-own">장착 중</span>' : `<button type="button" class="c-btn" data-skpick="${id}">${label}</button>`}</div></div></div>`;
+  const cards = k === 'x'
+    ? ULT_IDS.map((id) => card(id, ULTS[id].icon, ULTS[id].name, ULTS[id].desc, `POINT ${ULT_COST}`, l.x === id, 'X 에 장착'))
+    : SKILL_IDS.map((id) => { const d = SKILLS[id], other = k === 'q' ? l.e : l.q; return card(id, d.icon, d.name, d.desc, `CD ${d.cdMs / 1000}s · ${d.uses}회/라운드`, l[k] === id, other === id ? `${k.toUpperCase()} 와 교체` : `${k.toUpperCase()} 에 장착`); });
+  return `<div class="c-grid c-grid3">${cards.join('')}</div>`;
+}
+
+// ───────────────────────────── 03 STORE ─────────────────────────────
+let oddsOpen = false;
+function htmlShop(): string {
+  const p = getProfile()!;
+  const items: { s: SkinDef; price: number; has: boolean }[] = [], seen = new Set<string>();
+  for (const it of bundle?.shop ?? []) { const s = getSkin(it.skin_id); if (s && !seen.has(s.id)) { seen.add(s.id); items.push({ s, price: it.price, has: it.owned || owned(s.id) }); } }
+  for (const s of featuredSkins()) if (!seen.has(s.id)) { seen.add(s.id); items.push({ s, price: s.price, has: owned(s.id) }); }
+  const card = (d: { s: SkinDef; price: number; has: boolean }): string => `<div class="c-card"><div class="c-vis">${gunSvg(d.s.weaponId, d.s)}</div>${d.s.featured ? '<span class="c-eqtag">NEW</span>' : ''}<div class="c-body">${tierBadge(d.s.tier)}<span class="c-cn2">${esc(d.s.name)}</span><span class="c-cw">${esc(wName(d.s.weaponId))} · ${TIERS[d.s.tier].name}</span><div class="c-row"><span class="c-price"><span class="c-gem"></span>${fmt(d.price)}</span>${d.has ? '<span class="c-own">보유 중</span>' : `<button type="button" class="c-btn" data-buy="${d.s.id}">구매</button>`}</div></div></div>`;
+  const shown = items.filter((d) => byRarity(d.s));
+  const odds = (id: string): string => `<div class="c-odds">${lootboxOdds(id).map((o) => `<span style="color:${o.color}">${esc(o.label)} <b>${o.percent}%</b></span>`).join('')}</div>`;
+  const kb = LOOTBOXES.karambit ?? Object.values(LOOTBOXES).find((b) => b.jackpot);
+  const banner = !kb ? '' : `<section class="c-banner" aria-label="${esc(kb.name)}"><div class="c-bt">
+    <span class="c-kick">LIMITED — SPECIAL BOX</span><span class="c-bh">Karambit<br>Special Box</span><span class="c-bk">${esc(kb.name)}</span>
+    <span class="c-bd">${esc(kb.desc ?? '')}. 이미 보유한 스킨이 나오면 크레딧으로 환급됩니다${kb.jackpot ? ` (카람빗 ◈ ${fmt(kb.jackpot.refund)})` : ''}.</span>
+    <div class="c-price c-price-lg"><span class="c-gem"></span>${fmt(kb.price)}</div>
+    <div class="c-bact"><button type="button" class="c-btn c-fill c-btn-lg" data-box="${kb.id}">박스 개봉</button><button type="button" class="c-btn c-ghostb c-btn-lg" data-odds>${oddsOpen ? '확률 닫기' : '확률 공개'}</button></div>
+    ${oddsOpen ? odds(kb.id) : ''}</div><div class="c-bv"><div class="c-disc2"></div><div class="c-disc"></div>${KAR_SVG}</div></section>`;
+  const boxes = Object.values(LOOTBOXES).filter((b) => b.id !== kb?.id).map((b) => `<div class="c-card"><div class="c-body"><span class="c-badge" style="color:#fdcb6e">Random Box</span><span class="c-cn2">${esc(b.name)}</span>${odds(b.id)}<span class="c-cw">중복 획득 시 크레딧으로 환급됩니다.</span><div class="c-row"><span class="c-price"><span class="c-gem"></span>${fmt(b.price)}</span><span class="c-acts">${b.id === 'standard' ? `<button type="button" class="c-btn c-ghostb" data-box="${b.id}" data-owned="1" ${p.lootboxes < 1 ? 'disabled' : ''}>보유 ${p.lootboxes}</button>` : ''}<button type="button" class="c-btn" data-box="${b.id}">개봉</button></span></div></div></div>`).join('');
+  const fb = FEATURED_BANNER;
+  return `${banner}
+  <div class="c-sect"><span class="c-h1">Store</span><span class="c-h2">오늘의 상점 · 매일 자정(KST) 갱신${fb ? ` · 신규 ${esc(fb.title)} 컬렉션` : ''}</span></div>
+  ${rarityChips(items.map((d) => d.s))}
+  ${shown.length ? `<div class="c-grid">${shown.map(card).join('')}</div>` : `<div class="c-empty">${items.length ? '이 등급의 스킨이 없습니다.' : '상점 정보를 불러오지 못했습니다.'}</div>`}
+  ${boxes ? `<div class="c-sect c-sect2"><span class="c-h1">Boxes</span><span class="c-h2">랜덤 박스</span></div><div class="c-grid c-grid3">${boxes}</div>` : ''}`;
+}
+
+// ───────────────────────────── 04 CAREER ─────────────────────────────
+let careerSub: 'matches' | 'missions' | 'achievements' = 'matches';
+async function loadHistory(): Promise<void> { history = (await guard(() => fetchMatchHistory(20))) ?? []; if (lobbyTab === 'stats') renderLobby(); }
+function htmlCareer(): string {
+  const s = bundle?.stats;
+  const tiles = [['K / D', String(s?.kd ?? 0)], ['Headshot', `${s?.hs_pct ?? 0}%`], ['Win Rate', `${s?.win_rate ?? 0}%`], ['Matches', fmt(s?.matches ?? 0)]].map(([l, v]) => `<div class="c-tile"><div class="c-tl">${l}</div><div class="c-tv">${v}</div></div>`).join('');
+  const subs = ([['matches', '최근 경기'], ['missions', '미션 · 출석'], ['achievements', '업적 · 칭호']] as const).map(([k, n]) => `<button type="button" class="c-chip${careerSub === k ? ' c-on' : ''}" data-csub="${k}">${n}</button>`).join('');
+  let body = '';
+  if (careerSub === 'matches') {
+    const RES = { win: ['승리', 'c-win'], loss: ['패배', 'c-loss'], draw: ['무승부', 'c-loss'], left: ['이탈', 'c-loss'] } as const;
+    const rows = history.map((m) => `<tr><td>${esc(MODES[m.mode as GameMode]?.name ?? m.mode)} ${m.team_size}v${m.team_size}</td><td class="c-n">${esc(m.map.toUpperCase())}</td><td><span class="${RES[m.result][1]}">${RES[m.result][0]}</span></td><td class="c-n">${m.kills} / ${m.deaths} / ${m.assists}</td><td class="c-n">${m.rp_delta ? (m.rp_delta > 0 ? '+' : '') + m.rp_delta : '—'}</td><td class="c-n">${fmt(m.credits_earned)}</td></tr>`).join('');
+    body = `<div class="c-tblw"><table class="c-tbl"><thead><tr><th>Mode</th><th>Map</th><th>Result</th><th>K / D / A</th><th>RP</th><th>Credits</th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="c-loss">기록이 없습니다.</td></tr>'}</tbody></table></div>`;
+  } else if (careerSub === 'missions') {
+    const p = getProfile()!, today = ((Math.max(1, p.login_streak) - 1) % 7) + 1;
+    const days = (bundle?.loginRewards ?? []).map((r) => `<div class="c-day${r.day < today ? ' c-done' : r.day === today ? ' c-today' : ''}"><span class="c-tl">DAY ${r.day}</span><b>${r.reward_type === 'credits' ? `◈ ${r.reward_amount}` : `BOX ×${r.reward_amount}`}</b></div>`).join('');
+    const ms = (bundle?.missions ?? []).map((m) => { const done = m.progress >= m.target; return `<div class="c-card"><div class="c-body"><span class="c-cn2">${esc(m.description)}</span><span class="c-cw">${m.reward_type === 'credits' ? `◈ ${m.reward_amount}` : `랜덤박스 ×${m.reward_amount}`}</span><div class="c-bar"><i style="width:${Math.min(100, (m.progress / m.target) * 100)}%"></i></div><div class="c-row"><span class="c-cw c-mono">${m.progress} / ${m.target}</span>${m.claimed ? '<span class="c-own">수령 완료</span>' : `<button type="button" class="c-btn${done ? ' c-fill' : ''}" data-claim="${m.slot}" ${done ? '' : 'disabled'}>보상 받기</button>`}</div></div></div>`; }).join('');
+    body = `<div class="c-ph c-ph2"><span class="c-h1">7-Day Login</span><span class="c-h2">현재 ${p.login_streak}일 연속</span></div><div class="c-days">${days}</div>
+      <div class="c-ph c-ph2"><span class="c-h1">Daily Missions</span><span class="c-h2">일일 미션</span></div>${ms ? `<div class="c-grid c-grid3">${ms}</div>` : '<div class="c-empty">미션이 없습니다.</div>'}`;
+  } else {
+    const p = getProfile()!;
+    const rows = (bundle?.achievements ?? []).map((a) => {
+      const v = Math.min(achValue(a.stat_key), a.threshold), eq = p.equipped_title === a.achievement_id;
+      return `<div class="c-card${eq ? ' c-eq' : ''}${a.unlocked ? '' : ' c-locked'}">${eq ? '<span class="c-eqtag">TITLE</span>' : ''}<div class="c-body"><span class="c-badge" style="color:${a.unlocked ? '#fdcb6e' : '#5b574f'}">${a.unlocked ? 'Unlocked' : 'Locked'}</span><span class="c-cn2">${esc(a.name)}</span><span class="c-cw">${esc(a.description)}</span><div class="c-bar"><i style="width:${a.unlocked ? 100 : (v / a.threshold) * 100}%"></i></div><div class="c-row"><span class="c-cw">${a.title ? `칭호 「${esc(a.title)}」` : `◈ ${a.credit_reward}`}</span>${a.title && a.unlocked ? `<button type="button" class="c-btn${eq ? ' c-ghostb' : ''}" data-title="${eq ? '' : a.achievement_id}">${eq ? '해제' : '장착'}</button>` : ''}</div></div></div>`;
+    }).join('');
+    body = rows ? `<div class="c-grid c-grid3">${rows}</div>` : '<div class="c-empty">업적 정보를 불러오지 못했습니다.</div>';
+  }
+  return `<div class="c-sect"><span class="c-h1">Career</span><span class="c-h2">전적</span></div><div class="c-tiles">${tiles}</div><div class="c-chips">${subs}</div>${body}`;
 }
 function achValue(key: string): number {
   const s = bundle?.stats, p = getProfile()!;
   return ({ kills: s?.kills, wins: s?.wins, matches: s?.matches, headshot_kills: s?.headshot_kills, assists: s?.assists, peak_rp: p.peak_rank_points, login_streak: p.best_login_streak, skins_owned: bundle?.skins.length } as Record<string, number | undefined>)[key] ?? 0;
 }
-function htmlAchievements(): string {
-  const p = getProfile()!;
-  const rows = (bundle?.achievements ?? []).map((a) => {
-    const v = Math.min(achValue(a.stat_key), a.threshold), eq = p.equipped_title === a.achievement_id;
-    return `<div class="card col" style="${a.unlocked ? '' : 'opacity:.7'}"><div class="row"><b>${a.unlocked ? '🏆' : '🔒'} ${esc(a.name)}</b><span class="right mut">◈ ${a.credit_reward}</span></div><div class="mut">${esc(a.description)}</div><div class="bar"><i style="width:${a.unlocked ? 100 : (v / a.threshold) * 100}%"></i></div><div class="row"><span class="mut">${a.title ? `칭호 「${esc(a.title)}」` : ''}</span>${a.title && a.unlocked ? `<button class="sm right ${eq ? 'on' : ''}" data-title="${eq ? '' : a.achievement_id}">${eq ? '장착 해제' : '칭호 장착'}</button>` : ''}</div></div>`;
-  }).join('');
-  return `<h2>업적 · 칭호</h2><div class="grid wide">${rows}</div>`;
-}
-async function loadHistory(): Promise<void> { history = (await guard(() => fetchMatchHistory(20))) ?? []; if (lobbyTab === 'stats') renderLobby(); }
-function htmlStats(): string {
-  const s = bundle?.stats;
-  const rows = history.map((m) => `<tr><td>${MODES[m.mode as GameMode]?.name ?? m.mode}</td><td>${m.map.toUpperCase()} ${m.team_size}v${m.team_size}</td><td style="color:${m.result === 'win' ? 'var(--ok)' : m.result === 'draw' ? 'var(--mut)' : 'var(--acc)'}">${{ win: '승리', loss: '패배', draw: '무승부', left: '이탈' }[m.result]}</td><td>${m.kills}/${m.deaths}/${m.assists}</td><td>${m.rp_delta ? (m.rp_delta > 0 ? '+' : '') + m.rp_delta : '-'}</td><td>◈ ${m.credits_earned}</td></tr>`).join('');
-  return `<h2>통산 전적</h2><div class="grid"><div class="stat"><span class="mut">K / D / A</span><b>${s?.kills ?? 0} / ${s?.deaths ?? 0} / ${s?.assists ?? 0}</b></div><div class="stat"><span class="mut">K/D</span><b>${s?.kd ?? 0}</b></div><div class="stat"><span class="mut">HS%</span><b>${s?.hs_pct ?? 0}%</b></div><div class="stat"><span class="mut">승률</span><b>${s?.win_rate ?? 0}%</b><span class="mut">${s?.wins ?? 0}승 ${s?.losses ?? 0}패</span></div></div>
-  <h2>최근 경기</h2><div class="card"><table><tr><th>모드</th><th>맵</th><th>결과</th><th>K/D/A</th><th>RP</th><th>크레딧</th></tr>${rows || '<tr><td colspan="6" class="mut">기록이 없습니다.</td></tr>'}</table></div>`;
-}
+
+// ───────────────────────────── 로비 이벤트 바인딩 ─────────────────────────────
 function bindLobbyBody(): void {
-  const body = $('lobby-body'), each = (sel: string, fn: (el: HTMLElement) => void): void => body.querySelectorAll<HTMLElement>(sel).forEach(fn);
-  each('[data-goto]', (b) => (b.onclick = () => { lobbyTab = b.dataset.goto as typeof lobbyTab; renderLobby(); }));
-  each('[data-quick]', (b) => (b.onclick = () => { const m = b.dataset.quick as GameMode; void startQueue(m, m === 'tdm' ? 3 : 1); }));
+  const body = $('lb-body'), each = (sel: string, fn: (el: HTMLElement) => void): void => body.querySelectorAll<HTMLElement>(sel).forEach(fn);
+  each('[data-mode]', (b) => (b.onclick = () => { play.mode = b.dataset.mode as GameMode; renderLobby(); }));
+  each('[data-size]', (b) => (b.onclick = () => { play.size = +b.dataset.size!; renderLobby(); }));
+  each('[data-map]', (b) => (b.onclick = () => { play.map = b.dataset.map as typeof play.map; renderLobby(); }));
+  each('#c-play', (b) => (b.onclick = async () => {
+    if (matching) return;
+    matching = true; renderLobby();
+    try { await startQueue(play.mode, play.mode === 'range' ? 1 : play.size, play.mode === 'range' ? undefined : play.map || undefined); }
+    finally { matching = false; if (view === 'lobby') renderLobby(); }
+  }));
+  each('[data-friends]', (b) => (b.onclick = () => void openFriends()));
+  each('[data-priv]', (b) => (b.onclick = () => { if (play.mode !== 'classic' && play.mode !== 'tdm') play.mode = 'classic'; renderPlay(); show('m-play'); }));
+  each('[data-inv-join]', (b) => (b.onclick = () => void joinInvite(b.dataset.invJoin!)));
+  each('[data-inv-x]', (b) => (b.onclick = () => { dropInvite(b.dataset.invX!); renderLobby(); }));
+  each('[data-goslot]', (b) => (b.onclick = () => { ldSlot = b.dataset.goslot as LdSlot; goTab('loadout'); }));
+  each('[data-ldslot]', (b) => (b.onclick = () => { ldSlot = b.dataset.ldslot as LdSlot; rarity = 'all'; renderLobby(); }));
+  each('[data-ldw]', (b) => (b.onclick = () => {
+    const k = ldSlot as SlotKey, l = { ...getProfile()!.loadout, [k]: b.dataset.ldw } as Loadout;
+    needReconnect = true; void saveLoadout(l).then(() => renderLobby());
+  }));
+  each('[data-rar]', (b) => (b.onclick = () => { rarity = b.dataset.rar as typeof rarity; renderLobby(); }));
+  each('[data-csub]', (b) => (b.onclick = () => { careerSub = b.dataset.csub as typeof careerSub; renderLobby(); }));
+  each('[data-odds]', (b) => (b.onclick = () => { oddsOpen = !oddsOpen; renderLobby(); }));
   each('[data-buy]', (b) => (b.onclick = async () => {
     const s = getSkin(b.dataset.buy); if (!s || !confirm(`${s.name} 을(를) 구매할까요?`)) return;
     if (await guard(() => buySkin(s.id))) { toast('구매 완료!', 'good'); await loadBundle(); }
   }));
   each('[data-box]', (b) => (b.onclick = () => void runGacha(b.dataset.box!, !!b.dataset.owned)));
-  each('[data-invw]', (b) => (b.onclick = () => { invWeapon = b.dataset.invw!; pvInv = null; renderLobby(); }));
-  each('[data-pv]', (c) => (c.onclick = (e) => { // 카드 클릭 → 3D 미리보기 (카드 안의 버튼 클릭은 제외)
-    if ((e.target as HTMLElement).closest('button')) return;
-    if (lobbyTab === 'shop') pvShop = c.dataset.pv || null; else pvInv = c.dataset.pv ?? null;
-    renderLobby();
-  }));
-  each('[data-skslot]', (b) => (b.onclick = () => { skillSlot = b.dataset.skslot as 'q' | 'e' | 'x'; renderLobby(); }));
   each('[data-skpick]', (b) => (b.onclick = () => { // 장착: 일반 스킬은 Q/E 중복 불가(자동 교체), 즉시 저장 + 다음 매치 진입 시 서버로 전달
-    const id = b.dataset.skpick!, l = { ...getProfile()!.loadout };
-    if (skillSlot === 'x') l.x = id as UltId;
-    else { const other = skillSlot === 'q' ? 'e' : 'q'; if (l[other] === id) l[other] = l[skillSlot]; l[skillSlot] = id as SkillId; }
+    const id = b.dataset.skpick!, l = { ...getProfile()!.loadout }, k = ldSlot as 'q' | 'e' | 'x';
+    if (k === 'x') l.x = id as UltId;
+    else { const other = k === 'q' ? 'e' : 'q'; if (l[other] === id) l[other] = l[k]; l[k] = id as SkillId; }
     needReconnect = true; void saveLoadout(l).then(() => renderLobby());
   }));
   each('[data-equip]', (b) => (b.onclick = async () => {
-    const id = b.dataset.equip || null;
-    try { await equipSkin(invWeapon, id); bundle?.skins.forEach((s) => { if (s.weapon_id === invWeapon) s.equipped = s.skin_id === id; }); pvInv = id ? resolveSkinId(id) : ''; net.refreshProfile(); needReconnect = true; renderLobby(); } catch (e) { toast(errMsg(e), 'bad'); }
+    const id = b.dataset.equip || null, w = getProfile()!.loadout[ldSlot as SlotKey];
+    try { await equipSkin(w, id); bundle?.skins.forEach((s) => { if (s.weapon_id === w) s.equipped = s.skin_id === id; }); net.refreshProfile(); needReconnect = true; renderLobby(); } catch (e) { toast(errMsg(e), 'bad'); }
   }));
   each('[data-claim]', (b) => (b.onclick = async () => { const r = await guard(() => claimMission(+b.dataset.claim!)); if (r) { toast(r.reward_type === 'credits' ? `◈ ${r.reward_amount} 획득` : '랜덤박스 획득', 'good'); await loadBundle(); } }));
   each('[data-title]', (b) => (b.onclick = async () => { try { await equipTitle(b.dataset.title || null); needReconnect = true; renderLobby(); } catch (e) { toast(errMsg(e), 'bad'); } }));
 }
+
+// ───────────────────────────── 친구 · 파티 초대 ─────────────────────────────
+// 친구 관계는 Supabase(friendships + RPC), 접속 상태·초대는 Supabase Realtime(presence / broadcast).
+// 초대 = 사설 방(4자리 코드)을 만들고 친구에게 코드를 보낸다. 수신 측은 친구 목록에 있는 상대의 초대만 표시한다.
+let friends: FriendRow[] = [];
+let onlineIds = new Set<string>();
+const invites: PartyInvite[] = [];
+let socialFor: string | null = null;
+const INVITE_TTL = 10 * 60_000;
+const friendsPendingIn = (): number => friends.filter((f) => f.status === 'pending' && !f.outgoing).length;
+const liveInvites = (): PartyInvite[] => invites.filter((v) => Date.now() - v.at < INVITE_TTL);
+function dropInvite(from: string): void { const i = invites.findIndex((v) => v.from === from); if (i >= 0) invites.splice(i, 1); }
+async function loadFriends(): Promise<void> {
+  const p = getProfile(); if (!p || p.isGuest || !isSupabaseConfigured) { friends = []; return; }
+  try { friends = await fetchFriends(); } catch { /* 스키마 미적용 등: 조용히 무시 */ }
+}
+function syncSocial(): void {
+  const p = getProfile();
+  if (!p || p.isGuest) { if (socialFor) { stopSocial(); socialFor = null; } friends = []; return; }
+  if (socialFor !== p.id) {
+    socialFor = p.id;
+    startSocial((ids) => { onlineIds = ids; if (visible('m-friends')) renderFriends(); }, (inv) => void onInvite(inv));
+  }
+  void loadFriends().then(() => { if (view === 'lobby') renderTop(); });
+}
+async function onInvite(inv: PartyInvite): Promise<void> {
+  if (!friends.some((f) => f.friend_id === inv.from && f.status === 'accepted')) await loadFriends();
+  if (!friends.some((f) => f.friend_id === inv.from && f.status === 'accepted')) return; // 친구가 아닌 상대의 초대는 무시
+  dropInvite(inv.from); invites.unshift(inv); if (invites.length > 5) invites.length = 5;
+  toast(`${inv.nickname} 님이 파티에 초대했습니다 · 방 코드 ${inv.code}`, 'good');
+  if (view === 'lobby' && lobbyTab === 'play') renderLobby();
+  if (visible('m-friends')) renderFriends();
+}
+function invitesHtml(): string {
+  const list = liveInvites(); if (!list.length) return '';
+  return `<div class="c-invs">${list.map((v) => `<div class="c-inv"><span><b>${esc(v.nickname)}</b> 님의 초대<small class="c-mono">#${esc(v.code)}</small></span><span class="c-acts"><button type="button" class="c-btn c-fill" data-inv-join="${esc(v.code)}">참가</button><button type="button" class="c-btn c-ghostb" data-inv-x="${esc(v.from)}">거절</button></span></div>`).join('')}</div>`;
+}
+async function joinInvite(code: string): Promise<void> {
+  if (view === 'game') return;
+  if (!(await ensureConnected())) return;
+  if (net.room) await net.leaveRoom();
+  const r = await net.joinRoom(code);
+  const v = invites.find((x) => x.code === code); if (v) dropInvite(v.from);
+  if (!r.ok) { toast(ackMsg(r.error), 'bad'); if (view === 'lobby') renderLobby(); } else show('m-friends', false);
+}
+async function inviteFriend(f: FriendRow): Promise<void> {
+  if (view === 'game') return;
+  if (!(await ensureConnected())) return;
+  if (!net.room) {
+    const mode = play.mode === 'tdm' ? 'tdm' : 'classic';
+    const r = await net.createRoom({ mode, teamSize: Math.max(2, play.size), map: play.map || 'arena', fillBots: play.fillBots, botLevel: tierLevel(getProfile()?.rank_points ?? 0) });
+    if (!r.ok) { toast(ackMsg(r.error), 'bad'); return; }
+    for (let i = 0; i < 20 && !net.room; i++) await new Promise((res) => setTimeout(res, 100));
+  }
+  const room = net.room; if (!room?.code) { toast('방 코드를 받지 못했습니다. 사설 방에서 다시 시도해 주세요.', 'bad'); return; }
+  try { await sendPartyInvite(f.friend_id, room.code, room.mode); toast(`${f.nickname} 님에게 초대를 보냈습니다.`, 'good'); }
+  catch (e) { toast(errMsg(e), 'bad'); }
+}
+async function openFriends(): Promise<void> { show('lb-menu', false); renderFriends(); show('m-friends'); await loadFriends(); renderFriends(); renderTop(); }
+function renderFriends(): void {
+  const p = getProfile(), body = $('fr-body');
+  if (!p || p.isGuest) { body.innerHTML = '<div class="fr-empty">친구 기능은 로그인 후 이용할 수 있습니다.</div>'; return; }
+  const on = (f: FriendRow): boolean => onlineIds.has(f.friend_id);
+  const acc = friends.filter((f) => f.status === 'accepted').sort((a, b) => (+on(b) - +on(a)) || a.nickname.localeCompare(b.nickname, 'ko'));
+  const inc = friends.filter((f) => f.status === 'pending' && !f.outgoing), out = friends.filter((f) => f.status === 'pending' && f.outgoing);
+  const canInvite = view === 'lobby' || view === 'room';
+  const row = (f: FriendRow, acts: string): string => `<div class="fr-row"><span class="fr-dot${f.status === 'accepted' && on(f) ? ' on' : ''}"></span><div class="fr-ava">${esc(initial(f.nickname))}</div><div class="fr-who"><b>${esc(f.nickname)}</b><small>${esc(tierInfo(tierLevel(f.rank_points)).labelKo)} · ${fmt(f.rank_points)} RP${f.status === 'accepted' ? (on(f) ? ' · 온라인' : ' · 오프라인') : ''}</small></div><div class="fr-act">${acts}</div></div>`;
+  const sec = (en: string, ko: string, n: number, html: string): string => `<div class="fr-h"><span>${en}</span><small>${ko}${n ? ` · ${n}` : ''}</small></div>${html}`;
+  const inv = liveInvites();
+  body.innerHTML = `<div class="fr-add"><input id="fr-nick" maxlength="16" placeholder="닉네임으로 친구 추가" autocomplete="off" /><button class="pri" id="fr-send">요청 보내기</button></div><div class="err" id="fr-err"></div>
+  ${inv.length ? sec('Invites', '파티 초대', inv.length, inv.map((v) => `<div class="fr-row"><span class="fr-dot on"></span><div class="fr-ava">${esc(initial(v.nickname))}</div><div class="fr-who"><b>${esc(v.nickname)}</b><small>방 코드 ${esc(v.code)}</small></div><div class="fr-act"><button class="sm pri" data-fr-join="${esc(v.code)}">참가</button></div></div>`).join('')) : ''}
+  ${inc.length ? sec('Requests', '받은 요청', inc.length, inc.map((f) => row(f, `<button class="sm pri" data-fr-acc="${f.id}">수락</button><button class="sm" data-fr-dec="${f.id}">거절</button>`)).join('')) : ''}
+  ${sec('Friends', '친구', acc.length, acc.map((f) => row(f, `${canInvite ? `<button class="sm" data-fr-inv="${f.id}" ${on(f) ? '' : 'disabled title="오프라인"'}>초대</button>` : ''}<button class="sm ghost" data-fr-del="${f.id}">삭제</button>`)).join('') || '<div class="fr-empty">아직 친구가 없습니다. 닉네임으로 요청을 보내 보세요.</div>')}
+  ${out.length ? sec('Sent', '보낸 요청', out.length, out.map((f) => row(f, `<button class="sm ghost" data-fr-del="${f.id}">취소</button>`)).join('')) : ''}`;
+  const find = (id?: string): FriendRow | undefined => friends.find((f) => f.id === Number(id));
+  const refresh = async (): Promise<void> => { await loadFriends(); renderFriends(); renderTop(); if (view === 'lobby' && lobbyTab === 'play') renderLobby(); };
+  const send = async (): Promise<void> => {
+    const v = $<HTMLInputElement>('fr-nick').value.trim(); $('fr-err').textContent = '';
+    if (!v) return;
+    try { const r = await sendFriendRequest(v); toast(r.status === 'accepted' ? `${v} 님과 친구가 되었습니다.` : `${v} 님에게 친구 요청을 보냈습니다.`, 'good'); await refresh(); }
+    catch (e) { $('fr-err').textContent = errMsg(e); }
+  };
+  $('fr-send').onclick = () => void send();
+  $('fr-nick').addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter' && !(e as KeyboardEvent).isComposing) void send(); });
+  body.querySelectorAll<HTMLElement>('[data-fr-acc]').forEach((b) => (b.onclick = async () => { if (await guard(() => respondFriendRequest(+b.dataset.frAcc!, true)) !== null) await refresh(); }));
+  body.querySelectorAll<HTMLElement>('[data-fr-dec]').forEach((b) => (b.onclick = async () => { if (await guard(() => respondFriendRequest(+b.dataset.frDec!, false)) !== null) await refresh(); }));
+  body.querySelectorAll<HTMLElement>('[data-fr-del]').forEach((b) => (b.onclick = async () => {
+    const f = find(b.dataset.frDel); if (!f) return;
+    if (f.status === 'accepted' && !confirm(`${f.nickname} 님을 친구 목록에서 삭제할까요?`)) return;
+    if (await guard(() => removeFriend(f.id)) !== null) await refresh();
+  }));
+  body.querySelectorAll<HTMLElement>('[data-fr-inv]').forEach((b) => (b.onclick = () => { const f = find(b.dataset.frInv); if (f) void inviteFriend(f); }));
+  body.querySelectorAll<HTMLElement>('[data-fr-join]').forEach((b) => (b.onclick = () => void joinInvite(b.dataset.frJoin!)));
+}
+setInterval(() => { // 받은 친구 요청 표시를 위해 로비에 있는 동안 주기적으로 갱신
+  const p = getProfile(); if (view !== 'lobby' || !p || p.isGuest) return;
+  void loadFriends().then(() => { renderTop(); if (visible('m-friends')) renderFriends(); });
+}, 45_000);
 /** 스킨/칭호/닉네임 변경 후에는 다음 매치 전에 소켓을 다시 맺어 서버 프로필을 갱신 */
 let needReconnect = false;
 
@@ -373,7 +584,6 @@ $('nick-ok').onclick = async () => {
 
 // ───────────────────────────── 플레이 모달 / 매칭 / 사설 방 ─────────────────────────────
 const play = { mode: 'classic' as GameMode, size: 1, map: '' as '' | 'grid' | 'arena', fillBots: true, botLevel: 6 };
-$('btn-play').onclick = () => { renderPlay(); show('m-play'); };
 function renderPlay(): void {
   const m = MODES[play.mode]; if (!m.teamSizes.includes(play.size)) play.size = m.teamSizes[0];
   const modes = (Object.keys(MODES) as GameMode[]).map((k) => `<div class="mode ${k === play.mode ? 'on' : ''}" data-mode="${k}"><b>${MODES[k].name}</b>${MODES[k].badge ? `<span class="badge">${MODES[k].badge}</span>` : ''}<small>${MODES[k].desc}</small></div>`).join('');
@@ -425,11 +635,12 @@ function renderRoom(): void {
   const room = net.room; if (!room || view !== 'room') return;
   const host = room.hostId === net.you, me = net.me;
   const col = (t: number): string => { const list = room.players.filter((p) => p.team === t); return `<div class="card grow"><h3 style="color:${t === 0 ? 'var(--ally)' : 'var(--enemy)'}">${t === 0 ? 'A 팀' : 'B 팀'} (${list.length}/${room.teamSize})</h3>${list.map((p) => `<div class="row" style="padding:4px 0">${p.id === room.hostId ? '👑' : ''}<b>${esc(p.name)}</b><span class="mut">${tierInfo(p.tier).labelKo}</span></div>`).join('') || '<div class="mut">비어 있음</div>'}${me && me.team !== t ? `<button class="sm" style="margin-top:8px" data-team="${t}">이 팀으로</button>` : ''}</div>`; };
-  $('room-body').innerHTML = `<div class="card col"><div class="row"><h3 style="font-size:20px">사설 방</h3><span class="chip" style="font-size:18px;letter-spacing:4px">코드 ${esc(room.code)}</span><button class="right ghost" id="room-leave">나가기</button></div>
+  $('room-body').innerHTML = `<div class="card col"><div class="row"><h3 style="font-size:20px">사설 방</h3><span class="chip" style="font-size:18px;letter-spacing:4px">코드 ${esc(room.code)}</span><button class="right" id="room-invite">친구 초대</button><button class="ghost" id="room-leave">나가기</button></div>
     <div class="row" style="flex-wrap:wrap"><span class="chip">${MODES[room.mode].name}</span><span class="chip">${room.teamSize}v${room.teamSize}</span><span class="chip">${room.mapId.toUpperCase()}</span><span class="chip">봇 채우기 ${room.fillBots ? 'ON' : 'OFF'}</span><span class="chip">봇 난이도 ${tierInfo(room.botLevel).labelKo}</span></div>
     ${host ? `<div class="row" style="flex-wrap:wrap"><select id="rc-mode"><option value="classic">클래식</option><option value="tdm">팀 데스매치</option></select><select id="rc-map"><option value="arena">ARENA</option><option value="grid">GRID</option></select><select id="rc-size">${[1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}">${n}v${n}</option>`).join('')}</select><select id="rc-bot">${Array.from({ length: 20 }, (_, i) => `<option value="${i}">${tierInfo(i).labelKo}</option>`).join('')}</select><label class="row"><input type="checkbox" id="rc-fill" ${room.fillBots ? 'checked' : ''}/> 봇 채우기</label></div>` : '<div class="mut">방장이 게임을 시작하기를 기다리는 중…</div>'}
     <div class="row" style="align-items:stretch">${col(0)}${col(1)}</div>${host ? '<button class="pri" id="room-start">게임 시작</button>' : ''}</div>`;
   $('room-leave').onclick = () => { void net.leaveRoom(); void enterLobby(); };
+  $('room-invite').onclick = () => void openFriends();
   $('room-body').querySelectorAll<HTMLElement>('[data-team]').forEach((b) => (b.onclick = async () => { const r = await net.setTeam(+b.dataset.team! as 0 | 1); if (!r.ok) toast(ackMsg(r.error), 'bad'); }));
   if (host) {
     const sel = (id: string, v: string | number): HTMLSelectElement => { const e = $<HTMLSelectElement>(id); e.value = String(v); return e; };
@@ -853,7 +1064,7 @@ function autoFireTick(): void {
 // ───────────────────────────── 설정창 ─────────────────────────────
 type SetTab = 'sens' | 'xhair' | 'keys' | 'gfx' | 'etc';
 let setTab: SetTab = 'sens', waitingBind: { action: Action; index: 0 | 1 } | null = null;
-$('btn-settings').onclick = () => openSettings();
+$('btn-settings').onclick = () => { if (view === 'lobby') goTab('settings'); else openSettings(); };
 
 // ───────────────────────────── 고객센터 / 개발자 모드 ─────────────────────────────
 interface Ticket { id: number; message: string; status: 'open' | 'done'; created_at: string; user_id?: string; nickname?: string }
@@ -1002,6 +1213,7 @@ function renderAdminAccount(): void {
   draw();
 }
 function openSettings(): void { show('m-pause', false); if (document.pointerLockElement) document.exitPointerLock(); renderSettings(); show('m-settings'); }
+const SET_EN: Record<SetTab, string> = { sens: 'Sensitivity', xhair: 'Crosshair', keys: 'Keybinds', gfx: 'Graphics', etc: 'Mobile · Audio' };
 const SET_TABS: [SetTab, string][] = [['sens', '감도 · FOV'], ['xhair', '조준선'], ['keys', '키 설정'], ['gfx', '그래픽'], ['etc', '모바일 · 사운드']];
 
 function sliderRow(label: string, min: number, max: number, step: number, get: (s: Settings) => number, set: (s: Settings, v: number) => void, unit = ''): HTMLElement {
@@ -1034,9 +1246,14 @@ function afterSettingChange(): void {
   if (sensInfo) { const s = getSettings().sens.valorant; sensInfo.innerHTML = `Yaw = Sens × ${VALORANT_YAW_DEG}° → 1카운트당 <b>${(s * VALORANT_YAW_DEG).toFixed(4)}°</b> · 800 DPI 기준 <b>${cmPer360(s, 800).toFixed(1)} cm/360°</b> (eDPI ${Math.round(s * 800)})`; }
 }
 function renderSettings(): void {
-  $('set-tabs').innerHTML = SET_TABS.map(([k, n]) => `<button class="${k === setTab ? 'on' : ''}" data-st="${k}">${n}</button>`).join('');
-  $('set-tabs').querySelectorAll<HTMLElement>('button').forEach((b) => (b.onclick = () => { setTab = b.dataset.st as SetTab; waitingBind = null; renderSettings(); }));
-  const body = $('set-body'); body.innerHTML = ''; xhPreviewDraw = null; sensInfo = null;
+  // 로비의 SETTINGS 탭이 열려 있으면 그 자리에, 아니면(인게임 일시 메뉴) 설정 모달에 그린다
+  const lobbyHost = view === 'lobby' && lobbyTab === 'settings' && !!document.getElementById('lb-set-body');
+  const tabsEl = $(lobbyHost ? 'lb-set-tabs' : 'set-tabs');
+  tabsEl.innerHTML = SET_TABS.map(([k, n], i) => lobbyHost
+    ? `<button type="button" class="c-stab${k === setTab ? ' c-on' : ''}" data-st="${k}"><span class="c-ti">0${i + 1}</span>${SET_EN[k]}<span class="c-t2">${n}</span></button>`
+    : `<button class="${k === setTab ? 'on' : ''}" data-st="${k}">${n}</button>`).join('');
+  tabsEl.querySelectorAll<HTMLElement>('button').forEach((b) => (b.onclick = () => { setTab = b.dataset.st as SetTab; waitingBind = null; renderSettings(); }));
+  const body = $(lobbyHost ? 'lb-set-body' : 'set-body'); body.innerHTML = ''; xhPreviewDraw = null; sensInfo = null;
   const L = SETTINGS_LIMITS, add = (...els: HTMLElement[]): void => { for (const e of els) body.appendChild(e); };
   const note = (html: string): HTMLElement => { const d = document.createElement('div'); d.className = 'mut'; d.style.cssText = 'font-size:13px;margin:6px 0 10px'; d.innerHTML = html; return d; };
   const head = (t: string): HTMLElement => { const d = document.createElement('h3'); d.style.marginTop = '14px'; d.textContent = t; return d; };
@@ -1081,9 +1298,9 @@ function renderSettings(): void {
     xhPreviewDraw();
   } else if (setTab === 'keys') {
     add(note('칸을 클릭한 뒤 키·마우스 버튼·휠을 입력하세요. 모든 동작에 <b>주 키 + 보조 키</b> 2개까지 지정됩니다. (우클릭 = 해제)'));
-    const hd = document.createElement('div'); hd.className = 'kb mut'; hd.innerHTML = '<span>동작</span><span>주 키</span><span>보조 키</span>'; add(hd);
+    const hd = document.createElement('div'); hd.className = 'kbrow mut'; hd.innerHTML = '<span>동작</span><span>주 키</span><span>보조 키</span>'; add(hd);
     for (const a of ACTIONS) {
-      const row = document.createElement('div'); row.className = 'kb'; const pair = getSettings().keybinds[a];
+      const row = document.createElement('div'); row.className = 'kbrow'; const pair = getSettings().keybinds[a];
       row.innerHTML = `<span>${ACTION_LABELS[a]}</span>` + [0, 1].map((i) => { const w = waitingBind?.action === a && waitingBind.index === i; return `<button class="sm ${w ? 'wait' : ''}" data-i="${i}">${w ? '입력 대기…' : bindLabel(pair[i])}</button>`; }).join('');
       row.querySelectorAll<HTMLElement>('button').forEach((b) => {
         const idx = +b.dataset.i! as 0 | 1;
@@ -1118,7 +1335,7 @@ function renderSettings(): void {
 }
 // 키 바인딩 입력 캡처 (키보드 / 마우스 버튼 / 휠)
 function captureBind(e: KeyboardEvent | MouseEvent | WheelEvent): void {
-  if (!waitingBind || !visible('m-settings')) return;
+  if (!waitingBind || !(visible('m-settings') || (view === 'lobby' && lobbyTab === 'settings'))) return;
   e.preventDefault(); e.stopPropagation();
   const code = bindFromEvent(e), w = waitingBind; if (!code) return;
   waitingBind = null;

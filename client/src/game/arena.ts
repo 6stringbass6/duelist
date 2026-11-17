@@ -42,7 +42,7 @@ export class World {
       if (rise > 0 && rise <= MOVE.stepHeight) { const oy = p.y; p.y = top; if (this.hit(p, h)) p.y = oy; else b = null; }
     }
     if (b) {
-      p[ax] = v[ax] > 0 ? b[i] - r - 1e-3 : b[i + 3] + r + 1e-3;
+      p[ax] = v[ax] > 0 ? b[i] - r - 1e-3 : (b[i + 3] as number) + r + 1e-3;
       if (this.hit(p, h)) p[ax] = old;
       v[ax] = 0;
     }
