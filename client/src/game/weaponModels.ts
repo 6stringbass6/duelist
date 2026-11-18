@@ -56,16 +56,19 @@ const FILE_PARTS: Record<string, Record<string, PartDef>> = {
   },
 };
 
-/** 근접 무기 칼날 마스크 — 단일 병합 메시를 길이축(+X, rot 적용 후) 위치로 손잡이/칼날 삼각형 그룹으로 나눈다.
- *  from = 칼날 시작 위치(0=손잡이 끝 ~ 1=날끝, 실측 단면 프로파일 기준), handleOnly = 통째로 손잡이인 메시(예: 파라코드),
- *  blade/handle/wrap = 기본(스킨 미적용) 재질 — 생략 시 모델 내장 재질 유지. 스킨 적용 시 칼날에만 스킨 재질이 입혀진다. */
-interface BladeMask { from: number; handleOnly?: RegExp; blade?: PartDef; handle?: PartDef; wrap?: PartDef }
+/** 근접 무기 칼날 마스크 — 단일 병합 메시를 [손잡이(0), 칼날(1), 금속 파츠(2)] 삼각형 그룹으로 나눈다.
+ *  comps = 모델의 실제 위상(위치 용접 후 삼각형 연결 컴포넌트, 삼각형 수 내림차순 순위) 기준 칼날/금속 컴포넌트 → 파츠 경계가 모델링 그대로 떨어진다(우선 사용)
+ *  from = (comps 없는 모델용) 길이축 위치 절단(0=손잡이 끝 ~ 1=날끝), handleOnly = 통째로 손잡이인 메시(예: 파라코드),
+ *  blade/handle/metal/wrap = 기본(스킨 미적용) 재질 — 생략 시 모델 내장 재질 유지. 스킨 적용 시 칼날에만 스킨 재질, 금속 파츠·손잡이는 기본 유지. */
+interface BladeMask { from?: number; comps?: { blade: number[]; metal?: number[] }; handleOnly?: RegExp; blade?: PartDef; handle?: PartDef; metal?: PartDef; wrap?: PartDef }
+const KARAMBIT_STEEL: PartDef = { role: 'base', color: 0x687382, metalness: 0.88, roughness: 0.24 };
 const BLADE_MASKS: Record<string, BladeMask> = {
-  // CS2 바닐라 카람빗: 건메탈 탄소강 날 + 무광 차콜 폴리머 손잡이/핑거 링 (t≈0.63 에서 손잡이 두께 → 얇은 날로 급감)
+  // CS2 카람빗: 연결 컴포넌트 7개(측면 색상 진단 렌더로 확인) — #0 손잡이 몸체+볼스터, #1 핑거 링, #2 칼날, #3·4 그립 인서트, #5·6 볼스터 인서트
+  // → 칼날·핑거 링 = 스틸, 나머지 = 매트 차콜 폴리머. 칼날 경계 = 볼스터와 맞닿는 모델링 이음선 그대로
   'karambit.fbx': {
-    from: 0.62,
-    blade: { role: 'base', color: 0x2b3038, metalness: 0.85, roughness: 0.36 },
-    handle: { role: 'dark', color: 0x1a1c20, metalness: 0.15, roughness: 0.78 },
+    comps: { blade: [2], metal: [1] },
+    blade: KARAMBIT_STEEL, metal: KARAMBIT_STEEL,
+    handle: { role: 'dark', color: 0x15171a, metalness: 0.12, roughness: 0.82 },
   },
   // CS2 바닐라 스켈레톤: 내장 Fade 텍스처를 덮어쓰는 무광 다크 스틸 날 + 차콜 그레이 프레임/링, 파라코드(Plane001)는 통째로 손잡이
   'skeleton_knife.glb': {
@@ -101,33 +104,51 @@ const glassMat = new THREE.MeshStandardMaterial({ color: 0x88c8ff, roughness: 0.
 
 /** GLB/own 모델의 평면 UV — userData 는 clone() 시 JSON 직렬화되어 Float32Array 가 깨지므로(→ 렌더 예외) 지오메트리 키로 따로 보관 */
 const planarUvs = new WeakMap<THREE.BufferGeometry, Float32Array>();
-/** 칼날 마스크로 분할된 지오메트리 → 칼날 정점 플래그 (스킨 시 칼날 정점만 평면 UV, 손잡이는 원본 UV 유지) */
+/** 칼날 마스크로 분할된 지오메트리 → 정점별 그룹 번호 (스킨 시 칼날(1) 정점만 평면 UV, 나머지는 원본 UV 유지) */
 const bladeVerts = new WeakMap<THREE.BufferGeometry, Uint8Array>();
 
-/** 삼각형 무게중심(root 공간 x/y)이 test 를 만족하면 그룹 1, 아니면 그룹 0 이 되도록 인덱스를 재정렬 (material → [m, m]). 반환 = 그룹 1 정점 플래그 */
-function splitTris(me: THREE.Mesh, test: (x: number, y: number) => boolean): Uint8Array {
+const triVerts = (src: ArrayLike<number> | null, t: number): [number, number, number] => (src ? [src[t * 3], src[t * 3 + 1], src[t * 3 + 2]] : [t * 3, t * 3 + 1, t * 3 + 2]);
+
+/** 삼각형마다 cls(삼각형 번호, root 공간 무게중심 x/y) 가 돌려준 그룹(0..)으로 인덱스를 재정렬 (material → 그룹 수만큼 복제, 최소 2). 반환 = 정점별 그룹 */
+function splitTris(me: THREE.Mesh, cls: (t: number, x: number, y: number) => number): Uint8Array {
   const g = me.geometry, pos = g.attributes.position, src = g.index ? g.index.array : null, tris = (src ? src.length : pos.count) / 3;
   const xs = new Float32Array(pos.count), ys = new Float32Array(pos.count), v = new THREE.Vector3();
   for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i).applyMatrix4(me.matrixWorld); xs[i] = v.x; ys[i] = v.y; }
-  const g0: number[] = [], g1: number[] = [], flag = new Uint8Array(pos.count);
+  const groups: number[][] = [[], []], flag = new Uint8Array(pos.count);
   for (let t = 0; t < tris; t++) {
-    const a = src ? src[t * 3] : t * 3, b = src ? src[t * 3 + 1] : t * 3 + 1, c = src ? src[t * 3 + 2] : t * 3 + 2;
-    if (test((xs[a] + xs[b] + xs[c]) / 3, (ys[a] + ys[b] + ys[c]) / 3)) { g1.push(a, b, c); flag[a] = flag[b] = flag[c] = 1; } else g0.push(a, b, c);
+    const [a, b, c] = triVerts(src, t), k = cls(t, (xs[a] + xs[b] + xs[c]) / 3, (ys[a] + ys[b] + ys[c]) / 3);
+    (groups[k] ??= []).push(a, b, c); flag[a] = flag[b] = flag[c] = k;
   }
-  g.setIndex([...g0, ...g1]);
-  g.clearGroups(); g.addGroup(0, g0.length, 0); g.addGroup(g0.length, g1.length, 1);
-  me.material = [me.material as THREE.Material, me.material as THREE.Material];
+  g.setIndex(groups.flatMap((x) => x ?? []));
+  g.clearGroups(); let at = 0;
+  groups.forEach((x, k) => { const n = x?.length ?? 0; g.addGroup(at, n, k); at += n; });
+  const m = me.material as THREE.Material; me.material = groups.map(() => m);
   return flag;
 }
 
-/** 칼날 마스크: 길이축 위치로 [손잡이, 칼날] 분할 */
+/** 위치 용접(같은 좌표 정점 = 한 정점) 후 삼각형 연결 컴포넌트(union-find) — 반환 = 삼각형별 컴포넌트 순위(삼각형 수 내림차순, 0 = 최대) */
+function triComponents(g: THREE.BufferGeometry): Int32Array {
+  const pos = g.attributes.position, src = g.index ? g.index.array : null, tris = (src ? src.length : pos.count) / 3;
+  const weld = new Map<string, number>(), vid = new Int32Array(pos.count), q = (n: number): number => Math.round(n * 1e4);
+  for (let i = 0; i < pos.count; i++) { const k = `${q(pos.getX(i))},${q(pos.getY(i))},${q(pos.getZ(i))}`; let id = weld.get(k); if (id === undefined) weld.set(k, (id = weld.size)); vid[i] = id; }
+  const par = Int32Array.from({ length: weld.size }, (_, i) => i);
+  const find = (x: number): number => { while (par[x] !== x) x = par[x] = par[par[x]]; return x; };
+  for (let t = 0; t < tris; t++) { const [a, b, c] = triVerts(src, t), r = find(vid[a]); par[find(vid[b])] = r; par[find(vid[c])] = r; }
+  const root = new Int32Array(tris), size = new Map<number, number>();
+  for (let t = 0; t < tris; t++) { const r = (root[t] = find(vid[triVerts(src, t)[0]])); size.set(r, (size.get(r) ?? 0) + 1); }
+  const rank = new Map([...size.entries()].sort((a, b) => b[1] - a[1]).map(([r], i) => [r, i]));
+  return root.map((r) => rank.get(r)!);
+}
+
+/** 칼날 마스크: comps(실제 연결 컴포넌트) 또는 from(길이축 절단)으로 [손잡이 0, 칼날 1, 금속 2] 분할 */
 function splitBlade(root: THREE.Object3D, mask: BladeMask): void {
   root.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(root), cut = box.min.x + (box.max.x - box.min.x) * mask.from;
+  const box = new THREE.Box3().setFromObject(root), cut = box.min.x + (box.max.x - box.min.x) * (mask.from ?? 0);
   root.traverse((o) => {
     const me = o as THREE.Mesh;
     if (!me.isMesh || Array.isArray(me.material) || mask.handleOnly?.test(me.name)) return;
-    bladeVerts.set(me.geometry, splitTris(me, (x) => x >= cut));
+    const cs = mask.comps, comp = cs ? triComponents(me.geometry) : null;
+    bladeVerts.set(me.geometry, splitTris(me, (t, x) => (cs ? (cs.blade.includes(comp![t]) ? 1 : cs.metal?.includes(comp![t]) ? 2 : 0) : x >= cut ? 1 : 0)));
   });
 }
 
@@ -136,7 +157,7 @@ function splitParts(root: THREE.Object3D, parts: Record<string, PartDef>): void 
   root.updateMatrixWorld(true);
   root.traverse((o) => {
     const me = o as THREE.Mesh, sp = parts[me.name]?.split;
-    if (me.isMesh && sp && !Array.isArray(me.material)) splitTris(me, sp.test);
+    if (me.isMesh && sp && !Array.isArray(me.material)) splitTris(me, (_t, x, y) => (sp.test(x, y) ? 1 : 0));
   });
 }
 
@@ -268,21 +289,23 @@ function build(src: Source, skin: SkinSet, roll = 0): THREE.Group {
     if (!skin.skinned) return src.glb && curMesh ? glbNative(curMesh, m) : native(m);
     return role === 'base' ? skin.base : skin.accent; // 스킨 재질(프로시저럴 텍스처/PBR/발광) 연결
   };
-  // 칼날 마스크: 손잡이·가드·링은 항상 기본 재질, 스킨은 칼날 그룹(materialIndex 1)에만
+  // 칼날 마스크: 손잡이(0)·금속 파츠(2, 예: 핑거 링)는 항상 기본 재질, 스킨은 칼날 그룹(1)에만
   const mask = src.mask;
   const own = (m: THREE.Material, def?: PartDef): THREE.Material => (def ? partMat(def) : src.glb && curMesh ? glbNative(curMesh, m) : native(m));
-  const pickMasked = (m: THREE.Material, blade: boolean): THREE.Material =>
-    blade ? (skin.skinned ? skin.base : own(m, mask!.blade)) : own(m, curMesh && mask!.handleOnly?.test(curMesh.name) ? mask!.wrap ?? mask!.handle : mask!.handle);
+  const pickMasked = (m: THREE.Material, group: number): THREE.Material =>
+    group === 1 ? (skin.skinned ? skin.base : own(m, mask!.blade))
+      : group === 2 ? own(m, mask!.metal ?? mask!.blade)
+        : own(m, curMesh && mask!.handleOnly?.test(curMesh.name) ? mask!.wrap ?? mask!.handle : mask!.handle);
   inner.traverse((o) => {
     const me = o as THREE.Mesh; if (!me.isMesh) return;
     curMesh = me;
     const puv = src.glb && skin.skinned ? planarUvs.get(me.geometry) : undefined, flag = bladeVerts.get(me.geometry);
     if (puv && !(mask && !flag)) { // 마스크 모델의 손잡이 전용 메시는 원본 UV 유지
       let uv = puv;
-      if (flag) { const orig = me.geometry.attributes.uv; uv = new Float32Array(puv); if (orig) for (let i = 0; i < flag.length; i++) if (!flag[i]) { uv[i * 2] = orig.getX(i); uv[i * 2 + 1] = orig.getY(i); } }
+      if (flag) { const orig = me.geometry.attributes.uv; uv = new Float32Array(puv); if (orig) for (let i = 0; i < flag.length; i++) if (flag[i] !== 1) { uv[i * 2] = orig.getX(i); uv[i * 2 + 1] = orig.getY(i); } }
       me.geometry = me.geometry.clone(); me.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     }
-    if (mask) me.material = Array.isArray(me.material) ? me.material.map((m, i) => pickMasked(m, !!flag && i === 1)) : pickMasked(me.material, false);
+    if (mask) me.material = Array.isArray(me.material) ? me.material.map((m, i) => pickMasked(m, flag ? i : 0)) : pickMasked(me.material, 0);
     else me.material = Array.isArray(me.material) ? me.material.map(pick) : pick(me.material);
   });
   return wrap;
