@@ -171,14 +171,15 @@ export function attachSkinFx(g: THREE.Group, skinId: string | null | undefined, 
   for (const h of hooks) h.onBeforeRender = () => animateFx(fx);
   const layout = (): void => {
     const mz = (g.userData.muzzle as THREE.Object3D).position, L = Math.max(0.16, -mz.z); // 그립 원점 ~ 총구 거리
+    const yAt = (g.userData.axisY as ((z: number) => number) | undefined) ?? ((): number => mz.y); // 근접 무기: 칼날 중심선 높이
     if (kind === 'wings') {
       const len = Math.min(0.3, Math.max(0.09, L * 0.36));
-      for (const pv of parts) { const u = pv.userData as { side: number; i: number; y0: number }; u.y0 = mz.y + 0.012 + u.i * 0.006; pv.position.set(u.side * (0.034 + u.i * 0.008), u.y0, mz.z * 0.5); pv.scale.setScalar(len * (1 - u.i * 0.2)); }
+      for (const pv of parts) { const u = pv.userData as { side: number; i: number; y0: number }; u.y0 = yAt(mz.z * 0.5) + 0.012 + u.i * 0.006; pv.position.set(u.side * (0.034 + u.i * 0.008), u.y0, mz.z * 0.5); pv.scale.setScalar(len * (1 - u.i * 0.2)); }
     } else {
       const r = Math.min(0.05, Math.max(0.026, L * 0.07)), z = mz.z * 0.8;
-      parts[0].position.set(mz.x, mz.y, z); parts[0].scale.setScalar(r);
-      parts[1].position.set(mz.x, mz.y, z + r * 0.9); parts[1].scale.setScalar(r * 1.38);
-      parts[2].position.set(mz.x, mz.y, mz.z * 0.55); parts[2].scale.setScalar(r * 0.82);
+      parts[0].position.set(mz.x, yAt(z), z); parts[0].scale.setScalar(r);
+      parts[1].position.set(mz.x, yAt(z + r * 0.9), z + r * 0.9); parts[1].scale.setScalar(r * 1.38);
+      parts[2].position.set(mz.x, yAt(mz.z * 0.55), mz.z * 0.55); parts[2].scale.setScalar(r * 0.82);
       flash!.position.copy(mz); flash!.position.z -= 0.02; fx.flashScale = Math.min(0.34, 0.14 + L * 0.2) * (viewmodel ? 0.7 : 1.5);
     }
   };

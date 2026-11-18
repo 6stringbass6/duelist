@@ -15,6 +15,17 @@ import { getSkin } from '../config/skins';
 export const WEAPON_MODELS: Partial<Record<WeaponId, ModelDef>> = {
   // M9 Bayonet(FBX, 단위 ≈ mm, 날끝 +X, 손잡이 -X, 내장 UV/베이크 텍스처) — 기본 스킨은 원본 텍스처 유지, 구매 스킨은 평면 UV 로 재질 교체
   dagger: { file: 'm9_bayonet', length: 0.3, grip: 0.15, own: true },
+  // 카타나(FBX, 단위 ≈ cm, 날끝 -X · 칼날 평면 = XZ · 날(볼록면) +Z, 칼집 포함) → 칼집 제거, 날끝 +X · 날이 아래(-Y)로 향하도록 회전.
+  // 파일 내 재질이 1개(Material.001, 외부 PNG 미포함)라 메시 이름으로 부위별 재질/스킨 역할을 지정한다.
+  sword: {
+    file: 'katana', length: 1.0, grip: 0.18, own: true, rot: [-Math.PI / 2, Math.PI, 0], hide: /^Plane00[37]$/,
+    parts: {
+      Plane: { role: 'base', color: 0xd9dee5, metalness: 1, roughness: 0.16 },     // 칼날
+      Circle004: { role: 'accent', color: 0x3a3128, metalness: 0.85, roughness: 0.38 }, // 츠바(코등이)
+      Cube001: { role: 'accent', color: 0x16171b, metalness: 0.05, roughness: 0.8 }, // 손잡이 감개(츠카이토)
+      Cube003: { role: 'dark', color: 0x8a7a5a, metalness: 0.75, roughness: 0.35 },  // 손잡이 심·카시라
+    },
+  },
   classic: { file: 'Pistol_1', length: 0.3 },
   shorty: { file: 'Shotgun_SawedOff', length: 0.42 },
   frenzy: { file: 'SubmachineGun_4', length: 0.34 },
@@ -25,13 +36,19 @@ export const WEAPON_MODELS: Partial<Record<WeaponId, ModelDef>> = {
   marshal: { file: 'SniperRifle_4', length: 1.05 },
 };
 
-/** own = FBX 라도 내장 UV/텍스처를 유지(GLB 와 동일 취급). 스킨 적용 시에만 평면 UV 사용 */
-type ModelDef = { file: string; length: number; grip?: number; roll?: number; own?: boolean };
+/** own = FBX 라도 내장 UV/텍스처를 유지(GLB 와 동일 취급). 스킨 적용 시에만 평면 UV 사용
+ *  rot = 정규화 전에 모델에 굽는 회전(Euler XYZ) → 길이축을 +X 로 맞춤, hide = 제거할 메시 이름(예: 칼집),
+ *  parts = 메시 이름별 기본 재질 + 스킨 역할(재질이 하나뿐인 모델용, 부모 메시 이름이 아닌 메시 자신의 이름 기준) */
+type ModelDef = { file: string; length: number; grip?: number; roll?: number; own?: boolean; rot?: [number, number, number]; hide?: RegExp; parts?: Record<string, PartDef> };
 type Role = 'base' | 'accent' | 'dark' | 'glass';
-interface Source { glb: boolean; root: THREE.Object3D; roles: Map<string, Role>; scale: number; offset: THREE.Vector3; muzzle: THREE.Vector3 }
+interface PartDef { role: Role; color: number; metalness: number; roughness: number }
+interface Source { glb: boolean; root: THREE.Object3D; roles: Map<string, Role>; scale: number; offset: THREE.Vector3; muzzle: THREE.Vector3; parts?: Record<string, PartDef>; axis: { y: Float32Array; x0: number; len: number } }
 export interface SkinSet { base: THREE.Material; accent: THREE.Material; skinned: boolean }
 
-const fbxLoader = new FBXLoader(), gltfLoader = new GLTFLoader();
+// FBX 가 참조하지만 포함하지 않은 외부 텍스처(예: 카타나의 Blender 베이크 PNG)는 404 대신 1px 투명 이미지로 대체 — parts 재질을 쓰므로 실제로는 사용되지 않는다
+const BLANK_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+const fbxManager = new THREE.LoadingManager(); fbxManager.setURLModifier((u) => (/katana_Material/i.test(u) ? BLANK_PNG : u));
+const fbxLoader = new FBXLoader(fbxManager), gltfLoader = new GLTFLoader();
 const isGlb = (f: string): boolean => /\.(glb|gltf)$/i.test(f);
 const pending = new Map<string, Promise<Source | null>>();
 const ready = new Map<string, Source>();
@@ -69,8 +86,15 @@ function prepare(root: THREE.Object3D, length: number, glb: boolean, grip?: numb
     for (let i = 0; i < p.count; i++) { tmp.fromBufferAttribute(p, i).applyMatrix4(mesh.matrixWorld); if (tmp.x > box.max.x - size.x * 0.03) { mz.add(tmp); n++; } }
   }
   mz.divideScalar(Math.max(1, n)); mz.x = box.max.x;
+  // 길이축(X)을 따라 구간별 평균 높이(Y) — 휘어진 칼날(카타나)에 등급 파츠를 칼날 중심선에 맞춰 붙일 때 사용
+  const AX = 24, ay = new Float32Array(AX), an = new Float32Array(AX);
+  for (const mesh of meshes) {
+    const p = mesh.geometry.attributes.position;
+    for (let i = 0; i < p.count; i++) { tmp.fromBufferAttribute(p, i).applyMatrix4(mesh.matrixWorld); const b = Math.min(AX - 1, Math.max(0, Math.floor(((tmp.x - box.min.x) / size.x) * AX))); ay[b] += tmp.y; an[b]++; }
+  }
+  for (let i = 0; i < AX; i++) ay[i] = an[i] ? ay[i] / an[i] : i ? ay[i - 1] : ctr.y;
   const ox = grip === undefined ? 0 : -(box.min.x + size.x * grip);
-  return { glb, root, roles, scale: length / size.x, offset: new THREE.Vector3(ox, -ctr.y, -ctr.z), muzzle: mz };
+  return { glb, root, roles, scale: length / size.x, offset: new THREE.Vector3(ox, -ctr.y, -ctr.z), muzzle: mz, axis: { y: ay, x0: box.min.x, len: size.x } };
 }
 
 /** 스킨 전용 모델(GLB)이 있으면 그것, 없으면 무기 기본 모델 */
@@ -82,7 +106,12 @@ function load(def: ModelDef | undefined): Promise<Source | null> {
   if (!p) {
     const glb = isGlb(def.file);
     const raw: Promise<THREE.Object3D> = glb ? gltfLoader.loadAsync(BASE + def.file).then((g) => g.scene) : fbxLoader.loadAsync(`${BASE}${def.file}.fbx`);
-    p = raw.then((root) => { const s = prepare(root, def.length, glb || !!def.own, def.grip); ready.set(def.file, s); return s; })
+    p = raw.then((loaded) => {
+      let root = loaded;
+      if (def.hide) { const drop: THREE.Object3D[] = []; loaded.traverse((o) => { if ((o as THREE.Mesh).isMesh && def.hide!.test(o.name)) drop.push(o); }); for (const o of drop) o.removeFromParent(); }
+      if (def.rot) { root = new THREE.Group(); loaded.rotation.set(...def.rot); root.add(loaded); } // build() 가 inner.rotation.x(roll)을 덮어쓰므로 한 겹 감싸서 굽는다
+      const s = prepare(root, def.length, glb || !!def.own, def.grip); s.parts = def.parts; ready.set(def.file, s); return s;
+    })
       .catch((e) => { console.warn('[weaponModels] 모델 로드 실패 → 박스 모델 폴백:', def.file, e); return null; });
     pending.set(def.file, p);
   }
@@ -97,6 +126,14 @@ const nativeCache = new Map<string, THREE.MeshStandardMaterial>();
 const native = (m: THREE.Material): THREE.MeshStandardMaterial => {
   const ph = m as THREE.MeshPhongMaterial, col = ph.color, map = ph.map, k = m.name + '|' + (col?.getHexString() ?? '') + '|' + (map?.uuid ?? ''); let r = nativeCache.get(k);
   if (!r) { const metal = /Metal/i.test(m.name) || !!map; r = new THREE.MeshStandardMaterial({ color: col ?? 0x888888, map: map ?? null, metalness: metal ? 0.7 : 0.25, roughness: metal ? 0.4 : 0.6 }); nativeCache.set(k, r); }
+  return r;
+};
+
+/** parts 기본 재질(미장착 스킨) — 금속 부위는 장면 환경맵 반사를 받도록 envMapIntensity 를 높인다 */
+const partCache = new Map<PartDef, THREE.MeshStandardMaterial>();
+const partMat = (p: PartDef): THREE.MeshStandardMaterial => {
+  let r = partCache.get(p);
+  if (!r) { r = new THREE.MeshStandardMaterial({ color: p.color, metalness: p.metalness, roughness: p.roughness, envMapIntensity: p.metalness > 0.5 ? 1.6 : 1 }); partCache.set(p, r); }
   return r;
 };
 
@@ -122,6 +159,8 @@ function build(src: Source, skin: SkinSet, roll = 0): THREE.Group {
   const inner = src.root.clone(true); inner.position.copy(src.offset); inner.rotation.x = roll; wrap.add(inner);
   let curMesh: THREE.Mesh | null = null;
   const pick = (m: THREE.Material): THREE.Material => {
+    const part = curMesh && src.parts?.[curMesh.name];
+    if (part) return skin.skinned ? (part.role === 'base' ? skin.base : part.role === 'accent' ? skin.accent : part.role === 'glass' ? glassMat : darkMat) : partMat(part);
     const role = src.roles.get(m.name) ?? 'base';
     if (role === 'glass') return glassMat; if (role === 'dark') return darkMat;
     if (!skin.skinned) return src.glb && curMesh ? glbNative(curMesh, m) : native(m);
@@ -147,6 +186,13 @@ export function attachFbxModel(g: THREE.Group, weaponId: WeaponId, skin: SkinSet
     for (const c of [...g.children]) if (c !== mz && !c.userData.keep) c.removeFromParent(); // 등급 파츠(userData.keep)는 유지
     g.add(model);
     mz.position.copy(src.muzzle).add(src.offset).multiplyScalar(src.scale).applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+    if (weaponId === 'sword' || weaponId === 'dagger') { // 근접 무기: 그룹 공간 z → 칼날 중심선 높이(y) (휘어진 날에서 등급 파츠가 허공에 뜨지 않게)
+      const { y, x0, len } = src.axis, N = y.length;
+      g.userData.axisY = (z: number): number => {
+        const t = Math.min(N - 1, Math.max(0, ((-z / src.scale - src.offset.x - x0) / len) * N - 0.5)), i = Math.floor(t), j = Math.min(N - 1, i + 1);
+        return (y[i] + (y[j] - y[i]) * (t - i) + src.offset.y) * src.scale;
+      };
+    }
     g.userData.fbx = true; (g.userData.onModel as (() => void) | undefined)?.(); // 총구 위치 확정 → 등급 파츠 재배치
   };
   const hit = ready.get(def.file); if (hit) { apply(hit); return; }
