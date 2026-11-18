@@ -320,6 +320,7 @@ function htmlLoadout(): string {
   <div class="c-loadout"><div><div class="c-slots">${slots}</div><div class="c-ph c-ph2"><span class="c-h1">Abilities</span><span class="c-h2">스킬 · 다음 매치부터 적용</span></div><div class="c-slots">${abil}</div></div><div>${right}</div></div>`;
 }
 // 근접(3번) 슬롯: 모델별로 섹션을 나눠 보여 준다. 단검 = M9 배요네트(기본) / 버터플라이 / 카람빗, 장검 = 카타나.
+// ⚠ 새 근접 모델 추가 시 반드시 MELEE_SECTS(+특수 모델은 MELEE_SPECIAL)에 등록할 것 — 보관함 상단 무기 선택 칩(htmlMeleeChips)도 여기서 파생된다.
 type MeleeSect = { key: string; title: string; en: string; weapon: 'dagger' | 'sword'; std: boolean; match: (s: SkinDef) => boolean };
 const MELEE_SPECIAL = new Set(['butterfly', 'karambit']);
 const MELEE_SECTS: MeleeSect[] = [
@@ -364,11 +365,31 @@ function htmlMeleeSections(cur: string): string {
   }).join('');
   return `${rarityChips(pool)}${sects}<div class="c-foot">근접 스킨 ${pool.length}종 중 ${ownN}종 보유</div>`;
 }
+/** 근접 무기 선택 칩: 주먹 + MELEE_SECTS 의 모델들. 칩 목록은 MELEE_SECTS 에서 파생되므로 새 근접 모델은 MELEE_SECTS(및 MELEE_SPECIAL)에 추가하면 여기도 함께 반영된다. */
+function meleeInUseKey(cur: string): string {
+  if (cur === 'fists') return 'fists';
+  const e = equippedSkin(cur);
+  return MELEE_SECTS.find((m) => m.weapon === cur && (e ? m.match(e) : m.std))?.key ?? '';
+}
+/** 해당 모델로 전환할 때 장착할 스킨 원본 ID. null = 기본 외형, undefined = 보유 스킨 없음(전환 불가) */
+function meleeSkinFor(m: MeleeSect): string | null | undefined {
+  const e = equippedSkin(m.weapon);
+  if (e && m.match(e)) return bundle?.skins.find((o) => o.weapon_id === m.weapon && o.equipped)?.skin_id ?? null;
+  if (m.std) return null;
+  for (const [id, o] of ownedFor(m.weapon)) { const s = getSkin(id); if (s && m.match(s)) return o.raw; }
+  return undefined;
+}
+function htmlMeleeChips(cur: string): string {
+  const on = meleeInUseKey(cur);
+  const chip = (key: string, name: string, lock: boolean): string =>
+    `<button type="button" class="c-chip${key === on ? ' c-on' : ''}" data-lmel="${key}"${lock ? ' disabled title="미보유 · 상점에서 구매"' : ''}>${esc(name)}${lock ? ' 🔒' : ''}</button>`;
+  return `<div class="c-chips c-wchips" role="group" aria-label="무기 선택">${chip('fists', wName('fists'), false)}${MELEE_SECTS.map((m) => chip(m.key, m.title, meleeSkinFor(m) === undefined)).join('')}</div>`;
+}
 function htmlSkinGrid(k: SlotKey): string {
   const w = getProfile()!.loadout[k];
   const wchips = `<div class="c-chips c-wchips" role="group" aria-label="무기 선택">${WEAPONS_BY_SLOT[k].map((id) => `<button type="button" class="c-chip${id === w ? ' c-on' : ''}" data-ldw="${id}">${esc(wName(id))}</button>`).join('')}</div>`;
   if (k === 'throwable') return `${wchips}<div class="c-empty">투척류에는 스킨이 없습니다.</div>`;
-  if (k === 'melee') return `${wchips}${w === 'fists' ? '<div class="c-empty">주먹에는 스킨이 없습니다. 아래에서 스킨을 장착하면 해당 무기로 바뀝니다.</div>' : ''}${htmlMeleeSections(w)}`;
+  if (k === 'melee') return `${htmlMeleeChips(w)}${w === 'fists' ? '<div class="c-empty">주먹에는 스킨이 없습니다. 아래에서 스킨을 장착하면 해당 무기로 바뀝니다.</div>' : ''}${htmlMeleeSections(w)}`;
   const all = skinsForWeapon(w);
   const { cards: list, own } = skinCards(w, all, true);
   return `${wchips}${rarityChips(all)}${list.length ? `<div class="c-grid">${list.join('')}</div>` : '<div class="c-empty">이 등급의 스킨이 없습니다.</div>'}<div class="c-foot">전체 스킨 ${all.length}종 중 ${own.size}종 보유</div>`;
@@ -468,6 +489,20 @@ function bindLobbyBody(): void {
   each('[data-ldw]', (b) => (b.onclick = () => {
     const k = ldSlot as SlotKey, l = { ...getProfile()!.loadout, [k]: b.dataset.ldw } as Loadout;
     needReconnect = true; void saveLoadout(l).then(() => renderLobby());
+  }));
+  each('[data-lmel]', (b) => (b.onclick = async () => { // 근접 모델 칩: 무기 전환 + 그 모델의 스킨(없으면 기본 외형) 장착
+    const key = b.dataset.lmel!, l = getProfile()!.loadout;
+    try {
+      if (key === 'fists') { if (l.melee !== 'fists') await saveLoadout({ ...l, melee: 'fists' } as Loadout); }
+      else {
+        const m = MELEE_SECTS.find((x) => x.key === key); if (!m) return;
+        const raw = meleeSkinFor(m); if (raw === undefined) return;
+        const curRaw = bundle?.skins.find((o) => o.weapon_id === m.weapon && o.equipped)?.skin_id ?? null;
+        if (raw !== curRaw) { await equipSkin(m.weapon, raw); bundle?.skins.forEach((s) => { if (s.weapon_id === m.weapon) s.equipped = s.skin_id === raw; }); net.refreshProfile(); }
+        if (l.melee !== m.weapon) await saveLoadout({ ...l, melee: m.weapon } as Loadout);
+      }
+      needReconnect = true; renderLobby();
+    } catch (e) { toast(errMsg(e), 'bad'); }
   }));
   each('[data-rar]', (b) => (b.onclick = () => { rarity = b.dataset.rar as typeof rarity; renderLobby(); }));
   each('[data-csub]', (b) => (b.onclick = () => { careerSub = b.dataset.csub as typeof careerSub; renderLobby(); }));
