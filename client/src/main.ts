@@ -354,11 +354,12 @@ function skinCards(w: string, pool: SkinDef[], withStd: boolean, active = true):
 function htmlMeleeSections(cur: string): string {
   const pool = MELEE_SECTS.flatMap((m) => skinsForWeapon(m.weapon).filter(m.match));
   let ownN = 0;
+  const inUse = (m: MeleeSect): boolean => { if (cur !== m.weapon) return false; const e = equippedSkin(m.weapon); return e ? m.match(e) : m.std; };
   const sects = MELEE_SECTS.map((m) => {
     const list = skinsForWeapon(m.weapon).filter(m.match);
     const { cards, own } = skinCards(m.weapon, list, m.std, cur === m.weapon);
     const has = list.filter((s) => own.has(s.id)).length; ownN += has;
-    return `<div class="c-ph c-ph2 c-msect" data-msect="${m.key}"><span class="c-h1">${m.en}</span><span class="c-h2">${m.title} · ${wName(m.weapon)}${cur === m.weapon ? ' · 사용 중' : ''} · ${list.length}종 중 ${has}종 보유</span></div>
+    return `<div class="c-ph c-ph2 c-msect" data-msect="${m.key}"><span class="c-h1">${m.en}</span><span class="c-h2">${m.title} · ${wName(m.weapon)}${inUse(m) ? ' · 사용 중' : ''} · ${list.length}종 중 ${has}종 보유</span></div>
       ${cards.length ? `<div class="c-grid">${cards.join('')}</div>` : '<div class="c-empty">이 등급의 스킨이 없습니다.</div>'}`;
   }).join('');
   return `${rarityChips(pool)}${sects}<div class="c-foot">근접 스킨 ${pool.length}종 중 ${ownN}종 보유</div>`;
