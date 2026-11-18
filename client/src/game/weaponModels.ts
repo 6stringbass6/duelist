@@ -30,10 +30,22 @@ export const WEAPON_MODELS: Partial<Record<WeaponId, ModelDef>> = {
   shorty: { file: 'Shotgun_SawedOff', length: 0.42 },
   frenzy: { file: 'SubmachineGun_4', length: 0.34 },
   ghost: { file: 'Pistol_5', length: 0.32 },
-  sheriff: { file: 'Revolver_1', length: 0.32 },
-  vandal: { file: 'AssaultRifle_2', length: 0.88 },
+  sheriff: { file: 'deagle.glb', length: 0.34, grip: 0.3, rot: [0, Math.PI / 2, 0] }, // 디글 (GLB, 내장 PBR · 총구 +Z → +X)
+  vandal: { file: 'ak47.fbx', length: 0.88, grip: 0.3, rot: [0, Math.PI / 2, 0] }, // AK-47 (FBX, 단위 cm · 총구 +Z → +X, 텍스처 없음 → FILE_PARTS 재질)
   phantom: { file: 'AssaultRifle2_1', length: 0.88 },
   marshal: { file: 'SniperRifle_4', length: 1.05 },
+};
+
+/** 텍스처가 없는 FBX 의 파일별 기본 재질/스킨 역할 (메시 이름 기준) — 스킨 전용 모델(GlbSpec)은 parts 를 가질 수 없어 여기서 지정 */
+const FILE_PARTS: Record<string, Record<string, PartDef>> = {
+  'ak47.fbx': {
+    m_gun: { role: 'base', color: 0x55585d, metalness: 0.85, roughness: 0.38 },
+    m_mag: { role: 'accent', color: 0x2c2d30, metalness: 0.6, roughness: 0.5 },
+    m_trigger: { role: 'dark', color: 0x18191c, metalness: 0.7, roughness: 0.5 }, m_fireselect: { role: 'dark', color: 0x18191c, metalness: 0.7, roughness: 0.5 },
+    m_maglid: { role: 'dark', color: 0x18191c, metalness: 0.7, roughness: 0.5 }, m_magrel: { role: 'dark', color: 0x18191c, metalness: 0.7, roughness: 0.5 },
+    m_shelleject: { role: 'dark', color: 0x18191c, metalness: 0.7, roughness: 0.5 },
+  },
+  'karambit.fbx': { Knife: { role: 'base', color: 0xc9ced6, metalness: 1, roughness: 0.2 } },
 };
 
 /** own = FBX 라도 내장 UV/텍스처를 유지(GLB 와 동일 취급). 스킨 적용 시에만 평면 UV 사용
@@ -105,12 +117,12 @@ function load(def: ModelDef | undefined): Promise<Source | null> {
   let p = pending.get(def.file);
   if (!p) {
     const glb = isGlb(def.file);
-    const raw: Promise<THREE.Object3D> = glb ? gltfLoader.loadAsync(BASE + def.file).then((g) => g.scene) : fbxLoader.loadAsync(`${BASE}${def.file}.fbx`);
+    const raw: Promise<THREE.Object3D> = glb ? gltfLoader.loadAsync(BASE + def.file).then((g) => g.scene) : fbxLoader.loadAsync(BASE + (/.fbx$/i.test(def.file) ? def.file : def.file + ".fbx"));
     p = raw.then((loaded) => {
       let root = loaded;
       if (def.hide) { const drop: THREE.Object3D[] = []; loaded.traverse((o) => { if ((o as THREE.Mesh).isMesh && def.hide!.test(o.name)) drop.push(o); }); for (const o of drop) o.removeFromParent(); }
       if (def.rot) { root = new THREE.Group(); loaded.rotation.set(...def.rot); root.add(loaded); } // build() 가 inner.rotation.x(roll)을 덮어쓰므로 한 겹 감싸서 굽는다
-      const s = prepare(root, def.length, glb || !!def.own, def.grip); s.parts = def.parts; ready.set(def.file, s); return s;
+      const s = prepare(root, def.length, glb || !!def.own, def.grip); s.parts = def.parts ?? FILE_PARTS[def.file]; ready.set(def.file, s); return s;
     })
       .catch((e) => { console.warn('[weaponModels] 모델 로드 실패 → 박스 모델 폴백:', def.file, e); return null; });
     pending.set(def.file, p);

@@ -26,7 +26,7 @@ export interface SkinMaterial {
 export interface SkinEmissive { color: number; color2?: number; intensity: number; mode: 'none' | 'static' | 'pulse' | 'flow' | 'energy' | 'plasma'; speed?: number; ambient?: number }
 export interface SkinVfx { tracerColor?: number; muzzleColor?: number; killEffect?: 'none' | 'shatter' | 'burn' | 'freeze' | 'void' | 'gold' | 'nova'; trail?: boolean }
 /** 외부 GLB/FBX 모델을 그대로 쓰는 스킨(절차적 재질 대신 내장 PBR 텍스처). 값 의미는 game/weaponModels.ts 참고 */
-export interface GlbSpec { file: string; length: number; grip?: number; roll?: number }
+export interface GlbSpec { file: string; length: number; grip?: number; roll?: number; own?: boolean; rot?: [number, number, number] }
 export interface SkinDef {
   glb?: GlbSpec;
   id: string; collection: string; weaponId: SkinWeaponId; name: string; tier: Tier; price: number;
@@ -69,8 +69,8 @@ export function tierEmblemSvg(tier: string | null | undefined, size = 18): strin
 
 export const SKIN_WEAPONS: { id: SkinWeaponId; name: string }[] = [
   { id: 'dagger', name: '단검' }, { id: 'sword', name: '장검' },
-  { id: 'classic', name: '클래식' }, { id: 'shorty', name: '쇼티' }, { id: 'frenzy', name: '프렌지' }, { id: 'ghost', name: '고스트' }, { id: 'sheriff', name: '셰리프' },
-  { id: 'vandal', name: '밴달' }, { id: 'phantom', name: '팬텀' }, { id: 'marshal', name: '마샬' },
+  { id: 'classic', name: '클래식' }, { id: 'shorty', name: '쇼티' }, { id: 'frenzy', name: '프렌지' }, { id: 'ghost', name: '고스트' }, { id: 'sheriff', name: '디글' },
+  { id: 'vandal', name: 'AK-47' }, { id: 'phantom', name: '팬텀' }, { id: 'marshal', name: '마샬' },
 ];
 const ALL_WEAPONS = SKIN_WEAPONS.map((w) => w.id);
 
@@ -132,18 +132,24 @@ export const COLLECTIONS: CollectionDef[] = [
 /** 컬렉션에 속하지 않는 단품 스킨은 여기에 추가 */
 export const KARAMBIT_SKIN_ID = 'karambit_dagger';
 export const BUTTERFLY_SKIN_ID = 'butterfly_dagger';
+export const SKELETON_SKIN_ID = 'skeleton_dagger';
 export const EXTRA_SKINS: SkinDef[] = [
-  // 카람빗 스페셜 박스 전용(0.1%) — 상점/일일/일반 박스에는 나오지 않는다. 단검(근접 3번 슬롯) 전용, karambit.glb 의 내장 케이스 하드닝 PBR 텍스처 사용
-  { id: KARAMBIT_SKIN_ID, collection: 'karambit', weaponId: 'dagger', name: '카람빗 (케이스 하드닝)', tier: 'ultra', price: 4500, featured: false, inDaily: false, inBox: false, sort: 14,
-    blurb: '열처리로 푸른 대리석 무늬가 번지는 케이스 하드닝 카람빗. 카람빗 스페셜 박스 0.1% 한정.',
+  // 카람빗 스페셜 박스 전용(0.1%) — 상점/일일/일반 박스에는 나오지 않는다. 단검(근접 3번 슬롯) 전용, karambit.fbx(단위 cm, 텍스처 없음 → FILE_PARTS 스틸 재질) 사용
+  { id: KARAMBIT_SKIN_ID, collection: 'karambit', weaponId: 'dagger', name: '카람빗', tier: 'ultra', price: 4500, featured: false, inDaily: false, inBox: false, sort: 14,
+    blurb: '굽은 칼날과 핑거 링을 갖춘 카람빗. 카람빗 스페셜 박스 0.1% 한정.',
     model: 'default', material: { style: 'solid', baseColor: 0x1d4fb8, accentColor: 0xe0b440, patternColor: 0x9fd0ff, metalness: 0.95, roughness: 0.25 },
-    emissive: NO_GLOW, vfx: { tracerColor: 0x9fd0ff }, glb: { file: 'karambit.glb', length: 0.27, grip: 0.3, roll: -0.9 } },
+    emissive: NO_GLOW, vfx: { tracerColor: 0x9fd0ff }, glb: { file: 'karambit.fbx', length: 0.27, grip: 0.3, roll: 0, own: true, rot: [0, Math.PI, 0] } },
   // 버터플라이 나이프 — 상점 NEW(featured) 상시 판매. 단검(근접 3번 슬롯) 전용, butterfly_knife.glb 내장 PBR 재질(스틸 날 + 블랙/레드 핸들) 사용
   // GLB 규약: 날끝 +X, 등날 +Y(위), 핸들 -X — 원본 .blend 에서 Blender 5.3 으로 변환
   { id: BUTTERFLY_SKIN_ID, collection: 'butterfly', weaponId: 'dagger', name: '버터플라이 나이프', tier: 'ultra', price: 4500, featured: true, inDaily: false, inBox: false, sort: 15,
     blurb: '두 갈래 핸들이 펼쳐지는 발리송. 미러 폴리싱 스틸 블레이드에 블랙·레드 핸들.',
     model: 'default', material: { style: 'solid', baseColor: 0xc7cacd, accentColor: 0xbf0505, patternColor: 0x111214, metalness: 0.95, roughness: 0.22 },
     emissive: NO_GLOW, vfx: { tracerColor: 0xff5a5a }, glb: { file: 'butterfly_knife.glb', length: 0.3, grip: 0.3, roll: 0 } },
+  // 스켈레톤 나이프 — 상점 NEW(featured) 상시 판매. 단검(근접 3번 슬롯) 전용, skeleton_knife.glb 내장 PBR 재질(스틸 + 코튼 파라코드) 사용
+  { id: SKELETON_SKIN_ID, collection: 'skeleton', weaponId: 'dagger', name: '스켈레톤 나이프', tier: 'ultra', price: 4500, featured: true, inDaily: false, inBox: false, sort: 16,
+    blurb: '뼈대만 남긴 경량 스켈레톤 블레이드. 파라코드 핸들 랩.',
+    model: 'default', material: { style: 'solid', baseColor: 0xb9bcc0, accentColor: 0x6b5a3c, patternColor: 0x111214, metalness: 0.95, roughness: 0.25 },
+    emissive: NO_GLOW, vfx: { tracerColor: 0xd8d8d8 }, glb: { file: 'skeleton_knife.glb', length: 0.3, grip: 0.3, roll: 0 } },
 ];
 
 const weaponName = (id: SkinWeaponId): string => SKIN_WEAPONS.find((w) => w.id === id)!.name;

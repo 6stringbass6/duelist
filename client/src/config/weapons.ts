@@ -67,12 +67,12 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   ghost: { id: 'ghost', slot: 2, type: 'gun', name: '고스트', desc: '소음기 장착 정밀 권총.', auto: false, rps: 6.75, mag: 15, reloadMs: 1500, scale: 1,
     ranges: [[30, 52, 23, 19], [INF, 48, 22, 18]], spread: { base: 0.2, perShot: 0.3, max: 1.9, recoverMs: 350 },
     adsZoom: 1, move: 1.06, equipMs: 300, model: 'ghost', recoil: { pitch: 0.8, yaw: 0.2, recover: 9, maxPitch: 5 }, tracer: 0xd8e8ff },
-  sheriff: { id: 'sheriff', slot: 2, type: 'gun', name: '셰리프', desc: '고위력 리볼버.', auto: false, rps: 4, mag: 6, reloadMs: 2250, scale: 1,
+  sheriff: { id: 'sheriff', slot: 2, type: 'gun', name: '디글', desc: '고위력 리볼버.', auto: false, rps: 4, mag: 6, reloadMs: 2250, scale: 1,
     ranges: [[30, 78, 37, 31], [INF, 75, 35, 29]], spread: { base: 0.15, perShot: 0.9, max: 2.5, recoverMs: 500 },
     adsZoom: 1, move: 1.06, equipMs: 350, model: 'sheriff', recoil: { pitch: 2.6, yaw: 0.4, recover: 6, maxPitch: 8 }, tracer: 0xffe0a0 },
 
-  // ── 1번: 주무기 (밴달: 헤드 3발 처치 / 팬텀: 헤드 4발·빠른 연사 / 마샬: 헤드 원샷)
-  vandal: { id: 'vandal', slot: 1, type: 'gun', name: '밴달', desc: '거리 감쇠 없는 돌격소총.', auto: true, rps: 9.75, mag: 25, reloadMs: 2500, scale: 1,
+  // ── 1번: 주무기 (AK-47: 헤드 3발 처치 / 팬텀: 헤드 4발·빠른 연사 / 마샬: 헤드 원샷)
+  vandal: { id: 'vandal', slot: 1, type: 'gun', name: 'AK-47', desc: '거리 감쇠 없는 돌격소총.', auto: true, rps: 9.75, mag: 25, reloadMs: 2500, scale: 1,
     ranges: [[INF, 52, 26, 22]], spread: { base: 0.12, perShot: 0.14, max: 1.7, recoverMs: 380 }, adsSpread: 0.85,
     adsZoom: 1.25, move: 1, equipMs: 400, model: 'vandal', recoil: { pitch: 0.62, yaw: 0.3, recover: 7, maxPitch: 9 }, tracer: 0xffc070 },
   phantom: { id: 'phantom', slot: 1, type: 'gun', name: '팬텀', desc: '빠른 연사, 안정적인 소음 소총.', auto: true, rps: 11.5, mag: 30, reloadMs: 2500, scale: 1,

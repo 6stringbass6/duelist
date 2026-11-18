@@ -290,7 +290,7 @@ function htmlPlay(): string {
   </div>
   <section class="c-stage" aria-label="무기 쇼케이스">
     <span class="c-corner c-c1"></span><span class="c-corner c-c2"></span><span class="c-corner c-c3"></span><span class="c-corner c-c4"></span>
-    <div class="c-lot">PRIMARY — SLOT 0${SLOT.primary}<br>FINISH / ${esc((s?.id ?? `${w}_standard`).toUpperCase())}</div>
+    <div class="c-lot">PRIMARY — SLOT 0${SLOT.primary}<br>FINISH / ${esc((s?.id ?? `${w}_standard`).replace(/vandal/g, 'ak47').replace(/sheriff/g, 'deagle').toUpperCase())}</div>
     <div class="c-mount">3D SHOWCASE / 드래그 회전</div>
     <div class="c-axis"></div><div class="c-ticks"></div>
     <div id="pv-slot" class="c-gunwrap"></div>
@@ -324,11 +324,12 @@ function htmlLoadout(): string {
 // 근접(3번) 슬롯: 모델별로 섹션을 나눠 보여 준다. 단검 = M9 배요네트(기본) / 버터플라이 / 카람빗, 장검 = 카타나.
 // ⚠ 새 근접 모델 추가 시 반드시 MELEE_SECTS(+특수 모델은 MELEE_SPECIAL)에 등록할 것 — 보관함 상단 무기 선택 칩(htmlMeleeChips)도 여기서 파생된다.
 type MeleeSect = { key: string; title: string; en: string; weapon: 'dagger' | 'sword'; std: boolean; match: (s: SkinDef) => boolean };
-const MELEE_SPECIAL = new Set(['butterfly', 'karambit']);
+const MELEE_SPECIAL = new Set(['butterfly', 'karambit', 'skeleton']);
 const MELEE_SECTS: MeleeSect[] = [
   { key: 'm9', title: 'M9 배요네트', en: 'M9 Bayonet', weapon: 'dagger', std: true, match: (s) => !MELEE_SPECIAL.has(s.collection ?? '') },
   { key: 'butterfly', title: '버터플라이 나이프', en: 'Butterfly Knife', weapon: 'dagger', std: false, match: (s) => s.collection === 'butterfly' },
   { key: 'karambit', title: '카람빗', en: 'Karambit', weapon: 'dagger', std: false, match: (s) => s.collection === 'karambit' },
+  { key: 'skeleton', title: '스켈레톤 나이프', en: 'Skeleton Knife', weapon: 'dagger', std: false, match: (s) => s.collection === 'skeleton' },
   { key: 'katana', title: '카타나', en: 'Katana', weapon: 'sword', std: true, match: () => true },
 ];
 /** 무기별 보유 목록: 구버전 skin_id 는 현행 스킨으로 환산(같은 스킨으로 겹치면 장착 중인 쪽 우선), 장착 요청은 DB 에 저장된 원본 ID 로 보낸다 */

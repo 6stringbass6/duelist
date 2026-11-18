@@ -585,14 +585,14 @@ from (values
 ) as c(id, name, rarity, price, featured, sort)
 cross join (values
   ('dagger','단검'),('sword','장검'),('classic','클래식'),('shorty','쇼티'),('frenzy','프렌지'),('ghost','고스트'),
-  ('sheriff','셰리프'),('vandal','밴달'),('phantom','팬텀'),('marshal','마샬'),('odin','오딘')
+  ('sheriff','디글'),('vandal','AK-47'),('phantom','팬텀'),('marshal','마샬'),('odin','오딘')
 ) as w(id, name)
 on conflict (skin_id) do update set name = excluded.name, rarity = excluded.rarity, price = excluded.price,
   featured = excluded.featured, in_daily = excluded.in_daily, in_box = excluded.in_box, sort = excluded.sort, active = true;
 
--- 카람빗 (케이스 하드닝): 단검 전용 · 카람빗 스페셜 박스 0.1% 한정 (in_box=false 라 다른 박스/일일 상점에는 나오지 않고 구매 불가)
+-- 카람빗: 단검 전용 · 카람빗 스페셜 박스 0.1% 한정 (in_box=false 라 다른 박스/일일 상점에는 나오지 않고 구매 불가)
 insert into public.skin_catalog (skin_id, weapon_id, name, rarity, price, featured, in_daily, in_box, sort)
-values ('karambit_dagger','dagger','카람빗 (케이스 하드닝)','ultra',4500,false,false,false,14)
+values ('karambit_dagger','dagger','카람빗','ultra',4500,false,false,false,14)
 on conflict (skin_id) do update set weapon_id = excluded.weapon_id, name = excluded.name, rarity = excluded.rarity, price = excluded.price,
   featured = false, in_daily = false, in_box = false, sort = excluded.sort, active = true;
 

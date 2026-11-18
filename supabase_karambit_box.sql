@@ -49,7 +49,7 @@ end $$;
 insert into public.lootboxes (box_id, name, price) values ('karambit','카람빗 스페셜 박스',4000)
 on conflict (box_id) do update set name = excluded.name, price = excluded.price, active = true;
 insert into public.skin_catalog (skin_id, weapon_id, name, rarity, price, featured, in_daily, in_box, sort)
-values ('karambit_dagger','dagger','카람빗 (케이스 하드닝)','ultra',4500,false,false,false,14)
+values ('karambit_dagger','dagger','카람빗','ultra',4500,false,false,false,14)
 on conflict (skin_id) do update set weapon_id = excluded.weapon_id, name = excluded.name, rarity = excluded.rarity, price = excluded.price,
   featured = false, in_daily = false, in_box = false, sort = excluded.sort, active = true;
 insert into public.lootbox_rates (box_id, rarity, weight, dup_refund) values
