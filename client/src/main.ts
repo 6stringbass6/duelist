@@ -185,8 +185,8 @@ function hydrateThumbs(root: HTMLElement): void {
 const tierBadge = (t: Tier | null, label?: string): string => `<span class="c-badge" style="color:${(t ? TIERS[t] : TIERS.default).color}">${esc(label ?? (t ? TIERS[t] : TIERS.default).en)}</span>`;
 const wName = (w: string): string => (WEAPONS as Record<string, { name: string } | undefined>)[w]?.name ?? w;
 let rarity: 'all' | Tier = 'all';
-function rarityChips(pool: SkinDef[]): string {
-  const opts: ['all' | Tier, string, string][] = [['all', '전체', '#f2efe8'], ...TIER_ORDER.filter((k) => SKINS.some((x) => x.tier === k)).map((k) => [k, TIERS[k].name, TIERS[k].color] as ['all' | Tier, string, string])];
+function rarityChips(pool: SkinDef[], onlyPresent = false): string {
+  const opts: ['all' | Tier, string, string][] = [['all', '전체', '#f2efe8'], ...TIER_ORDER.filter((k) => (onlyPresent ? pool : SKINS).some((x) => x.tier === k)).map((k) => [k, TIERS[k].name, TIERS[k].color] as ['all' | Tier, string, string])];
   return `<div class="c-chips" role="group" aria-label="스킨 등급 필터">${opts.map(([k, n, c]) => `<button type="button" class="c-chip${rarity === k ? ' c-on' : ''}" data-rar="${k}"><span class="c-rd" style="background:${c}"></span>${n}<span class="c-cn">${k === 'all' ? pool.length : pool.filter((s) => s.tier === k).length}</span></button>`).join('')}</div>`;
 }
 const byRarity = (s: SkinDef): boolean => rarity === 'all' || s.tier === rarity;
@@ -454,7 +454,7 @@ function htmlShop(): string {
   const perm = permanentStock(), permShown = perm.filter(byRarity);
   return `<div class="c-sect"><span class="c-h1">Store</span><span class="c-h2">보유 ◈ ${fmt(p.credits)} · 컨테이너 ${inv.dropCases + inv.storeCases} · 열쇠 ${inv.keys}</span></div>
   <div class="c-ph c-ph2"><span class="c-h1">Keys &amp; Containers</span><span class="c-h2">열쇠 &amp; 컨테이너</span></div>
-  <div class="c-grid c-grid3">
+  <div class="c-grid c-grid3 c-cgrid">
     ${storeCard('store_case', 'store', CASES.store.name, `${CASES.store.desc}. 군용·제한된·비밀의 무기만 나옵니다.`, SHOP_PRICES.storeCase, inv.storeCases)}
     ${storeCard('key', 'key', '무기 상자 열쇠', `${CASES.drop.name} 1개를 여는 데 1개가 쓰입니다.`, SHOP_PRICES.key, inv.keys)}
     <div class="c-card c-ccard" style="--cs:${CASE_TINT.drop}"><div class="c-vis">${CASE_ART.drop}<span class="c-xn">x${inv.dropCases}</span></div><div class="c-body"><span class="c-cn2">${CASES.drop.name}</span><span class="c-cw">판매하지 않습니다. 매치를 플레이해 레벨이 오르면 매주 1개 지급됩니다 · 현재 Lv.${levelOf(inv.xp)} (${fmt(inv.xp % XP_PER_LEVEL)} / ${fmt(XP_PER_LEVEL)} XP)</span>${oddsHtml('drop')}<div class="c-row"><button type="button" class="c-btn c-ghostb" data-gocases>보관함에서 열기</button></div></div></div>
@@ -462,7 +462,7 @@ function htmlShop(): string {
   <div class="c-ph c-ph2"><span class="c-h1">Today</span><span class="c-h2">오늘의 상점 · ${untilReset()} · 최대 비밀의 무기</span></div>
   ${dailyCards ? `<div class="c-grid">${dailyCards}</div>` : '<div class="c-empty">오늘의 상점을 불러오지 못했습니다. 탭을 다시 열어 주세요.</div>'}
   <div class="c-ph c-ph2"><span class="c-h1">Always</span><span class="c-h2">상설 판매 · 컨테이너에서 나오지 않는 등급 · 평범한 ◈ ${fmt(SHOP_PRICES.permanent.consumer!)} / 쓸만한 ◈ ${fmt(SHOP_PRICES.permanent.industrial!)}</span></div>
-  ${rarityChips(perm)}
+  ${rarityChips(perm, true)}
   <div class="c-grid">${permShown.map((s) => shopSkinCard(s, permanentPrice(s), owned(s.id), 'perm')).join('')}</div>`;
 }
 /** 보관함 › 컨테이너: 종류별 그룹 카드 + xN 배지 */
@@ -475,7 +475,7 @@ function htmlContainers(): string {
     return max < 1 ? `<div class="c-row"><span class="c-lock">${k === 'drop' && inv.dropCases > 0 ? '무기 상자 열쇠가 필요합니다' : '보유한 컨테이너가 없습니다'}</span><button type="button" class="c-btn c-ghostb" data-gotab="shop">상점</button></div>`
       : `${qtyPills('oq', k, q, max)}<div class="c-row"><span class="c-cw">${k === 'drop' ? `열쇠 ${q}개 사용` : '열쇠 동봉'}</span><button type="button" class="c-btn c-fill" data-open="${k}">${q}개 열기</button></div>`;
   };
-  return `<div class="c-grid c-grid3">
+  return `<div class="c-grid c-grid3 c-cgrid">
     ${card('drop', CASES.drop.name, inv.dropCases, CASES.drop.desc, opener('drop', Math.min(inv.dropCases, inv.keys)))}
     ${card('store', CASES.store.name, inv.storeCases, CASES.store.desc, opener('store', inv.storeCases))}
     ${card('key', '무기 상자 열쇠', inv.keys, `${CASES.drop.name}을 여는 데 쓰입니다.`, `<div class="c-row"><span class="c-price"><span class="c-gem"></span>${fmt(SHOP_PRICES.key)}</span><button type="button" class="c-btn c-ghostb" data-gotab="shop">열쇠 구매</button></div>`)}

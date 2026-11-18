@@ -81,7 +81,7 @@ export function runCaseOpening(kind: CaseKind, results: CaseResult[], hooks: Cas
   </div>`;
   const $ = (id: string): HTMLElement => root!.querySelector<HTMLElement>('#' + id)!;
   const stage = $('co-stage'), result = $('co-result'), dots = [...$('co-dots').children] as HTMLElement[];
-  let idx = 0, phase: Phase = 'intro', raf = 0, timer = 0, closed = false;
+  let idx = 0, phase: Phase = 'intro', raf = 0, timer = 0, closed = false, snapToEnd: (() => void) | null = null;
   const fast = reduced();
   const stop = (): void => { cancelAnimationFrame(raf); clearTimeout(timer); };
   const skinOf = (r: CaseResult): SkinDef | null => getSkin(r.skin_id);
@@ -117,6 +117,7 @@ export function runCaseOpening(kind: CaseKind, results: CaseResult[], hooks: Cas
     const end = -(WIN_AT * cell + cell / 2 - W / 2) - jitter, T = fast ? 900 : 5600;
     const ease = (p: number): number => 1 - Math.pow(1 - p, 4.2); // 초반 고속 → 점진 감속
     const t0 = performance.now();
+    snapToEnd = () => { strip.style.transform = `translate3d(${end}px,0,0)`; }; // 스킵 시 당첨 칸을 기준선 아래로
     let lastCell = -1, lastX = 0;
     const frame = (now: number): void => {
       const p = Math.min(1, (now - t0) / T), x = end * ease(p);
@@ -131,6 +132,7 @@ export function runCaseOpening(kind: CaseKind, results: CaseResult[], hooks: Cas
   /** 3) 당첨 하이라이트 */
   function reveal(): void {
     stop(); phase = 'reveal';
+    snapToEnd?.(); snapToEnd = null;
     const r = results[idx], s = skinOf(r), t = TIERS[s?.tier ?? r.rarity];
     stage.querySelector('.co-strip')?.classList.add('co-dim');
     stage.querySelectorAll('.co-cell')[WIN_AT]?.classList.add('co-hit');
