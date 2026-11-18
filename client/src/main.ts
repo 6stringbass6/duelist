@@ -15,12 +15,13 @@ import {
 } from './config/weapons';
 import { preloadWeaponModels } from './game/weaponModels';
 import { skinSwatchUrl } from './game/skinTextures';
-import { FEATURED_BANNER, LOOTBOXES, SKINS, SKIN_WEAPONS, TIERS, TIER_ORDER, buildGachaReel, featuredSkins, getSkin, lootboxOdds, normalizeTier, resolveSkinId, skinsForWeapon, tierEmblemSvg, type SkinDef, type Tier } from './config/skins';
+import { BUY_QTYS, CASES, SHOP_PRICES, SKINS, SKIN_WEAPONS, TIERS, TIER_ORDER, XP_PER_LEVEL, caseOdds, getSkin, resolveSkinId, skinsForWeapon, tierEmblemSvg, type CaseKind, type SkinDef, type Tier } from './config/skins';
+import { awardGuestMatchXp, buyShopSkin, buyStoreItem, equipGuestSkin, guestDaily, guestSkins, inventoryOf, levelOf, normalizeDaily, openCases, permanentPrice, permanentStock, type StoreItem } from './services/economy';
 import { SkinPreview } from './game/skinPreview';
 import { cachedSkinThumb, requestSkinThumb } from './game/skinThumbs';
 import {
-  GameError, buySkin, changeNickname, claimDailyLogin, claimMission, equipSkin, equipTitle, fetchBundle, fetchMatchHistory, getNicknameChangeCost, getProfile,
-  initAuth, isSupabaseConfigured, onProfileChange, openLootbox, patchProfile, refreshProfile, saveLoadout, setGuestNickname, signInWithGoogle, signInWithId, signOut, signUpWithId, startGuest,
+  GameError, changeNickname, claimDailyLogin, claimMission, equipSkin, equipTitle, fetchBundle, fetchMatchHistory, getNicknameChangeCost, getProfile,
+  initAuth, isSupabaseConfigured, onProfileChange, patchProfile, refreshProfile, saveLoadout, setGuestNickname, signInWithGoogle, signInWithId, signOut, signUpWithId, startGuest,
   fetchFriends, removeFriend, respondFriendRequest, sendFriendRequest, sendPartyInvite, startSocial, stopSocial,
   type AccountBundle, type DailyLoginResult, type FriendRow, type MatchRow, type PartyInvite,
 } from './services/supabase';
@@ -125,7 +126,11 @@ if (!isSupabaseConfigured) { $('auth-err').textContent = '서버 미설정: 게�
 
 // ───────────────────────────── 로비 ─────────────────────────────
 async function loadBundle(): Promise<void> {
-  const b = await guard(fetchBundle); if (b) bundle = b;
+  const b = await guard(fetchBundle);
+  if (b) { // 게스트는 로컬 경제(보유 스킨 · 날짜 시드 오늘의 상점), 계정은 서버 응답을 상점 규칙으로 정리
+    if (b.profile.isGuest) { b.skins = guestSkins(); b.shop = guestDaily(); } else b.shop = normalizeDaily(b.shop);
+    bundle = b;
+  }
   renderLobby();
 }
 async function enterLobby(): Promise<void> {
@@ -208,7 +213,7 @@ function renderTop(): void {
   $('lb-tier').textContent = `${t.labelKo} · ${fmt(p.rank_points)} RP`;
   const title = bundle?.achievements.find((a) => a.achievement_id === p.equipped_title)?.title;
   $('lb-title').textContent = title ? `「${title}」` : p.isGuest ? '게스트' : '칭호 없음';
-  $('lb-boxes').textContent = `보유 박스 ${p.lootboxes}`;
+  { const inv = inventoryOf(p); $('lb-boxes').textContent = `컨테이너 ${inv.dropCases + inv.storeCases} · 열쇠 ${inv.keys}`; }
   $('btn-logout').textContent = p.isGuest ? '로그인' : '로그아웃';
   const pend = friendsPendingIn();
   $('lb-fr-dot').classList.toggle('hidden', !pend);
@@ -235,7 +240,7 @@ function renderLobby(): void {
   const fresh = lastTab !== lobbyTab; lastTab = lobbyTab;
   pvTarget = null;
   let html: string;
-  if (p.isGuest && (lobbyTab === 'shop' || lobbyTab === 'stats')) html = `<div class="c-sect"><span class="c-h1">${lobbyTab === 'shop' ? 'Store' : 'Career'}</span><span class="c-h2">게스트 제한</span></div><div class="c-empty">게스트는 전적·상점·미션이 저장되지 않습니다. 로그인하면 클라우드에 모두 저장됩니다.</div>`;
+  if (p.isGuest && lobbyTab === 'stats') html = `<div class="c-sect"><span class="c-h1">Career</span><span class="c-h2">게스트 제한</span></div><div class="c-empty">게스트는 전적·미션이 저장되지 않습니다. 상점·보관함은 이 브라우저에만 저장되며, 로그인하면 클라우드에 모두 저장됩니다.</div>`;
   else if (lobbyTab === 'settings') html = `<div class="c-sect"><span class="c-h1">Settings</span><span class="c-h2">설정 · 변경 사항은 즉시 저장됩니다</span></div><nav class="c-stabs" id="lb-set-tabs" aria-label="설정 섹션"></nav><div class="c-spane1" id="lb-set-body"></div>`;
   else html = { play: htmlPlay, loadout: htmlLoadout, shop: htmlShop, stats: htmlCareer }[lobbyTab]();
   body.innerHTML = `<div class="${fresh ? 'c-fade' : ''}">${html}</div>`;
@@ -301,7 +306,7 @@ function htmlPlay(): string {
 }
 
 // ───────────────────────────── 02 LOADOUT ─────────────────────────────
-type LdSlot = SlotKey | 'q' | 'e' | 'x';
+type LdSlot = SlotKey | 'q' | 'e' | 'x' | 'cases';
 let ldSlot: LdSlot = 'primary';
 /** 근접 슬롯 보기 필터: 'all' = 전체 모델 섹션, 'fists' = 주먹, 그 외 = MELEE_SECTS 의 key */
 let meleeView = 'all';
@@ -317,9 +322,11 @@ function htmlLoadout(): string {
     const sl = k === 'x' ? `궁극기 포인트 ${ULT_COST} 필요` : `쿨타임 ${SKILLS[l[k]].cdMs / 1000}초 · 라운드당 ${SKILLS[l[k]].uses}회`;
     return `<button type="button" class="c-slot${ldSlot === k ? ' c-on' : ''}" data-ldslot="${k}"><span class="c-sk">${k.toUpperCase()}</span><span class="c-st">${k === 'x' ? 'Ultimate' : 'Ability'} <span class="c-stk">${k === 'x' ? '궁극기' : '스킬'}</span></span><span class="c-sl">${sl}</span><span class="c-ss">${d.icon} ${esc(d.name)}</span></button>`;
   }).join('');
-  const right = ldSlot === 'q' || ldSlot === 'e' || ldSlot === 'x' ? htmlSkillGrid(ldSlot) : htmlSkinGrid(ldSlot);
+  const inv = inventoryOf(getProfile());
+  const cases = `<button type="button" class="c-slot${ldSlot === 'cases' ? ' c-on' : ''}" data-ldslot="cases"><span class="c-sk">◆</span><span class="c-st">컨테이너</span><span class="c-sl">${CASES.drop.name} · ${CASES.store.name} · 열쇠</span><span class="c-ss">컨테이너 ${inv.dropCases + inv.storeCases} · 열쇠 ${inv.keys}</span></button>`;
+  const right = ldSlot === 'cases' ? htmlContainers() : ldSlot === 'q' || ldSlot === 'e' || ldSlot === 'x' ? htmlSkillGrid(ldSlot) : htmlSkinGrid(ldSlot);
   return `<div class="c-sect"><span class="c-h1">Loadout</span><span class="c-h2">보관함 · 슬롯을 고르고 보유 스킨을 장착하세요</span></div>
-  <div class="c-loadout"><div><div class="c-slots">${slots}</div><div class="c-ph c-ph2"><span class="c-h1">Abilities</span><span class="c-h2">스킬 · 다음 매치부터 적용</span></div><div class="c-slots">${abil}</div></div><div>${right}</div></div>`;
+  <div class="c-loadout"><div><div class="c-slots">${slots}</div><div class="c-ph c-ph2"><span class="c-h1">Abilities</span><span class="c-h2">스킬 · 다음 매치부터 적용</span></div><div class="c-slots">${abil}</div><div class="c-ph c-ph2"><span class="c-h1">Inventory</span><span class="c-h2">보유 아이템</span></div><div class="c-slots">${cases}</div></div><div>${right}</div></div>`;
 }
 // 근접(3번) 슬롯: 모델별로 섹션을 나눠 보여 준다. 단검 = M9 배요네트(기본) / 버터플라이 / 카람빗, 장검 = 카타나.
 // ⚠ 새 근접 모델 추가 시 반드시 MELEE_SECTS(+특수 모델은 MELEE_SPECIAL)에 등록할 것 — 보관함 상단 무기 선택 칩(htmlMeleeChips)도 여기서 파생된다.
@@ -350,7 +357,7 @@ function skinCards(w: string, pool: SkinDef[], withStd: boolean, active = true):
   const std = `<div class="c-card${anyEq || !active ? '' : ' c-eq'}"><div class="c-vis">${skinVis(w, null)}</div>${tag(!anyEq)}<div class="c-body">${tierBadge(null)}<span class="c-cn2">${esc(wName(w))} 기본 외형</span><span class="c-cw">${esc(wName(w))} · 기본</span><div class="c-row">${anyEq || !active ? `<button type="button" class="c-btn" data-equip="" data-ew="${w}">장착</button>` : '<span class="c-own">장착 중</span>'}</div></div></div>`;
   const cards = sorted.filter(byRarity).map((s) => {
     const o = own.get(s.id), eq = !!o?.equipped;
-    const act = !o ? '<span class="c-lock">미보유 · 상점에서 구매</span>' : eq && active ? `<span class="c-own">${eqLabel}</span>` : `<button type="button" class="c-btn" data-equip="${esc(o.raw)}" data-ew="${w}">장착</button>`;
+    const act = !o ? '<span class="c-lock">미보유 · 컨테이너·상점에서 획득</span>' : eq && active ? `<span class="c-own">${eqLabel}</span>` : `<button type="button" class="c-btn" data-equip="${esc(o.raw)}" data-ew="${w}">장착</button>`;
     return `<div class="c-card${eq && active ? ' c-eq' : ''}"><div class="c-vis">${skinVis(w, s)}</div>${tag(eq)}<div class="c-body">${tierBadge(s.tier)}<span class="c-cn2">${esc(s.name)}</span><span class="c-cw">${esc(wName(w))} · ${TIERS[s.tier].name}</span><div class="c-row">${act}</div></div></div>`;
   });
   return { cards: (withStd && rarity === 'all' ? [std] : []).concat(cards), own };
@@ -411,30 +418,74 @@ function htmlSkillGrid(k: 'q' | 'e' | 'x'): string {
 
 // ───────────────────────────── 03 STORE ─────────────────────────────
 let oddsOpen = false;
-function htmlShop(): string {
-  const p = getProfile()!;
-  const items: { s: SkinDef; price: number; has: boolean }[] = [], seen = new Set<string>();
-  for (const it of bundle?.shop ?? []) { const s = getSkin(it.skin_id); if (s && !seen.has(s.id)) { seen.add(s.id); items.push({ s, price: it.price, has: it.owned || owned(s.id) }); } }
-  for (const s of featuredSkins()) if (!seen.has(s.id)) { seen.add(s.id); items.push({ s, price: s.price, has: owned(s.id) }); }
-  const card = (d: { s: SkinDef; price: number; has: boolean }): string => `<div class="c-card"><div class="c-vis">${skinVis(d.s.weaponId, d.s)}</div>${d.s.featured ? '<span class="c-eqtag">NEW</span>' : ''}<div class="c-body">${tierBadge(d.s.tier)}<span class="c-cn2">${esc(d.s.name)}</span><span class="c-cw">${esc(wName(d.s.weaponId))} · ${TIERS[d.s.tier].name}</span><div class="c-row"><span class="c-price"><span class="c-gem"></span>${fmt(d.price)}</span>${d.has ? '<span class="c-own">보유 중</span>' : `<button type="button" class="c-btn" data-buy="${d.s.id}">구매</button>`}</div></div></div>`;
-  const shown = items.filter((d) => byRarity(d.s));
-  const odds = (id: string): string => `<div class="c-odds">${lootboxOdds(id).map((o) => `<span style="color:${o.color}">${esc(o.label)} <b>${o.percent}%</b></span>`).join('')}</div>`;
-  const kb = LOOTBOXES.karambit ?? Object.values(LOOTBOXES).find((b) => b.jackpot);
-  const banner = !kb ? '' : `<section class="c-banner" aria-label="${esc(kb.name)}"><div class="c-bt">
-    <span class="c-kick">LIMITED — SPECIAL BOX</span><span class="c-bh">Karambit<br>Special Box</span><span class="c-bk">${esc(kb.name)}</span>
-    <span class="c-bd">${esc(kb.desc ?? '')}. 이미 보유한 스킨이 나오면 크레딧으로 환급됩니다${kb.jackpot ? ` (카람빗 ◈ ${fmt(kb.jackpot.refund)})` : ''}.</span>
-    <div class="c-price c-price-lg"><span class="c-gem"></span>${fmt(kb.price)}</div>
-    <div class="c-bact"><button type="button" class="c-btn c-fill c-btn-lg" data-box="${kb.id}">박스 개봉</button><button type="button" class="c-btn c-ghostb c-btn-lg" data-odds>${oddsOpen ? '확률 닫기' : '확률 공개'}</button></div>
-    ${oddsOpen ? odds(kb.id) : ''}</div><div class="c-bv"><div class="c-disc2"></div><div class="c-disc"></div>${kb.jackpot && getSkin(kb.jackpot.skinId) ? skinVis(getSkin(kb.jackpot.skinId)!.weaponId, getSkin(kb.jackpot.skinId), 'c-kar c-karimg') : KAR_SVG}</div></section>`;
-  const boxes = Object.values(LOOTBOXES).filter((b) => b.id !== kb?.id).map((b) => `<div class="c-card"><div class="c-body"><span class="c-badge" style="color:#fdcb6e">Random Box</span><span class="c-cn2">${esc(b.name)}</span>${odds(b.id)}<span class="c-cw">중복 획득 시 크레딧으로 환급됩니다.</span><div class="c-row"><span class="c-price"><span class="c-gem"></span>${fmt(b.price)}</span><span class="c-acts">${b.id === 'standard' ? `<button type="button" class="c-btn c-ghostb" data-box="${b.id}" data-owned="1" ${p.lootboxes < 1 ? 'disabled' : ''}>보유 ${p.lootboxes}</button>` : ''}<button type="button" class="c-btn" data-box="${b.id}">개봉</button></span></div></div></div>`).join('');
-  const fb = FEATURED_BANNER;
-  return `${banner}
-  <div class="c-sect"><span class="c-h1">Store</span><span class="c-h2">오늘의 상점 · 매일 자정(KST) 갱신${fb ? ` · 신규 ${esc(fb.title)} 컬렉션` : ''}</span></div>
-  ${rarityChips(items.map((d) => d.s))}
-  ${shown.length ? `<div class="c-grid">${shown.map(card).join('')}</div>` : `<div class="c-empty">${items.length ? '이 등급의 스킨이 없습니다.' : '상점 정보를 불러오지 못했습니다.'}</div>`}
-  ${boxes ? `<div class="c-sect c-sect2"><span class="c-h1">Boxes</span><span class="c-h2">랜덤 박스</span></div><div class="c-grid c-grid3">${boxes}</div>` : ''}`;
+/** 컨테이너/열쇠 실루엣 (SVG). --cs = 몸체색 */
+const CASE_ART: Record<CaseKind | 'key', string> = {
+  drop: '<svg class="c-case" viewBox="0 0 160 110" aria-hidden="true"><path d="M14 34 L80 14 L146 34 L146 92 L80 104 L14 92 Z" fill="var(--cs)" opacity=".18"/><path d="M14 34 L80 14 L146 34 L80 52 Z" fill="var(--cs)" opacity=".45"/><path d="M14 34 L80 52 L80 104 L14 92 Z M146 34 L80 52 L80 104 L146 92 Z" fill="none" stroke="var(--cs)" stroke-width="1.5"/><rect x="66" y="62" width="28" height="18" fill="none" stroke="var(--cs)" stroke-width="1.5"/><circle cx="80" cy="71" r="3" fill="var(--cs)"/></svg>',
+  store: '<svg class="c-case" viewBox="0 0 160 110" aria-hidden="true"><path d="M14 34 L80 14 L146 34 L146 92 L80 104 L14 92 Z" fill="var(--cs)" opacity=".18"/><path d="M14 34 L80 14 L146 34 L80 52 Z" fill="var(--cs)" opacity=".45"/><path d="M14 34 L80 52 L80 104 L14 92 Z M146 34 L80 52 L80 104 L146 92 Z" fill="none" stroke="var(--cs)" stroke-width="1.5"/><path d="M104 66 a7 7 0 1 1 0.1 0 M110 70 L128 78 M122 75 L120 81 M127 77 L125 83" fill="none" stroke="var(--cs)" stroke-width="1.8"/></svg>',
+  key: '<svg class="c-case" viewBox="0 0 160 110" aria-hidden="true"><circle cx="52" cy="55" r="22" fill="var(--cs)" opacity=".2" stroke="var(--cs)" stroke-width="1.5"/><circle cx="52" cy="55" r="8" fill="none" stroke="var(--cs)" stroke-width="1.5"/><path d="M74 55 H138 M118 55 V70 M130 55 V66" fill="none" stroke="var(--cs)" stroke-width="3"/></svg>',
+};
+const CASE_TINT: Record<CaseKind | 'key', string> = { drop: '#9fb3c8', store: '#fdcb6e', key: '#e6d3a3' };
+const buyQty: Record<StoreItem, number> = { key: 1, store_case: 1 };
+const openQty: Record<CaseKind, number> = { drop: 1, store: 1 };
+const qtyPills = (attr: string, id: string, cur: number, max = 10): string =>
+  `<div class="c-qty" role="group" aria-label="수량">${BUY_QTYS.map((n) => `<button type="button" class="c-qp${n === cur ? ' c-on' : ''}" data-${attr}="${id}" data-n="${n}" ${n > max ? 'disabled' : ''}>${n}</button>`).join('')}</div>`;
+const oddsHtml = (k: CaseKind): string => `<div class="c-odds">${caseOdds(k).map((o) => `<span style="color:${o.color}">${esc(o.label)}${o.tier === 'exrare' ? ' ★' : ''} <b>${o.percent.toFixed(2)}%</b></span>`).join('')}</div>`;
+/** 다음 KST 자정까지 남은 시간 */
+function untilReset(): string {
+  const ms = 86400_000 - ((Date.now() + 9 * 3600_000) % 86400_000), h = Math.floor(ms / 3600_000), m = Math.floor((ms % 3600_000) / 60_000);
+  return `${h}시간 ${String(m).padStart(2, '0')}분 후 갱신`;
 }
-
+function shopSkinCard(s: SkinDef, price: number, has: boolean, src: 'daily' | 'perm'): string {
+  return `<div class="c-card"><div class="c-vis">${skinVis(s.weaponId, s)}</div><div class="c-body">${tierBadge(s.tier)}<span class="c-cn2">${esc(s.name)}</span><span class="c-cw">${esc(wName(s.weaponId))} · ${TIERS[s.tier].name}</span><div class="c-row"><span class="c-price"><span class="c-gem"></span>${fmt(price)}</span>${has ? '<span class="c-own">보유 중</span>' : `<button type="button" class="c-btn" data-buy="${s.id}" data-src="${src}">구매</button>`}</div></div></div>`;
+}
+function htmlShop(): string {
+  const p = getProfile()!, inv = inventoryOf(p);
+  const storeCard = (item: StoreItem, art: CaseKind | 'key', name: string, desc: string, unit: number, own: number): string => {
+    const q = buyQty[item];
+    return `<div class="c-card c-ccard" style="--cs:${CASE_TINT[art]}"><div class="c-vis">${CASE_ART[art]}<span class="c-xn" title="보유 개수">x${own}</span></div><div class="c-body">
+      <span class="c-cn2">${esc(name)}</span><span class="c-cw">${esc(desc)}</span>
+      ${art === 'store' ? `<button type="button" class="c-link2" data-odds>${oddsOpen ? '확률 숨기기' : '확률 보기'}</button>${oddsOpen ? oddsHtml('store') : ''}` : ''}
+      ${qtyPills('bq', item, q)}
+      <div class="c-row"><span class="c-price"><span class="c-gem"></span>${fmt(unit * q)}</span><button type="button" class="c-btn c-fill" data-sbuy="${item}" ${p.credits < unit * q ? 'disabled title="크레딧 부족"' : ''}>${q}개 구매</button></div></div></div>`;
+  };
+  const daily = bundle?.shop ?? [];
+  const dailyCards = daily.map((it) => { const s = getSkin(it.skin_id)!; return shopSkinCard(s, it.price, it.owned || owned(s.id), 'daily'); }).join('');
+  const perm = permanentStock(), permShown = perm.filter(byRarity);
+  return `<div class="c-sect"><span class="c-h1">Store</span><span class="c-h2">보유 ◈ ${fmt(p.credits)} · 컨테이너 ${inv.dropCases + inv.storeCases} · 열쇠 ${inv.keys}</span></div>
+  <div class="c-ph c-ph2"><span class="c-h1">Keys &amp; Containers</span><span class="c-h2">열쇠 &amp; 컨테이너</span></div>
+  <div class="c-grid c-grid3">
+    ${storeCard('store_case', 'store', CASES.store.name, `${CASES.store.desc}. 군용·제한된·비밀의 무기만 나옵니다.`, SHOP_PRICES.storeCase, inv.storeCases)}
+    ${storeCard('key', 'key', '무기 상자 열쇠', `${CASES.drop.name} 1개를 여는 데 1개가 쓰입니다.`, SHOP_PRICES.key, inv.keys)}
+    <div class="c-card c-ccard" style="--cs:${CASE_TINT.drop}"><div class="c-vis">${CASE_ART.drop}<span class="c-xn">x${inv.dropCases}</span></div><div class="c-body"><span class="c-cn2">${CASES.drop.name}</span><span class="c-cw">판매하지 않습니다. 매치를 플레이해 레벨이 오르면 매주 1개 지급됩니다 · 현재 Lv.${levelOf(inv.xp)} (${fmt(inv.xp % XP_PER_LEVEL)} / ${fmt(XP_PER_LEVEL)} XP)</span>${oddsHtml('drop')}<div class="c-row"><button type="button" class="c-btn c-ghostb" data-gocases>보관함에서 열기</button></div></div></div>
+  </div>
+  <div class="c-ph c-ph2"><span class="c-h1">Today</span><span class="c-h2">오늘의 상점 · ${untilReset()} · 최대 비밀의 무기</span></div>
+  ${dailyCards ? `<div class="c-grid">${dailyCards}</div>` : '<div class="c-empty">오늘의 상점을 불러오지 못했습니다. 탭을 다시 열어 주세요.</div>'}
+  <div class="c-ph c-ph2"><span class="c-h1">Always</span><span class="c-h2">상설 판매 · 컨테이너에서 나오지 않는 등급 · 평범한 ◈ ${fmt(SHOP_PRICES.permanent.consumer!)} / 쓸만한 ◈ ${fmt(SHOP_PRICES.permanent.industrial!)}</span></div>
+  ${rarityChips(perm)}
+  <div class="c-grid">${permShown.map((s) => shopSkinCard(s, permanentPrice(s), owned(s.id), 'perm')).join('')}</div>`;
+}
+/** 보관함 › 컨테이너: 종류별 그룹 카드 + xN 배지 */
+function htmlContainers(): string {
+  const inv = inventoryOf(getProfile());
+  const card = (art: CaseKind | 'key', name: string, n: number, desc: string, action: string): string =>
+    `<div class="c-card c-ccard${n ? '' : ' c-none'}" style="--cs:${CASE_TINT[art]}"><div class="c-vis">${CASE_ART[art]}<span class="c-xn">x${n}</span></div><div class="c-body"><span class="c-cn2">${esc(name)}</span><span class="c-cw">${esc(desc)}</span>${action}</div></div>`;
+  const opener = (k: CaseKind, max: number): string => {
+    const q = Math.min(openQty[k], Math.max(1, max)); openQty[k] = q;
+    return max < 1 ? `<div class="c-row"><span class="c-lock">${k === 'drop' && inv.dropCases > 0 ? '무기 상자 열쇠가 필요합니다' : '보유한 컨테이너가 없습니다'}</span><button type="button" class="c-btn c-ghostb" data-gotab="shop">상점</button></div>`
+      : `${qtyPills('oq', k, q, max)}<div class="c-row"><span class="c-cw">${k === 'drop' ? `열쇠 ${q}개 사용` : '열쇠 동봉'}</span><button type="button" class="c-btn c-fill" data-open="${k}">${q}개 열기</button></div>`;
+  };
+  return `<div class="c-grid c-grid3">
+    ${card('drop', CASES.drop.name, inv.dropCases, CASES.drop.desc, opener('drop', Math.min(inv.dropCases, inv.keys)))}
+    ${card('store', CASES.store.name, inv.storeCases, CASES.store.desc, opener('store', inv.storeCases))}
+    ${card('key', '무기 상자 열쇠', inv.keys, `${CASES.drop.name}을 여는 데 쓰입니다.`, `<div class="c-row"><span class="c-price"><span class="c-gem"></span>${fmt(SHOP_PRICES.key)}</span><button type="button" class="c-btn c-ghostb" data-gotab="shop">열쇠 구매</button></div>`)}
+  </div><div class="c-foot">Lv.${levelOf(inv.xp)} · 다음 레벨까지 ${fmt(XP_PER_LEVEL - (inv.xp % XP_PER_LEVEL))} XP · 매주 첫 레벨업 시 ${CASES.drop.name} 1개 지급</div>`;
+}
+/** 컨테이너 개봉 — Phase 2 에서 룰렛 연출로 교체 */
+async function openCaseFlow(kind: CaseKind, n: number): Promise<void> {
+  const res = await guard(() => openCases(kind, n)); if (!res) return;
+  toast(res.map((r) => getSkin(r.skin_id)?.name ?? r.skin_id).join(', '), 'good');
+  await loadBundle();
+}
 // ───────────────────────────── 04 CAREER ─────────────────────────────
 let careerSub: 'matches' | 'missions' | 'achievements' = 'matches';
 async function loadHistory(): Promise<void> { history = (await guard(() => fetchMatchHistory(20))) ?? []; if (lobbyTab === 'stats') renderLobby(); }
@@ -449,8 +500,8 @@ function htmlCareer(): string {
     body = `<div class="c-tblw"><table class="c-tbl"><thead><tr><th>Mode</th><th>Map</th><th>Result</th><th>K / D / A</th><th>RP</th><th>Credits</th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="c-loss">기록이 없습니다.</td></tr>'}</tbody></table></div>`;
   } else if (careerSub === 'missions') {
     const p = getProfile()!, today = ((Math.max(1, p.login_streak) - 1) % 7) + 1;
-    const days = (bundle?.loginRewards ?? []).map((r) => `<div class="c-day${r.day < today ? ' c-done' : r.day === today ? ' c-today' : ''}"><span class="c-tl">DAY ${r.day}</span><b>${r.reward_type === 'credits' ? `◈ ${r.reward_amount}` : `BOX ×${r.reward_amount}`}</b></div>`).join('');
-    const ms = (bundle?.missions ?? []).map((m) => { const done = m.progress >= m.target; return `<div class="c-card"><div class="c-body"><span class="c-cn2">${esc(m.description)}</span><span class="c-cw">${m.reward_type === 'credits' ? `◈ ${m.reward_amount}` : `랜덤박스 ×${m.reward_amount}`}</span><div class="c-bar"><i style="width:${Math.min(100, (m.progress / m.target) * 100)}%"></i></div><div class="c-row"><span class="c-cw c-mono">${m.progress} / ${m.target}</span>${m.claimed ? '<span class="c-own">수령 완료</span>' : `<button type="button" class="c-btn${done ? ' c-fill' : ''}" data-claim="${m.slot}" ${done ? '' : 'disabled'}>보상 받기</button>`}</div></div></div>`; }).join('');
+    const days = (bundle?.loginRewards ?? []).map((r) => `<div class="c-day${r.day < today ? ' c-done' : r.day === today ? ' c-today' : ''}"><span class="c-tl">DAY ${r.day}</span><b>${r.reward_type === 'credits' ? `◈ ${r.reward_amount}` : `CASE ×${r.reward_amount}`}</b></div>`).join('');
+    const ms = (bundle?.missions ?? []).map((m) => { const done = m.progress >= m.target; return `<div class="c-card"><div class="c-body"><span class="c-cn2">${esc(m.description)}</span><span class="c-cw">${m.reward_type === 'credits' ? `◈ ${m.reward_amount}` : `드롭 무기 상자 ×${m.reward_amount}`}</span><div class="c-bar"><i style="width:${Math.min(100, (m.progress / m.target) * 100)}%"></i></div><div class="c-row"><span class="c-cw c-mono">${m.progress} / ${m.target}</span>${m.claimed ? '<span class="c-own">수령 완료</span>' : `<button type="button" class="c-btn${done ? ' c-fill' : ''}" data-claim="${m.slot}" ${done ? '' : 'disabled'}>보상 받기</button>`}</div></div></div>`; }).join('');
     body = `<div class="c-ph c-ph2"><span class="c-h1">7-Day Login</span><span class="c-h2">현재 ${p.login_streak}일 연속</span></div><div class="c-days">${days}</div>
       <div class="c-ph c-ph2"><span class="c-h1">Daily Missions</span><span class="c-h2">일일 미션</span></div>${ms ? `<div class="c-grid c-grid3">${ms}</div>` : '<div class="c-empty">미션이 없습니다.</div>'}`;
   } else {
@@ -504,10 +555,20 @@ function bindLobbyBody(): void {
   each('[data-csub]', (b) => (b.onclick = () => { careerSub = b.dataset.csub as typeof careerSub; renderLobby(); }));
   each('[data-odds]', (b) => (b.onclick = () => { oddsOpen = !oddsOpen; renderLobby(); }));
   each('[data-buy]', (b) => (b.onclick = async () => {
-    const s = getSkin(b.dataset.buy); if (!s || !confirm(`${s.name} 을(를) 구매할까요?`)) return;
-    if (await guard(() => buySkin(s.id))) { toast('구매 완료!', 'good'); await loadBundle(); }
+    const s = getSkin(b.dataset.buy); if (!s) return;
+    const price = b.dataset.src === 'daily' ? bundle?.shop.find((d) => d.skin_id === s.id)?.price ?? 0 : permanentPrice(s);
+    if (!confirm(`${s.name} 을(를) ◈ ${fmt(price)}에 구매할까요?`)) return;
+    if ((await guard(() => buyShopSkin(s.id, bundle?.shop ?? []))) !== null) { toast(`${s.name} 구매 완료`, 'good'); await loadBundle(); }
   }));
-  each('[data-box]', (b) => (b.onclick = () => void runGacha(b.dataset.box!, !!b.dataset.owned)));
+  each('[data-bq]', (b) => (b.onclick = () => { buyQty[b.dataset.bq as StoreItem] = +b.dataset.n!; renderLobby(); }));
+  each('[data-oq]', (b) => (b.onclick = () => { openQty[b.dataset.oq as CaseKind] = +b.dataset.n!; renderLobby(); }));
+  each('[data-sbuy]', (b) => (b.onclick = async () => {
+    const item = b.dataset.sbuy as StoreItem, n = buyQty[item], name = item === 'key' ? '무기 상자 열쇠' : CASES.store.name;
+    if ((await guard(() => buyStoreItem(item, n))) !== null) { toast(`${name} ${n}개 구매 완료`, 'good'); renderLobby(); }
+  }));
+  each('[data-open]', (b) => (b.onclick = () => void openCaseFlow(b.dataset.open as CaseKind, openQty[b.dataset.open as CaseKind])));
+  each('[data-gocases]', (b) => (b.onclick = () => { ldSlot = 'cases'; goTab('loadout'); }));
+  each('[data-gotab]', (b) => (b.onclick = () => goTab(b.dataset.gotab as LobbyTab)));
   each('[data-skpick]', (b) => (b.onclick = () => { // 장착: 일반 스킬은 Q/E 중복 불가(자동 교체), 즉시 저장 + 다음 매치 진입 시 서버로 전달
     const id = b.dataset.skpick!, l = { ...getProfile()!.loadout }, k = ldSlot as 'q' | 'e' | 'x';
     if (k === 'x') l.x = id as UltId;
@@ -517,12 +578,13 @@ function bindLobbyBody(): void {
   each('[data-equip]', (b) => (b.onclick = async () => {
     const id = b.dataset.equip || null, k = ldSlot as SlotKey, cur = getProfile()!.loadout[k], w = b.dataset.ew || cur;
     try {
-      await equipSkin(w, id); bundle?.skins.forEach((s) => { if (s.weapon_id === w) s.equipped = s.skin_id === id; });
+      if (getProfile()?.isGuest) equipGuestSkin(w, id); else await equipSkin(w, id);
+      bundle?.skins.forEach((s) => { if (s.weapon_id === w) s.equipped = s.skin_id === id; });
       if (w !== cur) await saveLoadout({ ...getProfile()!.loadout, [k]: w } as Loadout); // 다른 근접 섹션의 스킨 장착 → 그 무기로 전환
       net.refreshProfile(); needReconnect = true; renderLobby();
     } catch (e) { toast(errMsg(e), 'bad'); }
   }));
-  each('[data-claim]', (b) => (b.onclick = async () => { const r = await guard(() => claimMission(+b.dataset.claim!)); if (r) { toast(r.reward_type === 'credits' ? `◈ ${r.reward_amount} 획득` : '랜덤박스 획득', 'good'); await loadBundle(); } }));
+  each('[data-claim]', (b) => (b.onclick = async () => { const r = await guard(() => claimMission(+b.dataset.claim!)); if (r) { toast(r.reward_type === 'credits' ? `◈ ${r.reward_amount} 획득` : '드롭 무기 상자 획득', 'good'); await loadBundle(); } }));
   each('[data-title]', (b) => (b.onclick = async () => { try { await equipTitle(b.dataset.title || null); needReconnect = true; renderLobby(); } catch (e) { toast(errMsg(e), 'bad'); } }));
 }
 
@@ -626,23 +688,6 @@ setInterval(() => { // 받은 친구 요청 표시를 위해 로비에 있는 �
 /** 스킨/칭호/닉네임 변경 후에는 다음 매치 전에 소켓을 다시 맺어 서버 프로필을 갱신 */
 let needReconnect = false;
 
-// ── 랜덤박스 가챠 연출
-async function runGacha(boxId: string, useOwned: boolean): Promise<void> {
-  const res = await guard(() => openLootbox(boxId, useOwned)); if (!res) return;
-  const reel = buildGachaReel(res.skin_id, 40, boxId), strip = $('gacha-strip'), CELL = 120, target = reel.length - 4;
-  $('gacha-title').textContent = LOOTBOXES[boxId]?.name ?? '랜덤 박스'; $('gacha-result').innerHTML = '<span class="mut">개봉 중…</span>';
-  strip.innerHTML = reel.map((s) => `<div style="${swatch(s)};border-bottom:4px solid ${TIERS[s.tier].color}"><span class="badge">${tierEmblemSvg(s.tier, 13)}</span>${esc(s.name)}</div>`).join('');
-  show('m-gacha'); strip.style.transition = 'none'; strip.style.transform = 'translateX(0)';
-  const winW = $('gacha-win').clientWidth, end = -(target * CELL + CELL / 2 - winW / 2) + (Math.random() - 0.5) * 70;
-  requestAnimationFrame(() => requestAnimationFrame(() => { strip.style.transition = 'transform 4.2s cubic-bezier(.08,.72,.12,1)'; strip.style.transform = `translateX(${end}px)`; }));
-  pc.audio.resume();
-  setTimeout(() => {
-    const s = getSkin(res.skin_id), r = TIERS[s?.tier ?? normalizeTier(res.rarity)];
-    $('gacha-result').innerHTML = `<div class="pop"><div class="rar" style="color:${r.color};font-size:14px;display:flex;gap:6px;justify-content:center;align-items:center">${tierEmblemSvg(s?.tier ?? res.rarity, 20)}${r.name}</div><div style="font-size:22px;font-weight:800">${esc(s?.name ?? res.skin_id)}</div>${res.duplicate ? `<div class="mut">이미 보유한 스킨 — ◈ ${fmt(res.refund)} 환급</div>` : `<div style="color:var(--ok)">새 스킨 획득!</div>`}</div>`;
-    if (s?.glb) { jackpotBurst(); pc.audio.jackpot(); $('gacha-result').classList.add('jackpot'); } else pc.audio.kill();
-    void loadBundle();
-  }, 4400);
-}
 /** 0.1% 잭팟(카람빗) — 룰렛이 멈추는 순간 전체 화면 황금/블루젬 폭발 파티클 (캔버스 오버레이, 약 3.2초 후 자동 제거) */
 function jackpotBurst(): void {
   const cv = document.createElement('canvas'), dpr = Math.min(devicePixelRatio || 1, 2), W = innerWidth, H = innerHeight;
@@ -674,7 +719,7 @@ function jackpotBurst(): void {
 }
 function showLoginReward(r: DailyLoginResult): void {
   const days = (bundle?.loginRewards ?? []).map((d) => `<div class="day ${d.day < r.day ? 'done' : d.day === r.day ? 'today' : ''}"><b>${d.day}</b><br />${d.reward_type === 'credits' ? `◈${d.reward_amount}` : '🎁'}</div>`).join('');
-  $('login-body').innerHTML = `<div class="days">${days}</div><div style="text-align:center;margin-top:14px;font-size:18px"><b>${r.streak}일 연속 접속!</b><br />${r.reward_type === 'credits' ? `◈ ${r.reward_amount} 크레딧` : `🎁 랜덤박스 ×${r.reward_amount}`} 지급</div>`;
+  $('login-body').innerHTML = `<div class="days">${days}</div><div style="text-align:center;margin-top:14px;font-size:18px"><b>${r.streak}일 연속 접속!</b><br />${r.reward_type === 'credits' ? `◈ ${r.reward_amount} 크레딧` : `🎁 드롭 무기 상자 ×${r.reward_amount}`} 지급</div>`;
   show('m-login');
 }
 // ── 닉네임 변경 (크레딧 소모)
@@ -812,6 +857,8 @@ function playMatchEnd(m: MatchEnd): void {
   show('loadout', false); show('m-pause', false); show('scoreboard', false); pc.releaseAll();
   const myTeam = net.myTeam, kind = m.winner < 0 ? 'draw' : m.winner === myTeam ? 'win' : 'lose';
   matchOver = { m, myId: net.you, myTeam, kind };
+  { const me = m.players.find((x) => x.userId === net.you); // 게스트 XP(계정은 DB match_history 트리거)
+    if (awardGuestMatchXp(kind === 'win' ? 'win' : kind === 'lose' ? 'loss' : 'draw', me?.kills ?? 0)) setTimeout(() => toast('주간 보상: 드롭 무기 상자 획득!', 'good'), 2500); }
   const title = $('mfx-title'), text = kind === 'win' ? 'VICTORY' : kind === 'lose' ? 'DEFEAT' : 'DRAW';
   title.textContent = text; title.dataset.text = text;
   $('mfx-sub').textContent = `${m.score[myTeam]} : ${m.score[1 - myTeam]}`;

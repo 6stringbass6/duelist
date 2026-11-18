@@ -239,6 +239,38 @@ export function buildGachaReel(resultSkinId: string, length = 40, boxId = ''): S
   return reel;
 }
 
+// ───────────────────────────── 2-b) 컨테이너 · 상점 경제 (supabase_shop_overhaul.sql 과 동일 상수) ─────────────────────────────
+export type CaseKind = 'drop' | 'store';
+export interface CaseDef { id: CaseKind; name: string; en: string; needsKey: boolean; rates: Partial<Record<Tier, number>>; desc: string }
+/** CS2 공식 확률. drop = 매치 XP 레벨업 주간 보상(열쇠 필요) / store = 상점 판매(열쇠 동봉) */
+export const CASES: Record<CaseKind, CaseDef> = {
+  drop: { id: 'drop', name: '드롭 무기 상자', en: 'Weapon Case', needsKey: true, rates: { milspec: 79.92, restricted: 15.98, classified: 3.2, covert: 0.64, exrare: 0.26 }, desc: '매주 첫 레벨업 보상 · 무기 상자 열쇠 1개로 개봉' },
+  store: { id: 'store', name: '상점 전용 컨테이너', en: 'Store Container', needsKey: false, rates: { milspec: 75, restricted: 20, classified: 5 }, desc: '열쇠 동봉 · 구매 즉시 개봉 가능' },
+};
+export const SHOP_PRICES = {
+  key: 1500,
+  storeCase: 2200,
+  daily: { milspec: 1100, restricted: 1800, classified: 2800 } as Partial<Record<Tier, number>>,
+  permanent: { consumer: 400, industrial: 700 } as Partial<Record<Tier, number>>,
+};
+export const BUY_QTYS = [1, 3, 5, 10] as const;
+export const DAILY_SLOTS = 4;
+/** 매치 XP: 기본 100 + 킬 10 + 승리 100 (이탈 0), 1,000 XP = 1 레벨 */
+export const XP_PER_LEVEL = 1000;
+export const matchXp = (result: 'win' | 'loss' | 'draw' | 'left', kills: number): number => (result === 'left' ? 0 : 100 + 10 * Math.max(0, kills) + (result === 'win' ? 100 : 0));
+/** 확률표(%) — 높은 등급부터 */
+export const caseOdds = (k: CaseKind): OddsRow[] => TIER_ORDER.filter((t) => (CASES[k].rates[t] ?? 0) > 0).reverse().map((t) => ({ key: t, label: TIERS[t].name, color: TIERS[t].color, percent: CASES[k].rates[t]!, tier: t }));
+/** 등급 추첨 (r ∈ [0,1)) */
+export function rollCaseTier(k: CaseKind, r = Math.random()): Tier {
+  let v = r * 100;
+  const rows = caseOdds(k);
+  for (const o of rows) { if (v < o.percent) return o.tier!; v -= o.percent; }
+  return rows[rows.length - 1].tier!;
+}
+export const tierPool = (t: Tier): SkinDef[] => SKINS.filter((s) => s.tier === t);
+/** 해당 컨테이너에서 나올 수 있는 스킨 전체(룰렛 릴 채우기용) */
+export const casePool = (k: CaseKind): SkinDef[] => SKINS.filter((s) => (CASES[k].rates[s.tier] ?? 0) > 0);
+
 // ───────────────────────────── 3) DB 시드 생성 (skin_catalog / lootboxes / lootbox_rates) ─────────────────────────────
 // 구버전 등급 제약·보유 스킨 ID 이관은 supabase_schema.sql 의 "CS2 등급 마이그레이션" 블록이 담당 (이 시드보다 먼저 1회 실행)
 const q = (s: string): string => `'${s.replace(/'/g, "''")}'`;

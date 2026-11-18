@@ -24,6 +24,8 @@ export interface Profile {
   rank_points: number; peak_rank_points: number; equipped_title: string | null;
   login_streak: number; best_login_streak: number; last_login_date: string | null;
   settings: Partial<Settings>; loadout: Loadout; isGuest: boolean;
+  /** 컨테이너 경제 (supabase_shop_overhaul.sql). lootboxes = 드롭 무기 상자. 마이그레이션 전 DB 에선 undefined */
+  case_keys?: number; store_cases?: number; xp?: number; last_drop_week?: string | null;
 }
 export interface CareerStats { matches: number; wins: number; losses: number; kills: number; deaths: number; assists: number; headshot_kills: number; kd: number; hs_pct: number; win_rate: number }
 export interface OwnedSkin { skin_id: string; weapon_id: string; equipped: boolean; source: string; acquired_at: string }
@@ -46,7 +48,9 @@ const ERROR_KO: Record<string, string> = {
   INVALID_ID: '아이디는 4~16자여야 합니다. (공백 제외, 문자 제한 없음)', INVALID_PASSWORD: '비밀번호는 6자 이상이어야 합니다.',
   INVALID_NICKNAME: '닉네임은 한글·영문·숫자·밑줄 2~16자입니다.', NICKNAME_TAKEN: '이미 사용 중인 닉네임입니다.', SAME_NICKNAME: '현재 닉네임과 같습니다.',
   NOT_ENOUGH_CREDITS: '크레딧이 부족합니다.', ALREADY_OWNED: '이미 보유한 스킨입니다.', NOT_FOR_SALE: '현재 판매 중인 스킨이 아닙니다.',
-  SKIN_NOT_FOUND: '존재하지 않는 스킨입니다.', SKIN_NOT_OWNED: '보유하지 않은 스킨입니다.', NO_LOOTBOX: '보유한 랜덤박스가 없습니다.',
+  SKIN_NOT_FOUND: '존재하지 않는 스킨입니다.', SKIN_NOT_OWNED: '보유하지 않은 스킨입니다.', NO_LOOTBOX: '보유한 컨테이너가 부족합니다.',
+  NO_CASE_KEY: '무기 상자 열쇠가 부족합니다.', INVALID_QTY: '구매·개봉 수량은 1 · 3 · 5 · 10개 중에서 고를 수 있습니다.', BOX_EMPTY: '컨테이너 구성이 비어 있습니다.',
+  SHOP_NOT_READY: '상점 업데이트가 아직 서버에 적용되지 않았습니다. 잠시 후 다시 시도해 주세요.',
   BOX_NOT_FOUND: '존재하지 않는 박스입니다.', TITLE_LOCKED: '아직 해금되지 않은 칭호입니다.',
   FRIEND_NOT_FOUND: '해당 닉네임의 플레이어를 찾을 수 없습니다.', FRIEND_SELF: '자기 자신에게는 친구 요청을 보낼 수 없습니다.', FRIEND_EXISTS: '이미 친구이거나 요청을 보낸 상대입니다.',
   FRIEND_LIMIT: '친구는 최대 100명까지 추가할 수 있습니다.', REQUEST_NOT_FOUND: '요청을 찾을 수 없습니다.', INVITE_FAILED: '초대를 보내지 못했습니다. 잠시 후 다시 시도해 주세요.',
@@ -60,11 +64,12 @@ export class GameError extends Error {
 function toError(e: unknown): GameError {
   if (e instanceof GameError) return e;
   const msg = (e as { message?: string })?.message ?? String(e);
+  if ((e as { code?: string })?.code === 'PGRST202' || msg.includes('Could not find the function')) return new GameError('SHOP_NOT_READY');
   const key = Object.keys(ERROR_KO).find((k) => msg.includes(k));
   return new GameError(key ?? msg);
 }
 function client(): SupabaseClient { if (!supabase) throw new GameError('NOT_CONFIGURED'); return supabase; }
-async function rpc<T>(fn: string, args?: Record<string, unknown>): Promise<T> {
+export async function rpc<T>(fn: string, args?: Record<string, unknown>): Promise<T> {
   if (currentProfile?.isGuest) throw new GameError('GUEST_NOT_ALLOWED');
   const { data, error } = await client().rpc(fn, args);
   if (error) throw toError(error);
@@ -113,14 +118,22 @@ export function patchProfile(patch: Partial<Profile>): void { if (currentProfile
 
 // ───────────────────────────── 게스트 (로컬 전용) ─────────────────────────────
 const GUEST_KEY = 'gs_guest_v1';
-function saveGuest(p: Profile): void { try { localStorage.setItem(GUEST_KEY, JSON.stringify({ id: p.id, nickname: p.nickname, loadout: p.loadout })); } catch { /* noop */ } }
-/** 로그인 없이 즉시 체험. 전적·크레딧·스킨은 저장되지 않음(설정은 로컬 저장). */
+/** 게스트 경제(크레딧·컨테이너·열쇠·XP)도 로컬에 보존 — 스킨/오늘의 상점 상태는 services/economy.ts 가 별도 키로 저장 */
+const GUEST_ECON = ['credits', 'lootboxes', 'case_keys', 'store_cases', 'xp', 'last_drop_week'] as const;
+const GUEST_START_CREDITS = 1000; // DB profiles.credits 기본값과 동일
+function saveGuest(p: Profile): void {
+  try { localStorage.setItem(GUEST_KEY, JSON.stringify({ id: p.id, nickname: p.nickname, loadout: p.loadout, ...Object.fromEntries(GUEST_ECON.map((k) => [k, p[k] ?? null])) })); } catch { /* noop */ }
+}
+const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.floor(v) : d);
+/** 로그인 없이 즉시 체험. 전적은 저장되지 않음 — 설정·크레딧·보관함은 이 브라우저에만 로컬 저장. */
 export function startGuest(nickname?: string): Profile {
-  let saved: { id?: string; nickname?: string; loadout?: unknown } = {};
+  let saved: { id?: string; nickname?: string; loadout?: unknown } & Partial<Record<(typeof GUEST_ECON)[number], unknown>> = {};
   try { saved = JSON.parse(localStorage.getItem(GUEST_KEY) ?? '{}'); } catch { /* noop */ }
   const nick = nickname && isValidNickname(nickname) ? nickname.trim() : saved.nickname ?? `Guest${Math.floor(1000 + Math.random() * 9000)}`;
   currentProfile = {
-    id: saved.id ?? `guest-${crypto.randomUUID()}`, username: null, nickname: nick, credits: 0, lootboxes: 0, rank_points: 0, peak_rank_points: 0,
+    id: saved.id ?? `guest-${crypto.randomUUID()}`, username: null, nickname: nick, credits: num(saved.credits, GUEST_START_CREDITS), lootboxes: num(saved.lootboxes),
+    case_keys: num(saved.case_keys), store_cases: num(saved.store_cases), xp: num(saved.xp), last_drop_week: typeof saved.last_drop_week === 'string' ? saved.last_drop_week : null,
+    rank_points: 0, peak_rank_points: 0,
     equipped_title: null, login_streak: 0, best_login_streak: 0, last_login_date: null, settings: {}, loadout: sanitizeLoadout(saved.loadout), isGuest: true,
   };
   saveGuest(currentProfile); notify();
@@ -325,8 +338,8 @@ export async function claimMission(slot: number): Promise<{ reward_type: 'credit
 /** 매치 종료(match:reward) 후 크레딧/RP 재동기화 */
 export async function refreshProfile(): Promise<Profile | null> {
   if (!currentProfile || currentProfile.isGuest || !supabase) return currentProfile;
-  const { data } = await supabase.from('profiles').select('credits,lootboxes,rank_points,peak_rank_points,nickname,equipped_title,login_streak').eq('id', currentProfile.id).maybeSingle();
-  if (data) patchProfile(data as Partial<Profile>);
+  const { data } = await supabase.from('profiles').select('*').eq('id', currentProfile.id).maybeSingle(); // '*' — 컨테이너 컬럼 마이그레이션 전에도 실패하지 않도록
+  if (data) { const { settings: _s, loadout: _l, ...rest } = data as Record<string, unknown>; patchProfile(rest as Partial<Profile>); }
   return currentProfile;
 }
 
