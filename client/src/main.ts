@@ -245,7 +245,23 @@ function renderLobby(): void {
 
 // ───────────────────────────── 01 PLAY ─────────────────────────────
 const MODE_EN: Record<GameMode, string> = { classic: 'Classic', ranked: 'Competitive', tdm: 'Deathmatch', range: 'The Range' };
-let matching = false;
+// 매칭: matchTicket 이 0 이 아니면 매칭 진행 중. 진행 중 Play 재클릭 → 취소.
+// 취소된 요청은 abandoned 에 남아 있다가, 그 사이 서버가 방에 넣어 주면 즉시 나간다.
+let matchSeq = 0, matchTicket = 0, pendingQueue: Promise<void> | null = null;
+const abandoned = new Set<number>();
+const isMatching = (): boolean => matchTicket !== 0;
+function cancelMatch(): void {
+  if (!matchTicket) return;
+  abandoned.add(matchTicket); matchTicket = 0;
+  if (net.room) void net.leaveRoom();
+  toast('매칭을 취소했습니다.');
+  if (view === 'lobby') renderLobby();
+}
+/** 취소된 매칭 요청의 방 입장 이벤트면 방을 나가고 true. */
+function dropCancelledJoin(): boolean {
+  if (!abandoned.size || !net.room) return false;
+  void net.leaveRoom(); return true;
+}
 function htmlPlay(): string {
   const p = getProfile()!, l = p.loadout, m = MODES[play.mode];
   if (!m.teamSizes.includes(play.size)) play.size = m.teamSizes[0];
@@ -260,7 +276,8 @@ function htmlPlay(): string {
   };
   const w = l.primary, s = equippedSkin(w);
   pvTarget = { weapon: w, skin: s?.id ?? null };
-  const sub = matching ? '매칭 중…' : play.mode === 'range' ? '사격장 입장' : `${m.name} · ${play.size}v${play.size} · 매칭 시작`;
+  const matching = isMatching();
+  const sub = matching ? '매칭 중… · 누르면 취소' : play.mode === 'range' ? '사격장 입장' : `${m.name} · ${play.size}v${play.size} · 매칭 시작`;
   return `<div class="c-lobby">
   <div class="c-col">
     <section class="c-panel"><div class="c-ph"><span class="c-h1">Mode</span><span class="c-h2">모드 선택</span></div>${modes}${opts}</section>
@@ -278,7 +295,7 @@ function htmlPlay(): string {
     <div class="c-axis"></div><div class="c-ticks"></div>
     <div id="pv-slot" class="c-gunwrap"></div>
     <div class="c-meta"><span class="c-wl">Equipped Finish · 장착 스킨</span><span class="c-wn">${esc(s ? s.name : `${wName(w)} 기본 외형`)}</span>${tierBadge(s?.tier ?? null, s ? `${TIERS[s.tier].en} · ${TIERS[s.tier].name}` : 'Standard · 기본')}</div>
-    <button type="button" class="c-play${matching ? ' c-wait' : ''}" id="c-play"><span class="c-pt"><span class="c-pm">${matching ? 'Wait' : 'Play'}</span><span class="c-ps2">${sub}</span></span><span class="c-arrow"></span></button>
+    <button type="button" class="c-play${matching ? ' c-wait' : ''}" id="c-play"><span class="c-pt"><span class="c-pm">${matching ? 'Cancel' : 'Play'}</span><span class="c-ps2">${sub}</span></span><span class="c-arrow"></span></button>
   </section>
 </div>`;
 }
@@ -291,7 +308,7 @@ function htmlLoadout(): string {
   const l = getProfile()!.loadout;
   const slots = SLOT_ROWS.map(([k, en, ko]) => {
     const w = l[k], s = equippedSkin(w);
-    return `<button type="button" class="c-slot${ldSlot === k ? ' c-on' : ''}" data-ldslot="${k}"><span class="c-sk">0${SLOT[k]}</span><span class="c-st">${en} <span class="c-stk">${ko}</span></span><span class="c-sl">${WEAPONS_BY_SLOT[k].map(wName).join(' · ')}</span><span class="c-ss">${esc(wName(w))} · ${esc(s ? s.name : '기본 외형')}</span></button>`;
+    return `<button type="button" class="c-slot${ldSlot === k ? ' c-on' : ''}" data-ldslot="${k}"><span class="c-sk">0${SLOT[k]}</span><span class="c-st">${en} <span class="c-stk">${ko}</span></span><span class="c-sl">${k === 'melee' ? 'M9 배요네트 · 버터플라이 · 카람빗 · 카타나' : WEAPONS_BY_SLOT[k].map(wName).join(' · ')}</span><span class="c-ss">${esc(wName(w))} · ${esc(s ? s.name : '기본 외형')}</span></button>`;
   }).join('');
   const abil = (['q', 'e', 'x'] as const).map((k) => {
     const d = k === 'x' ? ULTS[l.x] : SKILLS[l[k]];
@@ -302,25 +319,57 @@ function htmlLoadout(): string {
   return `<div class="c-sect"><span class="c-h1">Loadout</span><span class="c-h2">보관함 · 슬롯을 고르고 보유 스킨을 장착하세요</span></div>
   <div class="c-loadout"><div><div class="c-slots">${slots}</div><div class="c-ph c-ph2"><span class="c-h1">Abilities</span><span class="c-h2">스킬 · 다음 매치부터 적용</span></div><div class="c-slots">${abil}</div></div><div>${right}</div></div>`;
 }
-function htmlSkinGrid(k: SlotKey): string {
-  const w = getProfile()!.loadout[k];
-  const wchips = `<div class="c-chips c-wchips" role="group" aria-label="무기 선택">${WEAPONS_BY_SLOT[k].map((id) => `<button type="button" class="c-chip${id === w ? ' c-on' : ''}" data-ldw="${id}">${esc(wName(id))}</button>`).join('')}</div>`;
-  if (k === 'throwable' || w === 'fists') return `${wchips}<div class="c-empty">${k === 'throwable' ? '투척류에는 스킨이 없습니다.' : '주먹에는 스킨이 없습니다.'}</div>`;
-  // 보유 목록: 구버전 skin_id 는 현행 스킨으로 환산(같은 스킨으로 겹치면 장착 중인 쪽 우선), 장착 요청은 DB 에 저장된 원본 ID 로 보낸다
+// 근접(3번) 슬롯: 모델별로 섹션을 나눠 보여 준다. 단검 = M9 배요네트(기본) / 버터플라이 / 카람빗, 장검 = 카타나.
+type MeleeSect = { key: string; title: string; en: string; weapon: 'dagger' | 'sword'; std: boolean; match: (s: SkinDef) => boolean };
+const MELEE_SPECIAL = new Set(['butterfly', 'karambit']);
+const MELEE_SECTS: MeleeSect[] = [
+  { key: 'm9', title: 'M9 배요네트', en: 'M9 Bayonet', weapon: 'dagger', std: true, match: (s) => !MELEE_SPECIAL.has(s.collection ?? '') },
+  { key: 'butterfly', title: '버터플라이 나이프', en: 'Butterfly Knife', weapon: 'dagger', std: false, match: (s) => s.collection === 'butterfly' },
+  { key: 'karambit', title: '카람빗', en: 'Karambit', weapon: 'dagger', std: false, match: (s) => s.collection === 'karambit' },
+  { key: 'katana', title: '카타나', en: 'Katana', weapon: 'sword', std: true, match: () => true },
+];
+/** 무기별 보유 목록: 구버전 skin_id 는 현행 스킨으로 환산(같은 스킨으로 겹치면 장착 중인 쪽 우선), 장착 요청은 DB 에 저장된 원본 ID 로 보낸다 */
+function ownedFor(w: string): Map<string, { raw: string; equipped: boolean }> {
   const own = new Map<string, { raw: string; equipped: boolean }>();
   for (const o of bundle?.skins ?? []) {
     const s = getSkin(o.skin_id); if (!s || s.weaponId !== w) continue;
     const prev = own.get(s.id); if (!prev || (o.equipped && !prev.equipped)) own.set(s.id, { raw: o.skin_id, equipped: o.equipped });
   }
-  const anyEq = [...own.values()].some((x) => x.equipped);
-  const all = [...skinsForWeapon(w)].sort((a, b) => (+own.has(b.id) - +own.has(a.id)) || TIERS[b.tier].order - TIERS[a.tier].order || a.sort - b.sort);
-  const std = `<div class="c-card${anyEq ? '' : ' c-eq'}"><div class="c-vis">${skinVis(w, null)}</div>${anyEq ? '' : '<span class="c-eqtag">EQUIPPED</span>'}<div class="c-body">${tierBadge(null)}<span class="c-cn2">${esc(wName(w))} 기본 외형</span><span class="c-cw">${esc(wName(w))} · 기본</span><div class="c-row">${anyEq ? '<button type="button" class="c-btn" data-equip="">장착</button>' : '<span class="c-own">장착 중</span>'}</div></div></div>`;
-  const cards = all.filter(byRarity).map((s) => {
+  return own;
+}
+/** 스킨 카드 목록. active = 이 무기가 현재 로드아웃에 장착된 무기인지(아니면 EQUIPPED 대신 '무기 선택 시 적용' 표시) */
+function skinCards(w: string, pool: SkinDef[], withStd: boolean, active = true): { cards: string[]; own: Map<string, { raw: string; equipped: boolean }> } {
+  const own = ownedFor(w), anyEq = [...own.values()].some((x) => x.equipped);
+  const sorted = [...pool].sort((a, b) => (+own.has(b.id) - +own.has(a.id)) || TIERS[b.tier].order - TIERS[a.tier].order || a.sort - b.sort);
+  const tag = (eq: boolean): string => (eq && active ? '<span class="c-eqtag">EQUIPPED</span>' : '');
+  const eqLabel = active ? '장착 중' : '장착됨 · 무기 선택 시 적용';
+  const std = `<div class="c-card${anyEq || !active ? '' : ' c-eq'}"><div class="c-vis">${skinVis(w, null)}</div>${tag(!anyEq)}<div class="c-body">${tierBadge(null)}<span class="c-cn2">${esc(wName(w))} 기본 외형</span><span class="c-cw">${esc(wName(w))} · 기본</span><div class="c-row">${anyEq || !active ? `<button type="button" class="c-btn" data-equip="" data-ew="${w}">장착</button>` : '<span class="c-own">장착 중</span>'}</div></div></div>`;
+  const cards = sorted.filter(byRarity).map((s) => {
     const o = own.get(s.id), eq = !!o?.equipped;
-    const act = !o ? '<span class="c-lock">미보유 · 상점에서 구매</span>' : eq ? '<span class="c-own">장착 중</span>' : `<button type="button" class="c-btn" data-equip="${esc(o.raw)}">장착</button>`;
-    return `<div class="c-card${eq ? ' c-eq' : ''}"><div class="c-vis">${skinVis(w, s)}</div>${eq ? '<span class="c-eqtag">EQUIPPED</span>' : ''}<div class="c-body">${tierBadge(s.tier)}<span class="c-cn2">${esc(s.name)}</span><span class="c-cw">${esc(wName(w))} · ${TIERS[s.tier].name}</span><div class="c-row">${act}</div></div></div>`;
+    const act = !o ? '<span class="c-lock">미보유 · 상점에서 구매</span>' : eq && active ? `<span class="c-own">${eqLabel}</span>` : `<button type="button" class="c-btn" data-equip="${esc(o.raw)}" data-ew="${w}">장착</button>`;
+    return `<div class="c-card${eq && active ? ' c-eq' : ''}"><div class="c-vis">${skinVis(w, s)}</div>${tag(eq)}<div class="c-body">${tierBadge(s.tier)}<span class="c-cn2">${esc(s.name)}</span><span class="c-cw">${esc(wName(w))} · ${TIERS[s.tier].name}</span><div class="c-row">${act}</div></div></div>`;
   });
-  const list = (rarity === 'all' ? [std] : []).concat(cards);
+  return { cards: (withStd && rarity === 'all' ? [std] : []).concat(cards), own };
+}
+function htmlMeleeSections(cur: string): string {
+  const pool = MELEE_SECTS.flatMap((m) => skinsForWeapon(m.weapon).filter(m.match));
+  let ownN = 0;
+  const sects = MELEE_SECTS.map((m) => {
+    const list = skinsForWeapon(m.weapon).filter(m.match);
+    const { cards, own } = skinCards(m.weapon, list, m.std, cur === m.weapon);
+    const has = list.filter((s) => own.has(s.id)).length; ownN += has;
+    return `<div class="c-ph c-ph2 c-msect" data-msect="${m.key}"><span class="c-h1">${m.en}</span><span class="c-h2">${m.title} · ${wName(m.weapon)}${cur === m.weapon ? ' · 사용 중' : ''} · ${list.length}종 중 ${has}종 보유</span></div>
+      ${cards.length ? `<div class="c-grid">${cards.join('')}</div>` : '<div class="c-empty">이 등급의 스킨이 없습니다.</div>'}`;
+  }).join('');
+  return `${rarityChips(pool)}${sects}<div class="c-foot">근접 스킨 ${pool.length}종 중 ${ownN}종 보유</div>`;
+}
+function htmlSkinGrid(k: SlotKey): string {
+  const w = getProfile()!.loadout[k];
+  const wchips = `<div class="c-chips c-wchips" role="group" aria-label="무기 선택">${WEAPONS_BY_SLOT[k].map((id) => `<button type="button" class="c-chip${id === w ? ' c-on' : ''}" data-ldw="${id}">${esc(wName(id))}</button>`).join('')}</div>`;
+  if (k === 'throwable') return `${wchips}<div class="c-empty">투척류에는 스킨이 없습니다.</div>`;
+  if (k === 'melee') return `${wchips}${w === 'fists' ? '<div class="c-empty">주먹에는 스킨이 없습니다. 아래에서 스킨을 장착하면 해당 무기로 바뀝니다.</div>' : ''}${htmlMeleeSections(w)}`;
+  const all = skinsForWeapon(w);
+  const { cards: list, own } = skinCards(w, all, true);
   return `${wchips}${rarityChips(all)}${list.length ? `<div class="c-grid">${list.join('')}</div>` : '<div class="c-empty">이 등급의 스킨이 없습니다.</div>'}<div class="c-foot">전체 스킨 ${all.length}종 중 ${own.size}종 보유</div>`;
 }
 function htmlSkillGrid(k: 'q' | 'e' | 'x'): string {
@@ -399,10 +448,15 @@ function bindLobbyBody(): void {
   each('[data-size]', (b) => (b.onclick = () => { play.size = +b.dataset.size!; renderLobby(); }));
   each('[data-map]', (b) => (b.onclick = () => { play.map = b.dataset.map as typeof play.map; renderLobby(); }));
   each('#c-play', (b) => (b.onclick = async () => {
-    if (matching) return;
-    matching = true; renderLobby();
-    try { await startQueue(play.mode, play.mode === 'range' ? 1 : play.size, play.mode === 'range' ? undefined : play.map || undefined); }
-    finally { matching = false; if (view === 'lobby') renderLobby(); }
+    if (isMatching()) { cancelMatch(); return; }
+    const t = ++matchSeq; matchTicket = t; renderLobby();
+    if (pendingQueue) await pendingQueue; // 직전에 취소한 요청이 정리될 때까지 대기
+    if (matchTicket !== t) return;
+    const run = startQueue(play.mode, play.mode === 'range' ? 1 : play.size, play.mode === 'range' ? undefined : play.map || undefined, () => matchTicket !== t);
+    pendingQueue = run.finally(() => { abandoned.delete(t); if (pendingQueue === tracked) pendingQueue = null; });
+    const tracked = pendingQueue;
+    try { await run; }
+    finally { if (matchTicket === t) { matchTicket = 0; if (view === 'lobby') renderLobby(); } }
   }));
   each('[data-friends]', (b) => (b.onclick = () => void openFriends()));
   each('[data-priv]', (b) => (b.onclick = () => { if (play.mode !== 'classic' && play.mode !== 'tdm') play.mode = 'classic'; renderPlay(); show('m-play'); }));
@@ -429,8 +483,12 @@ function bindLobbyBody(): void {
     needReconnect = true; void saveLoadout(l).then(() => renderLobby());
   }));
   each('[data-equip]', (b) => (b.onclick = async () => {
-    const id = b.dataset.equip || null, w = getProfile()!.loadout[ldSlot as SlotKey];
-    try { await equipSkin(w, id); bundle?.skins.forEach((s) => { if (s.weapon_id === w) s.equipped = s.skin_id === id; }); net.refreshProfile(); needReconnect = true; renderLobby(); } catch (e) { toast(errMsg(e), 'bad'); }
+    const id = b.dataset.equip || null, k = ldSlot as SlotKey, cur = getProfile()!.loadout[k], w = b.dataset.ew || cur;
+    try {
+      await equipSkin(w, id); bundle?.skins.forEach((s) => { if (s.weapon_id === w) s.equipped = s.skin_id === id; });
+      if (w !== cur) await saveLoadout({ ...getProfile()!.loadout, [k]: w } as Loadout); // 다른 근접 섹션의 스킨 장착 → 그 무기로 전환
+      net.refreshProfile(); needReconnect = true; renderLobby();
+    } catch (e) { toast(errMsg(e), 'bad'); }
   }));
   each('[data-claim]', (b) => (b.onclick = async () => { const r = await guard(() => claimMission(+b.dataset.claim!)); if (r) { toast(r.reward_type === 'credits' ? `◈ ${r.reward_amount} 획득` : '랜덤박스 획득', 'good'); await loadBundle(); } }));
   each('[data-title]', (b) => (b.onclick = async () => { try { await equipTitle(b.dataset.title || null); needReconnect = true; renderLobby(); } catch (e) { toast(errMsg(e), 'bad'); } }));
@@ -642,9 +700,10 @@ async function ensureConnected(): Promise<boolean> {
   if (net.connected) return true;
   try { net.disconnect(); await net.connect(); return true; } catch (e) { toast('서버 연결 실패: ' + errMsg(e), 'bad'); return false; }
 }
-async function startQueue(mode: GameMode, size: number, map?: 'grid' | 'arena'): Promise<void> {
-  if (!(await ensureConnected())) return;
+async function startQueue(mode: GameMode, size: number, map?: 'grid' | 'arena', cancelled: () => boolean = () => false): Promise<void> {
+  if (!(await ensureConnected()) || cancelled()) return;
   const r = await net.queueJoin(mode, size, map);
+  if (cancelled()) { if (r.ok && net.room) await net.leaveRoom(); return; }
   if (!r.ok) { toast(ackMsg(r.error), 'bad'); return; }
   show('m-play', false);
 }
@@ -683,6 +742,7 @@ async function leaveGame(): Promise<void> {
   await net.leaveRoom(); await refreshProfile(); await enterLobby();
 }
 function onRoomState(room: RoomState): void {
+  if (dropCancelledJoin()) return;
   if (room.phase === 'lobby') { if (view !== 'room') setView('room'); renderRoom(); }
   else if (view !== 'game') enterGame();
 }
@@ -696,7 +756,7 @@ async function leaveAfterClose(): Promise<void> { await refreshProfile(); await 
 let bannerUntil = 0;
 function setBanner(title: string, sub: string, ms = 0): void { $('hud-banner').innerHTML = title ? `${esc(title)}${sub ? `<small>${esc(sub)}</small>` : ''}` : ''; bannerUntil = ms ? performance.now() + ms : 0; }
 net.on('phase', (p) => {
-  if (net.room && view !== 'game' && p.phase !== 'lobby') enterGame();
+  if (net.room && view !== 'game' && p.phase !== 'lobby') { if (dropCancelledJoin()) return; enterGame(); }
   if (view !== 'game' || !net.room) return;
   const round = net.mode === 'classic' || net.mode === 'ranked';
   if (p.phase === 'buy') { setBanner(round ? `ROUND ${p.round}` : '준비', '무기를 선택하세요 — 4개 슬롯 자유 선택 (B)'); if (TOUCH) toggleLoadout(true); }
