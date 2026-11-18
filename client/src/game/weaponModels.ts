@@ -37,10 +37,19 @@ export const WEAPON_MODELS: Partial<Record<WeaponId, ModelDef>> = {
 };
 
 /** 텍스처가 없는 FBX 의 파일별 기본 재질/스킨 역할 (메시 이름 기준) — 스킨 전용 모델(GlbSpec)은 parts 를 가질 수 없어 여기서 지정 */
+const AK_STEEL = { color: 0x2b3038, metalness: 0.82, roughness: 0.38 };
 const FILE_PARTS: Record<string, Record<string, PartDef>> = {
+  // CS2 기본 AK-47 투톤: 건메탈 스틸 총몸/총열/가스관/가늠쇠 + 호두나무 개머리판·권총 손잡이·상하부 총열덮개.
+  // m_gun 은 단일 병합 메시라 삼각형 무게중심(모델 cm 좌표: x = 총구 방향 길이, y = 높이)으로 목재 영역을 분리 — 측면 진단 렌더로 경계 실측
   'ak47.fbx': {
-    m_gun: { role: 'base', color: 0x55585d, metalness: 0.85, roughness: 0.38 },
-    m_mag: { role: 'accent', color: 0x2c2d30, metalness: 0.6, roughness: 0.5 },
+    m_gun: {
+      role: 'base', ...AK_STEEL,
+      split: {
+        test: (x, y) => x < -3.6 || (x < 3 && y < 3.5) || (x > 22.5 && x < 39.6 && y < 9.6) || (x > 27.6 && x < 39.6 && y > 10.6), // 개머리판 · 손잡이 · 하부/상부 덮개
+        part: { role: 'base', color: 0x87492a, metalness: 0.05, roughness: 0.68, grain: true },
+      },
+    },
+    m_mag: { role: 'accent', ...AK_STEEL },
     m_trigger: { role: 'dark', color: 0x18191c, metalness: 0.7, roughness: 0.5 }, m_fireselect: { role: 'dark', color: 0x18191c, metalness: 0.7, roughness: 0.5 },
     m_maglid: { role: 'dark', color: 0x18191c, metalness: 0.7, roughness: 0.5 }, m_magrel: { role: 'dark', color: 0x18191c, metalness: 0.7, roughness: 0.5 },
     m_shelleject: { role: 'dark', color: 0x18191c, metalness: 0.7, roughness: 0.5 },
@@ -74,7 +83,8 @@ const BLADE_MASKS: Record<string, BladeMask> = {
  *  parts = 메시 이름별 기본 재질 + 스킨 역할(재질이 하나뿐인 모델용, 부모 메시 이름이 아닌 메시 자신의 이름 기준) */
 type ModelDef = { file: string; length: number; grip?: number; roll?: number; own?: boolean; rot?: [number, number, number]; hide?: RegExp; parts?: Record<string, PartDef> };
 type Role = 'base' | 'accent' | 'dark' | 'glass';
-interface PartDef { role: Role; color: number; metalness: number; roughness: number }
+/** split = 단일 메시 안의 2차 영역(rot 적용 후 모델 좌표 x/y 로 판정) → 기본 외형에서만 part 재질, 스킨 장착 시엔 메시 전체가 기존처럼 role 스킨. grain = 나뭇결 텍스처 */
+interface PartDef { role: Role; color: number; metalness: number; roughness: number; grain?: boolean; split?: { test: (x: number, y: number) => boolean; part: PartDef } }
 interface Source { glb: boolean; root: THREE.Object3D; roles: Map<string, Role>; scale: number; offset: THREE.Vector3; muzzle: THREE.Vector3; parts?: Record<string, PartDef>; mask?: BladeMask; axis: { y: Float32Array; x0: number; len: number } }
 export interface SkinSet { base: THREE.Material; accent: THREE.Material; skinned: boolean }
 
@@ -94,26 +104,58 @@ const planarUvs = new WeakMap<THREE.BufferGeometry, Float32Array>();
 /** 칼날 마스크로 분할된 지오메트리 → 칼날 정점 플래그 (스킨 시 칼날 정점만 평면 UV, 손잡이는 원본 UV 유지) */
 const bladeVerts = new WeakMap<THREE.BufferGeometry, Uint8Array>();
 
-/** 삼각형 무게중심의 길이축 위치로 [손잡이, 칼날] 2개 그룹(materialIndex 0/1)이 되도록 인덱스를 재정렬 */
+/** 삼각형 무게중심(root 공간 x/y)이 test 를 만족하면 그룹 1, 아니면 그룹 0 이 되도록 인덱스를 재정렬 (material → [m, m]). 반환 = 그룹 1 정점 플래그 */
+function splitTris(me: THREE.Mesh, test: (x: number, y: number) => boolean): Uint8Array {
+  const g = me.geometry, pos = g.attributes.position, src = g.index ? g.index.array : null, tris = (src ? src.length : pos.count) / 3;
+  const xs = new Float32Array(pos.count), ys = new Float32Array(pos.count), v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i).applyMatrix4(me.matrixWorld); xs[i] = v.x; ys[i] = v.y; }
+  const g0: number[] = [], g1: number[] = [], flag = new Uint8Array(pos.count);
+  for (let t = 0; t < tris; t++) {
+    const a = src ? src[t * 3] : t * 3, b = src ? src[t * 3 + 1] : t * 3 + 1, c = src ? src[t * 3 + 2] : t * 3 + 2;
+    if (test((xs[a] + xs[b] + xs[c]) / 3, (ys[a] + ys[b] + ys[c]) / 3)) { g1.push(a, b, c); flag[a] = flag[b] = flag[c] = 1; } else g0.push(a, b, c);
+  }
+  g.setIndex([...g0, ...g1]);
+  g.clearGroups(); g.addGroup(0, g0.length, 0); g.addGroup(g0.length, g1.length, 1);
+  me.material = [me.material as THREE.Material, me.material as THREE.Material];
+  return flag;
+}
+
+/** 칼날 마스크: 길이축 위치로 [손잡이, 칼날] 분할 */
 function splitBlade(root: THREE.Object3D, mask: BladeMask): void {
   root.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(root), cut = box.min.x + (box.max.x - box.min.x) * mask.from, v = new THREE.Vector3();
+  const box = new THREE.Box3().setFromObject(root), cut = box.min.x + (box.max.x - box.min.x) * mask.from;
   root.traverse((o) => {
-    const me = o as THREE.Mesh, g = me.geometry;
+    const me = o as THREE.Mesh;
     if (!me.isMesh || Array.isArray(me.material) || mask.handleOnly?.test(me.name)) return;
-    const pos = g.attributes.position, src = g.index ? g.index.array : null, tris = (src ? src.length : pos.count) / 3;
-    const xs = new Float32Array(pos.count);
-    for (let i = 0; i < pos.count; i++) xs[i] = v.fromBufferAttribute(pos, i).applyMatrix4(me.matrixWorld).x;
-    const handle: number[] = [], blade: number[] = [], flag = new Uint8Array(pos.count);
-    for (let t = 0; t < tris; t++) {
-      const a = src ? src[t * 3] : t * 3, b = src ? src[t * 3 + 1] : t * 3 + 1, c = src ? src[t * 3 + 2] : t * 3 + 2;
-      if ((xs[a] + xs[b] + xs[c]) / 3 >= cut) { blade.push(a, b, c); flag[a] = flag[b] = flag[c] = 1; } else handle.push(a, b, c);
-    }
-    g.setIndex([...handle, ...blade]);
-    g.clearGroups(); g.addGroup(0, handle.length, 0); g.addGroup(handle.length, blade.length, 1);
-    me.material = [me.material, me.material];
-    bladeVerts.set(g, flag);
+    bladeVerts.set(me.geometry, splitTris(me, (x) => x >= cut));
   });
+}
+
+/** parts.split: 메시 이름별 2차 영역 분할 (예: AK-47 m_gun → [스틸, 목재]) */
+function splitParts(root: THREE.Object3D, parts: Record<string, PartDef>): void {
+  root.updateMatrixWorld(true);
+  root.traverse((o) => {
+    const me = o as THREE.Mesh, sp = parts[me.name]?.split;
+    if (me.isMesh && sp && !Array.isArray(me.material)) splitTris(me, sp.test);
+  });
+}
+
+/** 프로시저럴 호두나무 나뭇결 (평면 UV: u = 길이축, v = 높이 → 결이 총 길이 방향으로 흐름) */
+let woodTex: THREE.CanvasTexture | null = null;
+function woodGrain(): THREE.CanvasTexture {
+  if (woodTex) return woodTex;
+  const S = 512, cv = document.createElement('canvas'); cv.width = cv.height = S;
+  const x = cv.getContext('2d')!;
+  x.fillStyle = '#ffffff'; x.fillRect(0, 0, S, S); // 색은 재질 color 로 곱해짐 → 텍스처는 밝기 변조만
+  let seed = 7; const rnd = (): number => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 140; i++) {
+    const y0 = rnd() * S, amp = 2 + rnd() * 6, f = 1 + rnd() * 3, ph = rnd() * 6.28, w = 0.6 + rnd() * 2.4;
+    x.strokeStyle = rnd() < 0.7 ? `rgba(60,25,8,${0.12 + rnd() * 0.22})` : `rgba(255,220,180,${0.08 + rnd() * 0.12})`; x.lineWidth = w;
+    x.beginPath(); for (let u = 0; u <= S; u += 8) { const yy = y0 + Math.sin((u / S) * 6.28 * f + ph) * amp; if (u) x.lineTo(u, yy); else x.moveTo(u, yy); } x.stroke();
+  }
+  woodTex = new THREE.CanvasTexture(cv); woodTex.colorSpace = THREE.SRGBColorSpace;
+  woodTex.wrapS = woodTex.wrapT = THREE.RepeatWrapping; woodTex.repeat.set(2, 6); woodTex.anisotropy = 4;
+  return woodTex;
 }
 const matsOf = (m: THREE.Mesh): THREE.Material[] => (Array.isArray(m.material) ? m.material : [m.material]);
 
@@ -167,8 +209,10 @@ function load(def: ModelDef | undefined): Promise<Source | null> {
       let root = loaded;
       if (def.hide) { const drop: THREE.Object3D[] = []; loaded.traverse((o) => { if ((o as THREE.Mesh).isMesh && def.hide!.test(o.name)) drop.push(o); }); for (const o of drop) o.removeFromParent(); }
       if (def.rot) { root = new THREE.Group(); loaded.rotation.set(...def.rot); root.add(loaded); } // build() 가 inner.rotation.x(roll)을 덮어쓰므로 한 겹 감싸서 굽는다
-      const mask = BLADE_MASKS[def.file]; if (mask) splitBlade(root, mask);
-      const s = prepare(root, def.length, glb || !!def.own, def.grip); s.parts = def.parts ?? FILE_PARTS[def.file]; s.mask = mask; ready.set(def.file, s); return s;
+      const mask = BLADE_MASKS[def.file], parts = def.parts ?? FILE_PARTS[def.file];
+      if (mask) splitBlade(root, mask);
+      if (parts) splitParts(root, parts);
+      const s = prepare(root, def.length, glb || !!def.own, def.grip); s.parts = parts; s.mask = mask; ready.set(def.file, s); return s;
     })
       .catch((e) => { console.warn('[weaponModels] 모델 로드 실패 → 박스 모델 폴백:', def.file, e); return null; });
     pending.set(def.file, p);
@@ -191,7 +235,7 @@ const native = (m: THREE.Material): THREE.MeshStandardMaterial => {
 const partCache = new Map<PartDef, THREE.MeshStandardMaterial>();
 const partMat = (p: PartDef): THREE.MeshStandardMaterial => {
   let r = partCache.get(p);
-  if (!r) { r = new THREE.MeshStandardMaterial({ color: p.color, metalness: p.metalness, roughness: p.roughness, envMapIntensity: p.metalness > 0.5 ? 1.6 : 1 }); partCache.set(p, r); }
+  if (!r) { r = new THREE.MeshStandardMaterial({ color: p.color, metalness: p.metalness, roughness: p.roughness, envMapIntensity: p.metalness > 0.5 ? 1.6 : 1, map: p.grain ? woodGrain() : null }); partCache.set(p, r); }
   return r;
 };
 
@@ -216,9 +260,9 @@ function build(src: Source, skin: SkinSet, roll = 0): THREE.Group {
   const wrap = new THREE.Group(); wrap.rotation.y = Math.PI / 2; wrap.scale.setScalar(src.scale); // +X(총열) → -Z(전방)
   const inner = src.root.clone(true); inner.position.copy(src.offset); inner.rotation.x = roll; wrap.add(inner);
   let curMesh: THREE.Mesh | null = null;
-  const pick = (m: THREE.Material): THREE.Material => {
+  const pick = (m: THREE.Material, i = 0): THREE.Material => {
     const part = curMesh && src.parts?.[curMesh.name];
-    if (part) return skin.skinned ? (part.role === 'base' ? skin.base : part.role === 'accent' ? skin.accent : part.role === 'glass' ? glassMat : darkMat) : partMat(part);
+    if (part) return skin.skinned ? (part.role === 'base' ? skin.base : part.role === 'accent' ? skin.accent : part.role === 'glass' ? glassMat : darkMat) : partMat(i === 1 && part.split ? part.split.part : part);
     const role = src.roles.get(m.name) ?? 'base';
     if (role === 'glass') return glassMat; if (role === 'dark') return darkMat;
     if (!skin.skinned) return src.glb && curMesh ? glbNative(curMesh, m) : native(m);
