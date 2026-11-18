@@ -310,7 +310,7 @@ function htmlLoadout(): string {
   const l = getProfile()!.loadout;
   const slots = SLOT_ROWS.map(([k, en, ko]) => {
     const w = l[k], s = equippedSkin(w);
-    return `<button type="button" class="c-slot${ldSlot === k ? ' c-on' : ''}" data-ldslot="${k}"><span class="c-sk">0${SLOT[k]}</span><span class="c-st">${en} <span class="c-stk">${ko}</span></span><span class="c-sl">${k === 'melee' ? 'M9 배요네트 · 버터플라이 · 카람빗 · 카타나' : WEAPONS_BY_SLOT[k].map(wName).join(' · ')}</span><span class="c-ss">${esc(wName(w))} · ${esc(s ? s.name : '기본 외형')}</span></button>`;
+    return `<button type="button" class="c-slot${ldSlot === k ? ' c-on' : ''}" data-ldslot="${k}"><span class="c-sk">0${SLOT[k]}</span><span class="c-st">${en} <span class="c-stk">${ko}</span></span><span class="c-sl">${k === 'melee' ? 'M9 배요네트 · 버터플라이 · 카람빗 · 스켈레톤 · 카타나' : WEAPONS_BY_SLOT[k].map(wName).join(' · ')}</span><span class="c-ss">${esc(wName(w))} · ${esc(s ? s.name : '기본 외형')}</span></button>`;
   }).join('');
   const abil = (['q', 'e', 'x'] as const).map((k) => {
     const d = k === 'x' ? ULTS[l.x] : SKILLS[l[k]];
