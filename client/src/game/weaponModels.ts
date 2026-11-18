@@ -45,7 +45,28 @@ const FILE_PARTS: Record<string, Record<string, PartDef>> = {
     m_maglid: { role: 'dark', color: 0x18191c, metalness: 0.7, roughness: 0.5 }, m_magrel: { role: 'dark', color: 0x18191c, metalness: 0.7, roughness: 0.5 },
     m_shelleject: { role: 'dark', color: 0x18191c, metalness: 0.7, roughness: 0.5 },
   },
-  'karambit.fbx': { Knife: { role: 'base', color: 0xc9ced6, metalness: 1, roughness: 0.2 } },
+};
+
+/** 근접 무기 칼날 마스크 — 단일 병합 메시를 길이축(+X, rot 적용 후) 위치로 손잡이/칼날 삼각형 그룹으로 나눈다.
+ *  from = 칼날 시작 위치(0=손잡이 끝 ~ 1=날끝, 실측 단면 프로파일 기준), handleOnly = 통째로 손잡이인 메시(예: 파라코드),
+ *  blade/handle/wrap = 기본(스킨 미적용) 재질 — 생략 시 모델 내장 재질 유지. 스킨 적용 시 칼날에만 스킨 재질이 입혀진다. */
+interface BladeMask { from: number; handleOnly?: RegExp; blade?: PartDef; handle?: PartDef; wrap?: PartDef }
+const BLADE_MASKS: Record<string, BladeMask> = {
+  // CS2 바닐라 카람빗: 건메탈 탄소강 날 + 무광 차콜 폴리머 손잡이/핑거 링 (t≈0.63 에서 손잡이 두께 → 얇은 날로 급감)
+  'karambit.fbx': {
+    from: 0.62,
+    blade: { role: 'base', color: 0x2b3038, metalness: 0.85, roughness: 0.36 },
+    handle: { role: 'dark', color: 0x1a1c20, metalness: 0.15, roughness: 0.78 },
+  },
+  // CS2 바닐라 스켈레톤: 내장 Fade 텍스처를 덮어쓰는 무광 다크 스틸 날 + 차콜 그레이 프레임/링, 파라코드(Plane001)는 통째로 손잡이
+  'skeleton_knife.glb': {
+    from: 0.42, handleOnly: /^Plane001$/,
+    blade: { role: 'base', color: 0x2d323a, metalness: 0.82, roughness: 0.38 },
+    handle: { role: 'dark', color: 0x1c1e23, metalness: 0.6, roughness: 0.5 },
+    wrap: { role: 'dark', color: 0x1c1e23, metalness: 0.08, roughness: 0.88 },
+  },
+  // M9 총검: 기본은 내장 베이크 텍스처 유지, 가드 뒤(t≈0.435)부터 칼날
+  m9_bayonet: { from: 0.435 },
 };
 
 /** own = FBX 라도 내장 UV/텍스처를 유지(GLB 와 동일 취급). 스킨 적용 시에만 평면 UV 사용
@@ -54,7 +75,7 @@ const FILE_PARTS: Record<string, Record<string, PartDef>> = {
 type ModelDef = { file: string; length: number; grip?: number; roll?: number; own?: boolean; rot?: [number, number, number]; hide?: RegExp; parts?: Record<string, PartDef> };
 type Role = 'base' | 'accent' | 'dark' | 'glass';
 interface PartDef { role: Role; color: number; metalness: number; roughness: number }
-interface Source { glb: boolean; root: THREE.Object3D; roles: Map<string, Role>; scale: number; offset: THREE.Vector3; muzzle: THREE.Vector3; parts?: Record<string, PartDef>; axis: { y: Float32Array; x0: number; len: number } }
+interface Source { glb: boolean; root: THREE.Object3D; roles: Map<string, Role>; scale: number; offset: THREE.Vector3; muzzle: THREE.Vector3; parts?: Record<string, PartDef>; mask?: BladeMask; axis: { y: Float32Array; x0: number; len: number } }
 export interface SkinSet { base: THREE.Material; accent: THREE.Material; skinned: boolean }
 
 // FBX 가 참조하지만 포함하지 않은 외부 텍스처(예: 카타나의 Blender 베이크 PNG)는 404 대신 1px 투명 이미지로 대체 — parts 재질을 쓰므로 실제로는 사용되지 않는다
@@ -70,6 +91,30 @@ const glassMat = new THREE.MeshStandardMaterial({ color: 0x88c8ff, roughness: 0.
 
 /** GLB/own 모델의 평면 UV — userData 는 clone() 시 JSON 직렬화되어 Float32Array 가 깨지므로(→ 렌더 예외) 지오메트리 키로 따로 보관 */
 const planarUvs = new WeakMap<THREE.BufferGeometry, Float32Array>();
+/** 칼날 마스크로 분할된 지오메트리 → 칼날 정점 플래그 (스킨 시 칼날 정점만 평면 UV, 손잡이는 원본 UV 유지) */
+const bladeVerts = new WeakMap<THREE.BufferGeometry, Uint8Array>();
+
+/** 삼각형 무게중심의 길이축 위치로 [손잡이, 칼날] 2개 그룹(materialIndex 0/1)이 되도록 인덱스를 재정렬 */
+function splitBlade(root: THREE.Object3D, mask: BladeMask): void {
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(root), cut = box.min.x + (box.max.x - box.min.x) * mask.from, v = new THREE.Vector3();
+  root.traverse((o) => {
+    const me = o as THREE.Mesh, g = me.geometry;
+    if (!me.isMesh || Array.isArray(me.material) || mask.handleOnly?.test(me.name)) return;
+    const pos = g.attributes.position, src = g.index ? g.index.array : null, tris = (src ? src.length : pos.count) / 3;
+    const xs = new Float32Array(pos.count);
+    for (let i = 0; i < pos.count; i++) xs[i] = v.fromBufferAttribute(pos, i).applyMatrix4(me.matrixWorld).x;
+    const handle: number[] = [], blade: number[] = [], flag = new Uint8Array(pos.count);
+    for (let t = 0; t < tris; t++) {
+      const a = src ? src[t * 3] : t * 3, b = src ? src[t * 3 + 1] : t * 3 + 1, c = src ? src[t * 3 + 2] : t * 3 + 2;
+      if ((xs[a] + xs[b] + xs[c]) / 3 >= cut) { blade.push(a, b, c); flag[a] = flag[b] = flag[c] = 1; } else handle.push(a, b, c);
+    }
+    g.setIndex([...handle, ...blade]);
+    g.clearGroups(); g.addGroup(0, handle.length, 0); g.addGroup(handle.length, blade.length, 1);
+    me.material = [me.material, me.material];
+    bladeVerts.set(g, flag);
+  });
+}
 const matsOf = (m: THREE.Mesh): THREE.Material[] => (Array.isArray(m.material) ? m.material : [m.material]);
 
 function prepare(root: THREE.Object3D, length: number, glb: boolean, grip?: number): Source {
@@ -122,7 +167,8 @@ function load(def: ModelDef | undefined): Promise<Source | null> {
       let root = loaded;
       if (def.hide) { const drop: THREE.Object3D[] = []; loaded.traverse((o) => { if ((o as THREE.Mesh).isMesh && def.hide!.test(o.name)) drop.push(o); }); for (const o of drop) o.removeFromParent(); }
       if (def.rot) { root = new THREE.Group(); loaded.rotation.set(...def.rot); root.add(loaded); } // build() 가 inner.rotation.x(roll)을 덮어쓰므로 한 겹 감싸서 굽는다
-      const s = prepare(root, def.length, glb || !!def.own, def.grip); s.parts = def.parts ?? FILE_PARTS[def.file]; ready.set(def.file, s); return s;
+      const mask = BLADE_MASKS[def.file]; if (mask) splitBlade(root, mask);
+      const s = prepare(root, def.length, glb || !!def.own, def.grip); s.parts = def.parts ?? FILE_PARTS[def.file]; s.mask = mask; ready.set(def.file, s); return s;
     })
       .catch((e) => { console.warn('[weaponModels] 모델 로드 실패 → 박스 모델 폴백:', def.file, e); return null; });
     pending.set(def.file, p);
@@ -178,12 +224,22 @@ function build(src: Source, skin: SkinSet, roll = 0): THREE.Group {
     if (!skin.skinned) return src.glb && curMesh ? glbNative(curMesh, m) : native(m);
     return role === 'base' ? skin.base : skin.accent; // 스킨 재질(프로시저럴 텍스처/PBR/발광) 연결
   };
+  // 칼날 마스크: 손잡이·가드·링은 항상 기본 재질, 스킨은 칼날 그룹(materialIndex 1)에만
+  const mask = src.mask;
+  const own = (m: THREE.Material, def?: PartDef): THREE.Material => (def ? partMat(def) : src.glb && curMesh ? glbNative(curMesh, m) : native(m));
+  const pickMasked = (m: THREE.Material, blade: boolean): THREE.Material =>
+    blade ? (skin.skinned ? skin.base : own(m, mask!.blade)) : own(m, curMesh && mask!.handleOnly?.test(curMesh.name) ? mask!.wrap ?? mask!.handle : mask!.handle);
   inner.traverse((o) => {
     const me = o as THREE.Mesh; if (!me.isMesh) return;
     curMesh = me;
-    const puv = src.glb && skin.skinned ? planarUvs.get(me.geometry) : undefined;
-    if (puv) { me.geometry = me.geometry.clone(); me.geometry.setAttribute('uv', new THREE.BufferAttribute(puv, 2)); }
-    me.material = Array.isArray(me.material) ? me.material.map(pick) : pick(me.material);
+    const puv = src.glb && skin.skinned ? planarUvs.get(me.geometry) : undefined, flag = bladeVerts.get(me.geometry);
+    if (puv && !(mask && !flag)) { // 마스크 모델의 손잡이 전용 메시는 원본 UV 유지
+      let uv = puv;
+      if (flag) { const orig = me.geometry.attributes.uv; uv = new Float32Array(puv); if (orig) for (let i = 0; i < flag.length; i++) if (!flag[i]) { uv[i * 2] = orig.getX(i); uv[i * 2 + 1] = orig.getY(i); } }
+      me.geometry = me.geometry.clone(); me.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    }
+    if (mask) me.material = Array.isArray(me.material) ? me.material.map((m, i) => pickMasked(m, !!flag && i === 1)) : pickMasked(me.material, false);
+    else me.material = Array.isArray(me.material) ? me.material.map(pick) : pick(me.material);
   });
   return wrap;
 }

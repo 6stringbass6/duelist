@@ -144,7 +144,7 @@ export const KARAMBIT_SKIN_ID = 'karambit_dagger';
 export const BUTTERFLY_SKIN_ID = 'butterfly_dagger';
 export const SKELETON_SKIN_ID = 'skeleton_dagger';
 export const EXTRA_SKINS: SkinDef[] = [
-  // 카람빗 스페셜 박스 전용(0.1%) — 상점/일일/일반 박스에는 나오지 않는다. 단검(근접 3번 슬롯) 전용, karambit.fbx(단위 cm, 텍스처 없음 → FILE_PARTS 스틸 재질) 사용
+  // 카람빗 스페셜 박스 전용(0.1%) — 상점/일일/일반 박스에는 나오지 않는다. 단검(근접 3번 슬롯) 전용, karambit.fbx(단위 cm, 텍스처 없음 → BLADE_MASKS CS2 바닐라 재질) 사용
   { id: KARAMBIT_SKIN_ID, collection: 'karambit', weaponId: 'dagger', name: '카람빗', tier: 'exrare', price: 4500, featured: false, inDaily: false, inBox: false, sort: 14,
     blurb: '굽은 칼날과 핑거 링을 갖춘 카람빗. 카람빗 스페셜 박스 0.1% 한정.',
     model: 'default', material: { style: 'solid', baseColor: 0x1d4fb8, accentColor: 0xe0b440, patternColor: 0x9fd0ff, metalness: 0.95, roughness: 0.25 },
@@ -155,7 +155,7 @@ export const EXTRA_SKINS: SkinDef[] = [
     blurb: '두 갈래 핸들이 펼쳐지는 발리송. 미러 폴리싱 스틸 블레이드에 블랙·레드 핸들.',
     model: 'default', material: { style: 'solid', baseColor: 0xc7cacd, accentColor: 0xbf0505, patternColor: 0x111214, metalness: 0.95, roughness: 0.22 },
     emissive: NO_GLOW, vfx: { tracerColor: 0xff5a5a }, glb: { file: 'butterfly_knife.glb', length: 0.3, grip: 0.3, roll: 0 } },
-  // 스켈레톤 나이프 — 상점 NEW(featured) 상시 판매. 단검(근접 3번 슬롯) 전용, skeleton_knife.glb 내장 PBR 재질(스틸 + 코튼 파라코드) 사용
+  // 스켈레톤 나이프 — 상점 NEW(featured) 상시 판매. 단검(근접 3번 슬롯) 전용, skeleton_knife.glb (기본 외형 = BLADE_MASKS CS2 바닐라 다크 스틸, 내장 텍스처 미사용)
   { id: SKELETON_SKIN_ID, collection: 'skeleton', weaponId: 'dagger', name: '스켈레톤 나이프', tier: 'exrare', price: 4500, featured: true, inDaily: false, inBox: false, sort: 16,
     blurb: '뼈대만 남긴 경량 스켈레톤 블레이드. 파라코드 핸들 랩.',
     model: 'default', material: { style: 'solid', baseColor: 0xb9bcc0, accentColor: 0x6b5a3c, patternColor: 0x111214, metalness: 0.95, roughness: 0.25 },
