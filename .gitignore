@@ -5,3 +5,5 @@ server/.env
 .env.local
 e2e/test-results/
 /node_modules/
+node_modules/
+.playwright-mcp/

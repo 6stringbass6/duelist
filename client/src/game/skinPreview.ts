@@ -12,9 +12,9 @@ import type { WeaponId } from '../config/weapons';
 import { createWeaponMesh } from './network';
 import { tickSkinMaterials } from './skinFx';
 
-interface Rig { env: number; exposure: number; key: number; rim: number; sweep: number; under: number }
+export interface Rig { env: number; exposure: number; key: number; rim: number; sweep: number; under: number }
 /** 등급별 조명 프로파일 — 기본 외형(null)은 가장 수수하게 */
-const RIGS: Record<Tier | 'none', Rig> = {
+export const RIGS: Record<Tier | 'none', Rig> = {
   none: { env: 0.45, exposure: 0.95, key: 1.9, rim: 0, sweep: 0, under: 0 },
   select: { env: 0.6, exposure: 1.0, key: 2.2, rim: 0.5, sweep: 0.5, under: 0.15 },
   deluxe: { env: 0.85, exposure: 1.05, key: 2.4, rim: 1.4, sweep: 1.4, under: 0.35 },

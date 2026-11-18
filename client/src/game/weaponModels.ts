@@ -39,6 +39,8 @@ const BASE = (import.meta.env?.BASE_URL ?? '/') + 'models/';
 const darkMat = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 0.5, metalness: 0.7 });
 const glassMat = new THREE.MeshStandardMaterial({ color: 0x88c8ff, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.4 });
 
+/** GLB/own 모델의 평면 UV — userData 는 clone() 시 JSON 직렬화되어 Float32Array 가 깨지므로(→ 렌더 예외) 지오메트리 키로 따로 보관 */
+const planarUvs = new WeakMap<THREE.BufferGeometry, Float32Array>();
 const matsOf = (m: THREE.Mesh): THREE.Material[] => (Array.isArray(m.material) ? m.material : [m.material]);
 
 function prepare(root: THREE.Object3D, length: number, glb: boolean, grip?: number): Source {
@@ -54,7 +56,7 @@ function prepare(root: THREE.Object3D, length: number, glb: boolean, grip?: numb
     // 평면 투영 UV — 팔레트 UV 대신 패턴이 균일하게 입혀지도록 (모델 공간 x/y)
     const pos = g.attributes.position, uv = new Float32Array(pos.count * 2), v = new THREE.Vector3();
     for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld); uv[i * 2] = (v.x - box.min.x) / size.x; uv[i * 2 + 1] = (v.y - box.min.y) / size.x; }
-    if (glb) mesh.userData.planarUv = uv; // GLB: 내장 UV(PBR 텍스처) 유지, 스킨 적용 시에만 평면 UV 사용
+    if (glb) planarUvs.set(g, uv); // GLB: 내장 UV(PBR 텍스처) 유지, 스킨 적용 시에만 평면 UV 사용
     else g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   }
   const names = [...count.keys()], free = names.filter((n) => !/^(Black2?|Grey|Glass)$|Grip|Polymer/i.test(n));
@@ -86,6 +88,8 @@ function load(def: ModelDef | undefined): Promise<Source | null> {
   }
   return p;
 }
+/** 해당 무기/스킨이 쓰는 모델 파일의 로드가 끝나면(실패 포함) resolve — 이후 createWeaponMesh 는 동기로 실제 모델을 붙인다 */
+export function weaponModelReady(weaponId: WeaponId, skinId?: string | null): Promise<void> { return load(modelFor(weaponId, skinId)).then(() => undefined); }
 /** 시작 시 한 번 호출 — 사용하는 모델을 미리 받아 둔다 */
 export function preloadWeaponModels(): void { for (const id of Object.keys(WEAPON_MODELS) as WeaponId[]) void load(WEAPON_MODELS[id]); }
 
@@ -126,7 +130,8 @@ function build(src: Source, skin: SkinSet, roll = 0): THREE.Group {
   inner.traverse((o) => {
     const me = o as THREE.Mesh; if (!me.isMesh) return;
     curMesh = me;
-    if (src.glb && skin.skinned && me.userData.planarUv) { me.geometry = me.geometry.clone(); me.geometry.setAttribute('uv', new THREE.BufferAttribute(me.userData.planarUv as Float32Array, 2)); }
+    const puv = src.glb && skin.skinned ? planarUvs.get(me.geometry) : undefined;
+    if (puv) { me.geometry = me.geometry.clone(); me.geometry.setAttribute('uv', new THREE.BufferAttribute(puv, 2)); }
     me.material = Array.isArray(me.material) ? me.material.map(pick) : pick(me.material);
   });
   return wrap;

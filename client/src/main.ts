@@ -17,6 +17,7 @@ import { preloadWeaponModels } from './game/weaponModels';
 import { skinSwatchUrl } from './game/skinTextures';
 import { FEATURED_BANNER, LOOTBOXES, SKINS, SKIN_WEAPONS, TIERS, TIER_ORDER, buildGachaReel, featuredSkins, getSkin, lootboxOdds, normalizeTier, resolveSkinId, skinsForWeapon, tierEmblemSvg, type SkinDef, type Tier } from './config/skins';
 import { SkinPreview } from './game/skinPreview';
+import { cachedSkinThumb, requestSkinThumb } from './game/skinThumbs';
 import {
   GameError, buySkin, changeNickname, claimDailyLogin, claimMission, equipSkin, equipTitle, fetchBundle, fetchMatchHistory, getNicknameChangeCost, getProfile,
   initAuth, isSupabaseConfigured, onProfileChange, openLootbox, patchProfile, refreshProfile, saveLoadout, setGuestNickname, signInWithGoogle, signInWithId, signOut, signUpWithId, startGuest,
@@ -158,6 +159,23 @@ function gunSvg(w: string, s: SkinDef | null): string {
   const g3 = s ? hex(s.emissive.mode === 'none' ? s.material.patternColor : s.emissive.color) : '#6b665c';
   return `<svg class="c-gun" style="--g1:${g1};--g2:${g2};--g3:${g3}" viewBox="0 0 400 120" aria-hidden="true">${GUN_PATHS[gunKind(w)]}</svg>`;
 }
+/** 카드 비주얼 — 실제 3D 스킨을 촬영한 썸네일(game/skinThumbs). 촬영 전엔 빈 자리, WebGL 불가 시 실루엣 폴백 */
+function skinVis(w: string, s: SkinDef | null, cls = 'c-thumb'): string {
+  const id = s?.id ?? null, url = cachedSkinThumb(w, id);
+  if (url === null) return cls === 'c-thumb' ? gunSvg(w, s) : KAR_SVG;
+  return `<img class="${cls}${url ? ' c-ld' : ''}" alt="${esc(s?.name ?? wName(w) + ' 기본 외형')}" draggable="false" data-thumb-w="${esc(w)}" data-thumb-s="${esc(id ?? '')}"${url ? ` src="${url}"` : ''} />`;
+}
+/** innerHTML 렌더 후 호출 — 아직 촬영 안 된 썸네일을 요청해 채운다 */
+function hydrateThumbs(root: HTMLElement): void {
+  root.querySelectorAll<HTMLImageElement>('img[data-thumb-w]:not([src])').forEach((img) => {
+    const w = img.dataset.thumbW as WeaponId, id = img.dataset.thumbS || null;
+    void requestSkinThumb(w, id).then((url) => {
+      if (!img.isConnected) return;
+      if (url) { img.src = url; img.classList.add('c-ld'); }
+      else img.outerHTML = img.classList.contains('c-thumb') ? gunSvg(w, getSkin(id)) : KAR_SVG;
+    });
+  });
+}
 const tierBadge = (t: Tier | null, label?: string): string => `<span class="c-badge" style="color:${t ? TIERS[t].color : '#8a857a'}">${esc(label ?? (t ? TIERS[t].en : 'STANDARD'))}</span>`;
 const wName = (w: string): string => (WEAPONS as Record<string, { name: string } | undefined>)[w]?.name ?? w;
 let rarity: 'all' | Tier = 'all';
@@ -222,7 +240,7 @@ function renderLobby(): void {
   else html = { play: htmlPlay, loadout: htmlLoadout, shop: htmlShop, stats: htmlCareer }[lobbyTab]();
   body.innerHTML = `<div class="${fresh ? 'c-fade' : ''}">${html}</div>`;
   if (lobbyTab === 'settings') renderSettings();
-  bindLobbyBody(); mountPreview();
+  bindLobbyBody(); mountPreview(); hydrateThumbs(body);
 }
 
 // ───────────────────────────── 01 PLAY ─────────────────────────────
@@ -296,11 +314,11 @@ function htmlSkinGrid(k: SlotKey): string {
   }
   const anyEq = [...own.values()].some((x) => x.equipped);
   const all = [...skinsForWeapon(w)].sort((a, b) => (+own.has(b.id) - +own.has(a.id)) || TIERS[b.tier].order - TIERS[a.tier].order || a.sort - b.sort);
-  const std = `<div class="c-card${anyEq ? '' : ' c-eq'}"><div class="c-vis">${gunSvg(w, null)}</div>${anyEq ? '' : '<span class="c-eqtag">EQUIPPED</span>'}<div class="c-body">${tierBadge(null)}<span class="c-cn2">${esc(wName(w))} 기본 외형</span><span class="c-cw">${esc(wName(w))} · 기본</span><div class="c-row">${anyEq ? '<button type="button" class="c-btn" data-equip="">장착</button>' : '<span class="c-own">장착 중</span>'}</div></div></div>`;
+  const std = `<div class="c-card${anyEq ? '' : ' c-eq'}"><div class="c-vis">${skinVis(w, null)}</div>${anyEq ? '' : '<span class="c-eqtag">EQUIPPED</span>'}<div class="c-body">${tierBadge(null)}<span class="c-cn2">${esc(wName(w))} 기본 외형</span><span class="c-cw">${esc(wName(w))} · 기본</span><div class="c-row">${anyEq ? '<button type="button" class="c-btn" data-equip="">장착</button>' : '<span class="c-own">장착 중</span>'}</div></div></div>`;
   const cards = all.filter(byRarity).map((s) => {
     const o = own.get(s.id), eq = !!o?.equipped;
     const act = !o ? '<span class="c-lock">미보유 · 상점에서 구매</span>' : eq ? '<span class="c-own">장착 중</span>' : `<button type="button" class="c-btn" data-equip="${esc(o.raw)}">장착</button>`;
-    return `<div class="c-card${eq ? ' c-eq' : ''}"><div class="c-vis">${gunSvg(w, s)}</div>${eq ? '<span class="c-eqtag">EQUIPPED</span>' : ''}<div class="c-body">${tierBadge(s.tier)}<span class="c-cn2">${esc(s.name)}</span><span class="c-cw">${esc(wName(w))} · ${TIERS[s.tier].name}</span><div class="c-row">${act}</div></div></div>`;
+    return `<div class="c-card${eq ? ' c-eq' : ''}"><div class="c-vis">${skinVis(w, s)}</div>${eq ? '<span class="c-eqtag">EQUIPPED</span>' : ''}<div class="c-body">${tierBadge(s.tier)}<span class="c-cn2">${esc(s.name)}</span><span class="c-cw">${esc(wName(w))} · ${TIERS[s.tier].name}</span><div class="c-row">${act}</div></div></div>`;
   });
   const list = (rarity === 'all' ? [std] : []).concat(cards);
   return `${wchips}${rarityChips(all)}${list.length ? `<div class="c-grid">${list.join('')}</div>` : '<div class="c-empty">이 등급의 스킨이 없습니다.</div>'}<div class="c-foot">전체 스킨 ${all.length}종 중 ${own.size}종 보유</div>`;
@@ -322,7 +340,7 @@ function htmlShop(): string {
   const items: { s: SkinDef; price: number; has: boolean }[] = [], seen = new Set<string>();
   for (const it of bundle?.shop ?? []) { const s = getSkin(it.skin_id); if (s && !seen.has(s.id)) { seen.add(s.id); items.push({ s, price: it.price, has: it.owned || owned(s.id) }); } }
   for (const s of featuredSkins()) if (!seen.has(s.id)) { seen.add(s.id); items.push({ s, price: s.price, has: owned(s.id) }); }
-  const card = (d: { s: SkinDef; price: number; has: boolean }): string => `<div class="c-card"><div class="c-vis">${gunSvg(d.s.weaponId, d.s)}</div>${d.s.featured ? '<span class="c-eqtag">NEW</span>' : ''}<div class="c-body">${tierBadge(d.s.tier)}<span class="c-cn2">${esc(d.s.name)}</span><span class="c-cw">${esc(wName(d.s.weaponId))} · ${TIERS[d.s.tier].name}</span><div class="c-row"><span class="c-price"><span class="c-gem"></span>${fmt(d.price)}</span>${d.has ? '<span class="c-own">보유 중</span>' : `<button type="button" class="c-btn" data-buy="${d.s.id}">구매</button>`}</div></div></div>`;
+  const card = (d: { s: SkinDef; price: number; has: boolean }): string => `<div class="c-card"><div class="c-vis">${skinVis(d.s.weaponId, d.s)}</div>${d.s.featured ? '<span class="c-eqtag">NEW</span>' : ''}<div class="c-body">${tierBadge(d.s.tier)}<span class="c-cn2">${esc(d.s.name)}</span><span class="c-cw">${esc(wName(d.s.weaponId))} · ${TIERS[d.s.tier].name}</span><div class="c-row"><span class="c-price"><span class="c-gem"></span>${fmt(d.price)}</span>${d.has ? '<span class="c-own">보유 중</span>' : `<button type="button" class="c-btn" data-buy="${d.s.id}">구매</button>`}</div></div></div>`;
   const shown = items.filter((d) => byRarity(d.s));
   const odds = (id: string): string => `<div class="c-odds">${lootboxOdds(id).map((o) => `<span style="color:${o.color}">${esc(o.label)} <b>${o.percent}%</b></span>`).join('')}</div>`;
   const kb = LOOTBOXES.karambit ?? Object.values(LOOTBOXES).find((b) => b.jackpot);
@@ -331,7 +349,7 @@ function htmlShop(): string {
     <span class="c-bd">${esc(kb.desc ?? '')}. 이미 보유한 스킨이 나오면 크레딧으로 환급됩니다${kb.jackpot ? ` (카람빗 ◈ ${fmt(kb.jackpot.refund)})` : ''}.</span>
     <div class="c-price c-price-lg"><span class="c-gem"></span>${fmt(kb.price)}</div>
     <div class="c-bact"><button type="button" class="c-btn c-fill c-btn-lg" data-box="${kb.id}">박스 개봉</button><button type="button" class="c-btn c-ghostb c-btn-lg" data-odds>${oddsOpen ? '확률 닫기' : '확률 공개'}</button></div>
-    ${oddsOpen ? odds(kb.id) : ''}</div><div class="c-bv"><div class="c-disc2"></div><div class="c-disc"></div>${KAR_SVG}</div></section>`;
+    ${oddsOpen ? odds(kb.id) : ''}</div><div class="c-bv"><div class="c-disc2"></div><div class="c-disc"></div>${kb.jackpot && getSkin(kb.jackpot.skinId) ? skinVis(getSkin(kb.jackpot.skinId)!.weaponId, getSkin(kb.jackpot.skinId), 'c-kar c-karimg') : KAR_SVG}</div></section>`;
   const boxes = Object.values(LOOTBOXES).filter((b) => b.id !== kb?.id).map((b) => `<div class="c-card"><div class="c-body"><span class="c-badge" style="color:#fdcb6e">Random Box</span><span class="c-cn2">${esc(b.name)}</span>${odds(b.id)}<span class="c-cw">중복 획득 시 크레딧으로 환급됩니다.</span><div class="c-row"><span class="c-price"><span class="c-gem"></span>${fmt(b.price)}</span><span class="c-acts">${b.id === 'standard' ? `<button type="button" class="c-btn c-ghostb" data-box="${b.id}" data-owned="1" ${p.lootboxes < 1 ? 'disabled' : ''}>보유 ${p.lootboxes}</button>` : ''}<button type="button" class="c-btn" data-box="${b.id}">개봉</button></span></div></div></div>`).join('');
   const fb = FEATURED_BANNER;
   return `${banner}
@@ -1367,4 +1385,4 @@ addEventListener('pointerdown', () => { if (TOUCH) void (screen.orientation as u
   setView('auth');
   const p = await initAuth();   // 세션 복원 (Google 리다이렉트 복귀 포함) + 설정 클라우드 동기화 시작
   if (p) await enterLobby();
-})();
+})();
