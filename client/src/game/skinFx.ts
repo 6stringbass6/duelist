@@ -3,8 +3,8 @@
 //  - skinMaterials(): 스킨 → MeshPhysicalMaterial(본체) / 포인트 재질. 스킨 ID 별 캐시(텍스처는 재질 키별 캐시) → 프레임 중 생성 없음
 //  - 발광 애니메이션: flow(신호 펄스) / energy(표면을 흐르는 에너지) / plasma(용암·성운 유동) 는
 //    emissive 프래그먼트만 교체한 셰이더로 처리(텍스처 재업로드 없음, 공용 시간 유니폼 1개)
-//  - attachSkinFx(): 익스클루시브 = 홀로그램 윙, 울트라 = 에너지 코어 링 + 전용 컬러 총구 섬광
-//  - fireWeaponFx(): 사격 시 울트라 발광 폭증 + 총구 섬광
+//  - attachSkinFx(): 홀로그램 윙(wings) / 에너지 코어 링(rings) — 스킨 attach 로 지정 + 전용 컬러 총구 섬광
+//  - fireWeaponFx(): 사격 시 링 스킨 발광 폭증 + 총구 섬광
 // 지오메트리/재질/텍스처는 전부 모듈 단위로 공유·캐시한다.
 // =====================================================================
 import * as THREE from 'three';
@@ -88,7 +88,7 @@ export function skinMaterials(skinId: string | null | undefined): SkinMats {
     roughnessMap: tex?.roughnessMap ?? null, bumpMap: tex?.bumpMap ?? null, bumpScale: (tex?.bumpScale ?? 1) * 0.7, emissive: accentEm, emissiveIntensity: accentGlow }); // 포인트 파츠도 러프니스/범프 맵 공유 → 민무늬 방지
   if (emMap && (e.mode === 'flow' || e.mode === 'energy' || e.mode === 'plasma')) installShader(base, SHADER_MODE[e.mode], e.color, e.color2 ?? e.color, e.speed ?? 0.5, e.ambient ?? 0.05);
   if (glow && e.mode !== 'static') {
-    const boost = def?.tier === 'ultra' ? 2.6 : 0; // 사격 시 발광 폭증은 울트라 전용
+    const boost = skinAttachment(def) === 'rings' ? 2.6 : 0; // 사격 시 발광 폭증은 에너지 코어 링 스킨 전용
     animated.push({ mat: base, mode: e.mode, speed: e.speed ?? 0.5, base: baseIntensity, key, boost }, { mat: accent, mode: e.mode, speed: e.speed ?? 0.5, base: accentGlow, key, boost: boost * 1.6 });
   }
   mats = { base, accent }; matCache.set(key, mats);
@@ -186,7 +186,7 @@ export function attachSkinFx(g: THREE.Group, skinId: string | null | undefined, 
   layout(); g.userData.onModel = layout; g.userData.fx = fx;
 }
 
-/** 사격 순간 호출 — 울트라: 발광 폭증 + 전용 컬러 총구 섬광. 그 외 등급은 아무 일도 하지 않는다 */
+/** 사격 순간 호출 — 링 스킨: 발광 폭증 + 전용 컬러 총구 섬광. 그 외는 아무 일도 하지 않는다 */
 export function fireWeaponFx(g: THREE.Group | null | undefined): void {
   const fx = g?.userData.fx as WeaponFx | undefined; if (!g || !fx || fx.kind !== 'rings') return;
   const now = performance.now() / 1000; firedAt.set(fx.key, now); fx.flashAt = now;

@@ -176,11 +176,11 @@ function hydrateThumbs(root: HTMLElement): void {
     });
   });
 }
-const tierBadge = (t: Tier | null, label?: string): string => `<span class="c-badge" style="color:${t ? TIERS[t].color : '#8a857a'}">${esc(label ?? (t ? TIERS[t].en : 'STANDARD'))}</span>`;
+const tierBadge = (t: Tier | null, label?: string): string => `<span class="c-badge" style="color:${(t ? TIERS[t] : TIERS.default).color}">${esc(label ?? (t ? TIERS[t] : TIERS.default).en)}</span>`;
 const wName = (w: string): string => (WEAPONS as Record<string, { name: string } | undefined>)[w]?.name ?? w;
 let rarity: 'all' | Tier = 'all';
 function rarityChips(pool: SkinDef[]): string {
-  const opts: ['all' | Tier, string, string][] = [['all', '전체', '#f2efe8'], ...TIER_ORDER.map((k) => [k, TIERS[k].name, TIERS[k].color] as ['all' | Tier, string, string])];
+  const opts: ['all' | Tier, string, string][] = [['all', '전체', '#f2efe8'], ...TIER_ORDER.filter((k) => SKINS.some((x) => x.tier === k)).map((k) => [k, TIERS[k].name, TIERS[k].color] as ['all' | Tier, string, string])];
   return `<div class="c-chips" role="group" aria-label="스킨 등급 필터">${opts.map(([k, n, c]) => `<button type="button" class="c-chip${rarity === k ? ' c-on' : ''}" data-rar="${k}"><span class="c-rd" style="background:${c}"></span>${n}<span class="c-cn">${k === 'all' ? pool.length : pool.filter((s) => s.tier === k).length}</span></button>`).join('')}</div>`;
 }
 const byRarity = (s: SkinDef): boolean => rarity === 'all' || s.tier === rarity;
@@ -294,7 +294,7 @@ function htmlPlay(): string {
     <div class="c-mount">3D SHOWCASE / 드래그 회전</div>
     <div class="c-axis"></div><div class="c-ticks"></div>
     <div id="pv-slot" class="c-gunwrap"></div>
-    <div class="c-meta"><span class="c-wl">Equipped Finish · 장착 스킨</span><span class="c-wn">${esc(s ? s.name : `${wName(w)} 기본 외형`)}</span>${tierBadge(s?.tier ?? null, s ? `${TIERS[s.tier].en} · ${TIERS[s.tier].name}` : 'Standard · 기본')}</div>
+    <div class="c-meta"><span class="c-wl">Equipped Finish · 장착 스킨</span><span class="c-wn">${esc(s ? s.name : `${wName(w)} 기본 외형`)}</span>${tierBadge(s?.tier ?? null, s ? `${TIERS[s.tier].en} · ${TIERS[s.tier].name}` : `${TIERS.default.en} · ${TIERS.default.name}`)}</div>
     <button type="button" class="c-play${matching ? ' c-wait' : ''}" id="c-play"><span class="c-pt"><span class="c-pm">${matching ? 'Cancel' : 'Play'}</span><span class="c-ps2">${sub}</span></span><span class="c-arrow"></span></button>
   </section>
 </div>`;
@@ -638,7 +638,7 @@ async function runGacha(boxId: string, useOwned: boolean): Promise<void> {
   pc.audio.resume();
   setTimeout(() => {
     const s = getSkin(res.skin_id), r = TIERS[s?.tier ?? normalizeTier(res.rarity)];
-    $('gacha-result').innerHTML = `<div class="pop"><div class="rar" style="color:${r.color};font-size:14px;display:flex;gap:6px;justify-content:center;align-items:center">${tierEmblemSvg(s?.tier ?? res.rarity, 20)}${r.name} 에디션</div><div style="font-size:22px;font-weight:800">${esc(s?.name ?? res.skin_id)}</div>${res.duplicate ? `<div class="mut">이미 보유한 스킨 — ◈ ${fmt(res.refund)} 환급</div>` : `<div style="color:var(--ok)">새 스킨 획득!</div>`}</div>`;
+    $('gacha-result').innerHTML = `<div class="pop"><div class="rar" style="color:${r.color};font-size:14px;display:flex;gap:6px;justify-content:center;align-items:center">${tierEmblemSvg(s?.tier ?? res.rarity, 20)}${r.name}</div><div style="font-size:22px;font-weight:800">${esc(s?.name ?? res.skin_id)}</div>${res.duplicate ? `<div class="mut">이미 보유한 스킨 — ◈ ${fmt(res.refund)} 환급</div>` : `<div style="color:var(--ok)">새 스킨 획득!</div>`}</div>`;
     if (s?.glb) { jackpotBurst(); pc.audio.jackpot(); $('gacha-result').classList.add('jackpot'); } else pc.audio.kill();
     void loadBundle();
   }, 4400);

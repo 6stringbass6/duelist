@@ -49,9 +49,9 @@ end $$;
 insert into public.lootboxes (box_id, name, price) values ('karambit','카람빗 스페셜 박스',4000)
 on conflict (box_id) do update set name = excluded.name, price = excluded.price, active = true;
 insert into public.skin_catalog (skin_id, weapon_id, name, rarity, price, featured, in_daily, in_box, sort)
-values ('karambit_dagger','dagger','카람빗','ultra',4500,false,false,false,14)
+values ('karambit_dagger','dagger','카람빗','exrare',4500,false,false,false,14)
 on conflict (skin_id) do update set weapon_id = excluded.weapon_id, name = excluded.name, rarity = excluded.rarity, price = excluded.price,
   featured = false, in_daily = false, in_box = false, sort = excluded.sort, active = true;
 insert into public.lootbox_rates (box_id, rarity, weight, dup_refund) values
-  ('karambit','karambit',0.1,2000),('karambit','ultra',4.9,1125),('karambit','exclusive',15,800),('karambit','premium',35,550),('karambit','deluxe',45,300),('karambit','select',0,150)
+  ('karambit','karambit',0.1,2000),('karambit','covert',19.9,900),('karambit','classified',23.33,550),('karambit','restricted',41.67,375),('karambit','milspec',15,225),('karambit','industrial',0,150),('karambit','consumer',0,150)
 on conflict (box_id, rarity) do update set weight = excluded.weight, dup_refund = excluded.dup_refund;

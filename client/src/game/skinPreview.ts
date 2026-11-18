@@ -16,11 +16,15 @@ export interface Rig { env: number; exposure: number; key: number; rim: number; 
 /** 등급별 조명 프로파일 — 기본 외형(null)은 가장 수수하게 */
 export const RIGS: Record<Tier | 'none', Rig> = {
   none: { env: 0.45, exposure: 0.95, key: 1.9, rim: 0, sweep: 0, under: 0 },
-  select: { env: 0.6, exposure: 1.0, key: 2.2, rim: 0.5, sweep: 0.5, under: 0.15 },
-  deluxe: { env: 0.85, exposure: 1.05, key: 2.4, rim: 1.4, sweep: 1.4, under: 0.35 },
-  premium: { env: 1.1, exposure: 1.1, key: 2.6, rim: 2.6, sweep: 2.6, under: 0.7 },
-  exclusive: { env: 1.3, exposure: 1.16, key: 2.7, rim: 3.8, sweep: 3.6, under: 1.1 },
-  ultra: { env: 1.5, exposure: 1.22, key: 2.8, rim: 5.2, sweep: 4.8, under: 1.6 },
+  default: { env: 0.5, exposure: 0.97, key: 2.0, rim: 0.2, sweep: 0.2, under: 0.05 },
+  consumer: { env: 0.6, exposure: 1.0, key: 2.2, rim: 0.5, sweep: 0.5, under: 0.15 },
+  industrial: { env: 0.72, exposure: 1.02, key: 2.3, rim: 0.9, sweep: 0.9, under: 0.25 },
+  milspec: { env: 0.85, exposure: 1.05, key: 2.4, rim: 1.4, sweep: 1.4, under: 0.35 },
+  restricted: { env: 0.98, exposure: 1.08, key: 2.5, rim: 2.0, sweep: 2.0, under: 0.52 },
+  classified: { env: 1.1, exposure: 1.1, key: 2.6, rim: 2.6, sweep: 2.6, under: 0.7 },
+  covert: { env: 1.4, exposure: 1.19, key: 2.75, rim: 4.5, sweep: 4.2, under: 1.35 },
+  exrare: { env: 1.5, exposure: 1.22, key: 2.8, rim: 5.2, sweep: 4.8, under: 1.6 },
+  contraband: { env: 1.5, exposure: 1.22, key: 2.8, rim: 5.2, sweep: 4.8, under: 1.6 },
 };
 
 export class SkinPreview {
