@@ -18,6 +18,7 @@ import { skinSwatchUrl } from './game/skinTextures';
 import { BUY_QTYS, CASES, SHOP_PRICES, SKINS, SKIN_WEAPONS, TIERS, TIER_ORDER, XP_PER_LEVEL, caseOdds, getSkin, resolveSkinId, skinsForWeapon, tierEmblemSvg, type CaseKind, type SkinDef, type Tier } from './config/skins';
 import { awardGuestMatchXp, buyShopSkin, buyStoreItem, equipGuestSkin, guestDaily, guestSkins, inventoryOf, levelOf, normalizeDaily, openCases, permanentPrice, permanentStock, type StoreItem } from './services/economy';
 import { SkinPreview } from './game/skinPreview';
+import { runCaseOpening } from './game/caseOpening';
 import { cachedSkinThumb, requestSkinThumb } from './game/skinThumbs';
 import {
   GameError, changeNickname, claimDailyLogin, claimMission, equipSkin, equipTitle, fetchBundle, fetchMatchHistory, getNicknameChangeCost, getProfile,
@@ -446,7 +447,7 @@ function htmlShop(): string {
       <span class="c-cn2">${esc(name)}</span><span class="c-cw">${esc(desc)}</span>
       ${art === 'store' ? `<button type="button" class="c-link2" data-odds>${oddsOpen ? '확률 숨기기' : '확률 보기'}</button>${oddsOpen ? oddsHtml('store') : ''}` : ''}
       ${qtyPills('bq', item, q)}
-      <div class="c-row"><span class="c-price"><span class="c-gem"></span>${fmt(unit * q)}</span><button type="button" class="c-btn c-fill" data-sbuy="${item}" ${p.credits < unit * q ? 'disabled title="크레딧 부족"' : ''}>${q}개 구매</button></div></div></div>`;
+      <div class="c-row"><span class="c-price"><span class="c-gem"></span>${fmt(unit * q)}</span><span class="c-acts">${art === 'store' && own > 0 ? `<button type="button" class="c-btn c-ghostb" data-open="store" data-n="${q}">${[...BUY_QTYS].reverse().find((x) => x <= Math.min(q, own))}개 열기</button>` : ''}<button type="button" class="c-btn c-fill" data-sbuy="${item}" ${p.credits < unit * q ? 'disabled title="크레딧 부족"' : ''}>${q}개 구매</button></span></div></div></div>`;
   };
   const daily = bundle?.shop ?? [];
   const dailyCards = daily.map((it) => { const s = getSkin(it.skin_id)!; return shopSkinCard(s, it.price, it.owned || owned(s.id), 'daily'); }).join('');
@@ -480,11 +481,21 @@ function htmlContainers(): string {
     ${card('key', '무기 상자 열쇠', inv.keys, `${CASES.drop.name}을 여는 데 쓰입니다.`, `<div class="c-row"><span class="c-price"><span class="c-gem"></span>${fmt(SHOP_PRICES.key)}</span><button type="button" class="c-btn c-ghostb" data-gotab="shop">열쇠 구매</button></div>`)}
   </div><div class="c-foot">Lv.${levelOf(inv.xp)} · 다음 레벨까지 ${fmt(XP_PER_LEVEL - (inv.xp % XP_PER_LEVEL))} XP · 매주 첫 레벨업 시 ${CASES.drop.name} 1개 지급</div>`;
 }
-/** 컨테이너 개봉 — Phase 2 에서 룰렛 연출로 교체 */
+/** 컨테이너 개봉: 결과 확정(서버/로컬) → CS2 룰렛 연출 → 닫으면 보관함 새로고침 */
+let opening = false;
 async function openCaseFlow(kind: CaseKind, n: number): Promise<void> {
-  const res = await guard(() => openCases(kind, n)); if (!res) return;
-  toast(res.map((r) => getSkin(r.skin_id)?.name ?? r.skin_id).join(', '), 'good');
-  await loadBundle();
+  if (opening) return; opening = true;
+  const res = await guard(() => openCases(kind, n));
+  if (!res) { opening = false; return; }
+  pc.audio.resume();
+  runCaseOpening(kind, res, {
+    vis: (s) => skinVis(s.weaponId, s),
+    hydrate: hydrateThumbs,
+    onReveal: (r) => {
+      if (TIERS[r.rarity].order >= TIERS.covert.order) { pc.audio.jackpot(); if (r.rarity === 'exrare') jackpotBurst(); } else pc.audio.kill();
+    },
+    onClose: () => { opening = false; void loadBundle(); },
+  });
 }
 // ───────────────────────────── 04 CAREER ─────────────────────────────
 let careerSub: 'matches' | 'missions' | 'achievements' = 'matches';
@@ -566,7 +577,11 @@ function bindLobbyBody(): void {
     const item = b.dataset.sbuy as StoreItem, n = buyQty[item], name = item === 'key' ? '무기 상자 열쇠' : CASES.store.name;
     if ((await guard(() => buyStoreItem(item, n))) !== null) { toast(`${name} ${n}개 구매 완료`, 'good'); renderLobby(); }
   }));
-  each('[data-open]', (b) => (b.onclick = () => void openCaseFlow(b.dataset.open as CaseKind, openQty[b.dataset.open as CaseKind])));
+  each('[data-open]', (b) => (b.onclick = () => {
+    const k = b.dataset.open as CaseKind, inv = inventoryOf(getProfile()), max = k === 'drop' ? Math.min(inv.dropCases, inv.keys) : inv.storeCases;
+    const n = +(b.dataset.n ?? openQty[k]), q = [...BUY_QTYS].reverse().find((x) => x <= Math.min(n, max));
+    if (q) void openCaseFlow(k, q);
+  }));
   each('[data-gocases]', (b) => (b.onclick = () => { ldSlot = 'cases'; goTab('loadout'); }));
   each('[data-gotab]', (b) => (b.onclick = () => goTab(b.dataset.gotab as LobbyTab)));
   each('[data-skpick]', (b) => (b.onclick = () => { // 장착: 일반 스킬은 Q/E 중복 불가(자동 교체), 즉시 저장 + 다음 매치 진입 시 서버로 전달
