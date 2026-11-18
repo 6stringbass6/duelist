@@ -303,6 +303,8 @@ function htmlPlay(): string {
 // ───────────────────────────── 02 LOADOUT ─────────────────────────────
 type LdSlot = SlotKey | 'q' | 'e' | 'x';
 let ldSlot: LdSlot = 'primary';
+/** 근접 슬롯 보기 필터: 'all' = 전체 모델 섹션, 'fists' = 주먹, 그 외 = MELEE_SECTS 의 key */
+let meleeView = 'all';
 const SLOT_ROWS: [SlotKey, string, string][] = [['primary', 'Primary', '주무기'], ['secondary', 'Sidearm', '보조'], ['melee', 'Melee', '근접'], ['throwable', 'Utility', '투척']];
 function htmlLoadout(): string {
   const l = getProfile()!.loadout;
@@ -353,43 +355,45 @@ function skinCards(w: string, pool: SkinDef[], withStd: boolean, active = true):
   return { cards: (withStd && rarity === 'all' ? [std] : []).concat(cards), own };
 }
 function htmlMeleeSections(cur: string): string {
-  const pool = MELEE_SECTS.flatMap((m) => skinsForWeapon(m.weapon).filter(m.match));
+  const shown = meleeView === 'all' ? MELEE_SECTS : MELEE_SECTS.filter((m) => m.key === meleeView);
+  const pool = shown.flatMap((m) => skinsForWeapon(m.weapon).filter(m.match));
   let ownN = 0;
   const inUse = (m: MeleeSect): boolean => { if (cur !== m.weapon) return false; const e = equippedSkin(m.weapon); return e ? m.match(e) : m.std; };
-  const sects = MELEE_SECTS.map((m) => {
+  const sects = shown.map((m) => {
     const list = skinsForWeapon(m.weapon).filter(m.match);
     const { cards, own } = skinCards(m.weapon, list, m.std, cur === m.weapon);
     const has = list.filter((s) => own.has(s.id)).length; ownN += has;
     return `<div class="c-ph c-ph2 c-msect" data-msect="${m.key}"><span class="c-h1">${m.en}</span><span class="c-h2">${m.title} · ${wName(m.weapon)}${inUse(m) ? ' · 사용 중' : ''} · ${list.length}종 중 ${has}종 보유</span></div>
       ${cards.length ? `<div class="c-grid">${cards.join('')}</div>` : '<div class="c-empty">이 등급의 스킨이 없습니다.</div>'}`;
   }).join('');
-  return `${rarityChips(pool)}${sects}<div class="c-foot">근접 스킨 ${pool.length}종 중 ${ownN}종 보유</div>`;
+  return `${rarityChips(pool)}${sects}<div class="c-foot">${meleeView === 'all' ? '근접' : esc(shown[0]?.title ?? '')} 스킨 ${pool.length}종 중 ${ownN}종 보유</div>`;
 }
-/** 근접 무기 선택 칩: 주먹 + MELEE_SECTS 의 모델들. 칩 목록은 MELEE_SECTS 에서 파생되므로 새 근접 모델은 MELEE_SECTS(및 MELEE_SPECIAL)에 추가하면 여기도 함께 반영된다. */
+/** 근접 보기 칩: 전체 + 주먹 + MELEE_SECTS 의 모델들(필터). 칩 목록은 MELEE_SECTS 에서 파생되므로 새 근접 모델은 MELEE_SECTS(및 MELEE_SPECIAL)에 추가하면 여기도 함께 반영된다. */
 function meleeInUseKey(cur: string): string {
   if (cur === 'fists') return 'fists';
   const e = equippedSkin(cur);
   return MELEE_SECTS.find((m) => m.weapon === cur && (e ? m.match(e) : m.std))?.key ?? '';
 }
-/** 해당 모델로 전환할 때 장착할 스킨 원본 ID. null = 기본 외형, undefined = 보유 스킨 없음(전환 불가) */
-function meleeSkinFor(m: MeleeSect): string | null | undefined {
-  const e = equippedSkin(m.weapon);
-  if (e && m.match(e)) return bundle?.skins.find((o) => o.weapon_id === m.weapon && o.equipped)?.skin_id ?? null;
-  if (m.std) return null;
-  for (const [id, o] of ownedFor(m.weapon)) { const s = getSkin(id); if (s && m.match(s)) return o.raw; }
-  return undefined;
-}
 function htmlMeleeChips(cur: string): string {
-  const on = meleeInUseKey(cur);
-  const chip = (key: string, name: string, lock: boolean): string =>
-    `<button type="button" class="c-chip${key === on ? ' c-on' : ''}" data-lmel="${key}"${lock ? ' disabled title="미보유 · 상점에서 구매"' : ''}>${esc(name)}${lock ? ' 🔒' : ''}</button>`;
-  return `<div class="c-chips c-wchips" role="group" aria-label="무기 선택">${chip('fists', wName('fists'), false)}${MELEE_SECTS.map((m) => chip(m.key, m.title, meleeSkinFor(m) === undefined)).join('')}</div>`;
+  const use = meleeInUseKey(cur);
+  const chip = (key: string, name: string): string =>
+    `<button type="button" class="c-chip${key === meleeView ? ' c-on' : ''}" data-mview="${key}"${key === use ? ' title="사용 중"' : ''}>${esc(name)}${key === use ? ' <span class="c-use" aria-label="사용 중">●</span>' : ''}</button>`;
+  return `<div class="c-chips c-wchips" role="group" aria-label="근접 무기 보기">${chip('all', '전체')}${chip('fists', wName('fists'))}${MELEE_SECTS.map((m) => chip(m.key, m.title)).join('')}</div>`;
+}
+function htmlFists(cur: string): string {
+  return cur === 'fists'
+    ? '<div class="c-empty">주먹 사용 중 · 주먹에는 스킨이 없습니다. 다른 근접 스킨을 장착하면 해당 무기로 바뀝니다.</div>'
+    : '<div class="c-empty">주먹에는 스킨이 없습니다. <button type="button" class="c-btn" data-lmel="fists">주먹 장착</button></div>';
 }
 function htmlSkinGrid(k: SlotKey): string {
   const w = getProfile()!.loadout[k];
   const wchips = `<div class="c-chips c-wchips" role="group" aria-label="무기 선택">${WEAPONS_BY_SLOT[k].map((id) => `<button type="button" class="c-chip${id === w ? ' c-on' : ''}" data-ldw="${id}">${esc(wName(id))}</button>`).join('')}</div>`;
   if (k === 'throwable') return `${wchips}<div class="c-empty">투척류에는 스킨이 없습니다.</div>`;
-  if (k === 'melee') return `${htmlMeleeChips(w)}${w === 'fists' ? '<div class="c-empty">주먹에는 스킨이 없습니다. 아래에서 스킨을 장착하면 해당 무기로 바뀝니다.</div>' : ''}${htmlMeleeSections(w)}`;
+  if (k === 'melee') {
+    if (meleeView !== 'all' && meleeView !== 'fists' && !MELEE_SECTS.some((m) => m.key === meleeView)) meleeView = 'all';
+    if (meleeView === 'fists') return `${htmlMeleeChips(w)}${htmlFists(w)}`;
+    return `${htmlMeleeChips(w)}${meleeView === 'all' && w === 'fists' ? '<div class="c-empty">주먹 사용 중 · 아래에서 스킨을 장착하면 해당 무기로 바뀝니다.</div>' : ''}${htmlMeleeSections(w)}`;
+  }
   const all = skinsForWeapon(w);
   const { cards: list, own } = skinCards(w, all, true);
   return `${wchips}${rarityChips(all)}${list.length ? `<div class="c-grid">${list.join('')}</div>` : '<div class="c-empty">이 등급의 스킨이 없습니다.</div>'}<div class="c-foot">전체 스킨 ${all.length}종 중 ${own.size}종 보유</div>`;
@@ -490,19 +494,10 @@ function bindLobbyBody(): void {
     const k = ldSlot as SlotKey, l = { ...getProfile()!.loadout, [k]: b.dataset.ldw } as Loadout;
     needReconnect = true; void saveLoadout(l).then(() => renderLobby());
   }));
-  each('[data-lmel]', (b) => (b.onclick = async () => { // 근접 모델 칩: 무기 전환 + 그 모델의 스킨(없으면 기본 외형) 장착
-    const key = b.dataset.lmel!, l = getProfile()!.loadout;
-    try {
-      if (key === 'fists') { if (l.melee !== 'fists') await saveLoadout({ ...l, melee: 'fists' } as Loadout); }
-      else {
-        const m = MELEE_SECTS.find((x) => x.key === key); if (!m) return;
-        const raw = meleeSkinFor(m); if (raw === undefined) return;
-        const curRaw = bundle?.skins.find((o) => o.weapon_id === m.weapon && o.equipped)?.skin_id ?? null;
-        if (raw !== curRaw) { await equipSkin(m.weapon, raw); bundle?.skins.forEach((s) => { if (s.weapon_id === m.weapon) s.equipped = s.skin_id === raw; }); net.refreshProfile(); }
-        if (l.melee !== m.weapon) await saveLoadout({ ...l, melee: m.weapon } as Loadout);
-      }
-      needReconnect = true; renderLobby();
-    } catch (e) { toast(errMsg(e), 'bad'); }
+  each('[data-mview]', (b) => (b.onclick = () => { meleeView = b.dataset.mview!; rarity = 'all'; renderLobby(); }));
+  each('[data-lmel]', (b) => (b.onclick = async () => { // 주먹 장착
+    const l = getProfile()!.loadout; if (l.melee === 'fists') return;
+    try { await saveLoadout({ ...l, melee: 'fists' } as Loadout); needReconnect = true; renderLobby(); } catch (e) { toast(errMsg(e), 'bad'); }
   }));
   each('[data-rar]', (b) => (b.onclick = () => { rarity = b.dataset.rar as typeof rarity; renderLobby(); }));
   each('[data-csub]', (b) => (b.onclick = () => { careerSub = b.dataset.csub as typeof careerSub; renderLobby(); }));
