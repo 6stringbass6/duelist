@@ -137,6 +137,7 @@ export class CharacterRig {
   private readonly mats: THREE.MeshStandardMaterial[] = [];
   private readonly rimColor = new THREE.Color(); private readonly rimStr = { value: 0.9 };
   private readonly spine: number[]; private readonly legs: number[];
+  private readonly headBones: THREE.Bone[]; private fp = false;
   private cur: ClipKey | null = null;
   private rifle: boolean | null = null;
   private wasCrouch = false; private phase = 0;
@@ -158,6 +159,7 @@ export class CharacterRig {
     const hand = this.bones[findBone(this.bones, 'RightHand')];
     this.socket.position.copy(a.gripPos); this.socket.quaternion.copy(a.gripQuat); this.socket.scale.setScalar(1 / a.scale); hand.add(this.socket);
     this.spine = SPINE.map((n) => findBone(this.bones, n)); this.legs = LEGS.map((n) => findBone(this.bones, n));
+    this.headBones = this.bones.filter((b) => /^mixamorig(Head|Neck)/.test(b.name));
     this.mixer = new THREE.AnimationMixer(this.model);
     this.actions = Object.fromEntries((Object.keys(a.clips) as ClipKey[]).map((k) => {
       const act = this.mixer.clipAction(a.clips[k]);
@@ -165,6 +167,9 @@ export class CharacterRig {
       return [k, act];
     })) as Record<ClipKey, THREE.AnimationAction>;
   }
+
+  /** 1인칭(본인 시점): 머리·목 본을 0 스케일로 숨겨 카메라가 헬멧/머리 메쉬에 가려지지 않게 한다 (매 프레임 애니메이션 뒤에 재적용) */
+  setFirstPerson(on: boolean): void { this.fp = on; if (!on) this.headBones.forEach((b) => b.scale.setScalar(1)); }
 
   setColor(hex: number): void { this.rimColor.setHex(hex); }
   /** 은신/보호/시전 투명도 + 대시·회복 시 림 강조 */
@@ -229,6 +234,7 @@ export class CharacterRig {
       b[0].position.lerpVectors(this.snapHips, b[0].position.clone(), t);
       if (t >= 1) this.snap = null;
     }
+    if (this.fp) for (const hb of this.headBones) hb.scale.setScalar(0);
   }
 
   dispose(): void {

@@ -15,6 +15,7 @@ import {
 import { NadeWheel } from './nadeWheel';
 import { DEFAULT_SKILLS, SKILLS, ULTS, ULT_COST, type SkillId, type UltId } from '../config/skills';
 import { createWeaponMesh, pullPin, type GameClient } from './network';
+import { CharacterRig, loadCharacterAssets } from './character';
 import { fireWeaponFx } from './skinFx';
 
 type Slot = 1 | 2 | 3 | 4;
@@ -257,6 +258,9 @@ export class PlayerController {
   private readonly vmRoot = new THREE.Group();
   private vm: THREE.Group | null = null; private vmKey = '';
   private bobT = 0; private swingT = 0;
+  /** 트루 1인칭 전신: 본인 Swat 리그 (라이플 장착 시에만 표시, 머리/목 숨김) */
+  private rig: CharacterRig | null = null; private rigDisposed = false; private rigFireT = 0; private yawRate = 0; private prevYaw = NaN;
+  private static readonly FP_BACK = 0.14; // 리그를 카메라 뒤로 밀어 몸통 내부 폴리곤이 시야에 끼지 않게 함(m)
   private readonly overlay: HTMLDivElement; private readonly flashEl: HTMLDivElement; private readonly hurtEl: HTMLDivElement; private readonly scopeEl: HTMLDivElement; private readonly skillFxEl: HTMLDivElement;
   private flashUntil = 0; private flashDur = 1; private flashPeak = 1; private hurtA = 0;
   private lastInputAt = 0;
@@ -267,7 +271,10 @@ export class PlayerController {
     camera.rotation.order = 'YXZ'; camera.near = 0.05; camera.far = 600;
     camera.fov = verticalFovDeg(getSettings().hFov); camera.updateProjectionMatrix();
     if (!camera.parent) net.scene.add(camera);
-    camera.add(this.vmRoot);
+    camera.add(this.vmRoot);    void loadCharacterAssets().then((a) => {
+      if (!a || this.rigDisposed) return;
+      this.rig = new CharacterRig(a, 0x3b9cff, 0); this.rig.setFirstPerson(true); this.rig.root.visible = false; net.scene.add(this.rig.root);
+    });
 
     // 오버레이(실명 / 피격 / 스코프)
     const host = dom.parentElement ?? document.body;
@@ -574,7 +581,7 @@ export class PlayerController {
     this.recoilPitch = Math.min(r.maxPitch * deg, this.recoilPitch + r.pitch * deg * shots * scopedMul);
     this.recoilYaw += (Math.random() - 0.5) * 2 * r.yaw * deg * scopedMul;
     this.vmKick = Math.min(1.5, this.vmKick + 0.6 + r.pitch * 0.15);
-    this.audio.shot(this.weaponId); fireWeaponFx(this.vm); // 울트라 스킨: 발광 폭증 + 전용 총구 섬광
+    this.audio.shot(this.weaponId); fireWeaponFx(this.vm); this.rigFireT = 0.3; // 울트라 스킨: 발광 폭증 + 전용 총구 섬광
   }
   private eyePos(): THREE.Vector3 { return this.eye.set(this.pos.x, this.pos.y + this.eyeH, this.pos.z); }
   private isScoped(now: number): boolean { const w = this.weapon; return isGun(w) && !!w.zoom && this.adsOn && now - this.adsSince >= (w.scopeMs ?? 0); }
@@ -624,14 +631,35 @@ export class PlayerController {
       this.vm.traverse((o) => { o.castShadow = false; o.frustumCulled = false; (o as THREE.Mesh).renderOrder = Math.max(10, (o as THREE.Mesh).renderOrder); });
       this.vmRoot.add(this.vm);
     }
-    const scoped = this.isScoped(now);
-    this.vmRoot.visible = this.alive && !scoped;
+    const scoped = this.isScoped(now), fpRifle = this.updateRig(dt, now, scoped);
+    this.vmRoot.visible = this.alive && !scoped && !fpRifle;
     const sp = Math.hypot(this.vel.x, this.vel.z); if (this.grounded) this.bobT += dt * sp * 1.6;
     const equip = Math.max(0, (this.equipUntil - now) / Math.max(1, this.weapon.equipMs)), ads = (this.zoom - 1) / Math.max(0.01, (isGun(this.weapon) ? this.weapon.adsZoom : 1.01) - 1 || 1);
     const a = Math.min(1, Math.max(0, this.adsOn ? ads : 0)), melee = isMelee(this.weapon) || isThrow(this.weapon);
     const bx = Math.sin(this.bobT) * 0.006 * (1 - a), by = Math.abs(Math.cos(this.bobT)) * 0.006 * (1 - a);
     this.vmRoot.position.set(0.2 * (1 - a) + bx, -0.19 + 0.06 * a - by - equip * 0.25 - (this.reloading ? 0.08 : 0), -0.36 + this.vmKick * 0.035 - (melee ? this.swingT * 0.25 : 0));
     this.vmRoot.rotation.set(this.vmKick * 0.07 - equip * 0.8 - (this.reloading ? 0.35 : 0) - (melee ? this.swingT * 0.9 : 0), melee ? this.swingT * 0.6 : 0, now < this.slideUntil ? 0.15 : 0);
+  }
+  /** 트루 1인칭: 라이플(AK-47/팬텀)이면 Swat 전신 리그를 갱신하고 무기를 오른손 소켓으로 옮긴다. 반환값 = 리그가 총을 들고 보이는 중 */
+  private updateRig(dt: number, now: number, scoped: boolean): boolean {
+    const rig = this.rig; if (!rig) return false;
+    const rifle = this.weaponId === 'vandal' || this.weaponId === 'phantom', show = this.alive && rifle && !scoped;
+    rig.root.visible = show;
+    const want = rifle ? rig.socket : this.vmRoot;
+    if (this.vm && this.vm.parent !== want) { want.add(this.vm); if (!rifle) this.vm.position.set(0, 0, 0), this.vm.rotation.set(0, 0, 0); }
+    if (!show) { this.prevYaw = NaN; return false; }
+    const yaw = this.yaw, sin = Math.sin(yaw), cos = Math.cos(yaw), k = Math.min(1, dt * 10);
+    if (Number.isNaN(this.prevYaw) || dt <= 0) this.prevYaw = yaw;
+    this.yawRate += (Math.atan2(Math.sin(yaw - this.prevYaw), Math.cos(yaw - this.prevYaw)) / Math.max(dt, 1e-3) - this.yawRate) * k; this.prevYaw = yaw;
+    this.rigFireT = Math.max(0, this.rigFireT - dt);
+    const B = PlayerController.FP_BACK + Math.max(0, -this.pitch) * 0.3; // 아래를 볼수록 몸을 더 뒤로 빼 상체가 렌즈를 덮지 않게
+    rig.root.position.set(this.pos.x + sin * B, this.pos.y, this.pos.z + cos * B); rig.root.rotation.y = yaw; // 전방 = (-sin, -cos)
+    const vx = this.vel.x, vz = this.vel.z;
+    rig.update(dt, {
+      rifle: true, firing: this.rigFireT > 0, reloading: this.reloading, crouch: this.eyeH < MOVE.eye - 0.2 || now < this.slideUntil, air: !this.grounded,
+      fwd: -vx * sin - vz * cos, side: vx * cos - vz * sin, turning: Math.abs(this.yawRate) > 1.5, pitch: this.pitch,
+    });
+    return true;
   }
   private flashAmount(now: number): number {
     if (now >= this.flashUntil) return 0;
@@ -683,6 +711,7 @@ export class PlayerController {
   dispose(): void {
     for (const off of this.offs) off(); this.offs.length = 0;
     if (this.locked) document.exitPointerLock();
+    this.rigDisposed = true; this.rig?.dispose(); this.rig = null;
     this.vmRoot.removeFromParent(); this.overlay.remove(); this.wheel.el.remove(); this.audio.dispose();
   }
 }
