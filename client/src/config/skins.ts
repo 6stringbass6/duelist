@@ -143,6 +143,7 @@ export const COLLECTIONS: CollectionDef[] = [
 export const KARAMBIT_SKIN_ID = 'karambit_dagger';
 export const BUTTERFLY_SKIN_ID = 'butterfly_dagger';
 export const SKELETON_SKIN_ID = 'skeleton_dagger';
+export const BOWIE_SKIN_ID = 'bowie_dagger';
 export const EXTRA_SKINS: SkinDef[] = [
   // 카람빗 스페셜 박스 전용(0.1%) — 상점/일일/일반 박스에는 나오지 않는다. 단검(근접 3번 슬롯) 전용, karambit.fbx(단위 cm, 텍스처 없음 → BLADE_MASKS CS2 바닐라 재질) 사용
   { id: KARAMBIT_SKIN_ID, collection: 'karambit', weaponId: 'dagger', name: '카람빗', tier: 'exrare', price: 4500, featured: false, inDaily: false, inBox: false, sort: 14,
@@ -160,6 +161,12 @@ export const EXTRA_SKINS: SkinDef[] = [
     blurb: '뼈대만 남긴 경량 스켈레톤 블레이드. 파라코드 핸들 랩.',
     model: 'default', material: { style: 'solid', baseColor: 0xb9bcc0, accentColor: 0x6b5a3c, patternColor: 0x111214, metalness: 0.95, roughness: 0.25 },
     emissive: NO_GLOW, vfx: { tracerColor: 0xd8d8d8 }, glb: { file: 'skeleton_knife.glb', length: 0.3, grip: 0.3, roll: 0 } },
+  // 보위 나이프 — 상점 NEW(featured) 상시 판매. 단검(근접 3번 슬롯) 전용, bowie_knife.fbx (단위 ≈ mm×10, 날끝 +X · 등날 +Y, 단일 메시 Blade_LowPoly,
+  //  외부 PNG 텍스처 미포함 → BLADE_MASKS 의 CS2 바닐라 재질: 새틴 스틸 날 + 브라스 가드 + 다크 우드 손잡이)
+  { id: BOWIE_SKIN_ID, collection: 'bowie', weaponId: 'dagger', name: '보위 나이프', tier: 'exrare', price: 4500, featured: true, inDaily: false, inBox: false, sort: 17,
+    blurb: '클립 포인트 대형 블레이드와 브라스 가드의 클래식 보위 나이프.',
+    model: 'default', material: { style: 'solid', baseColor: 0xb5b9be, accentColor: 0x8a6a3a, patternColor: 0x111214, metalness: 0.95, roughness: 0.24 },
+    emissive: NO_GLOW, vfx: { tracerColor: 0xe8d8b0 }, glb: { file: 'bowie_knife.fbx', length: 0.32, grip: 0.2, roll: 0, own: true } },
 ];
 
 const weaponName = (id: SkinWeaponId): string => SKIN_WEAPONS.find((w) => w.id === id)!.name;

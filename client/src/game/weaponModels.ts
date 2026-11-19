@@ -34,11 +34,28 @@ export const WEAPON_MODELS: Partial<Record<WeaponId, ModelDef>> = {
   vandal: { file: 'ak47.fbx', length: 0.88, grip: 0.3, rot: [0, Math.PI / 2, 0] }, // AK-47 (FBX, 단위 cm · 총구 +Z → +X, 텍스처 없음 → FILE_PARTS 재질)
   phantom: { file: 'AssaultRifle2_1', length: 0.88 },
   marshal: { file: 'SniperRifle_4', length: 1.05 },
+  // 투척류(FBX, 텍스처 미포함 → FILE_PARTS 재질). 루트 노드의 Blender 축변환(-90° X)을 build() 의 roll 이 덮어쓰지 않도록 rot 으로 감싸 굽는다 → Y-up.
+  // length = 모델 X 폭 기준 정규화값 → 실제 높이 ≈ 섬광탄 12cm · 수류탄 11cm
+  flash: { file: 'flashbang.fbx', length: 0.12 * (5.7 / 13.25), rot: [-Math.PI / 2, 0, 0] },
+  grenade: { file: 'grenade.fbx', length: 0.11 * (198.3 / 298.6), rot: [-Math.PI / 2, 0, 0] },
 };
 
 /** 텍스처가 없는 FBX 의 파일별 기본 재질/스킨 역할 (메시 이름 기준) — 스킨 전용 모델(GlbSpec)은 parts 를 가질 수 없어 여기서 지정 */
 const AK_STEEL = { color: 0x2b3038, metalness: 0.82, roughness: 0.38 };
+const NADE_STEEL: PartDef = { role: 'accent', color: 0xa9aeb4, metalness: 0.9, roughness: 0.3 };
+const NADE_DARK: PartDef = { role: 'dark', color: 0x2a2d31, metalness: 0.7, roughness: 0.45 };
 const FILE_PARTS: Record<string, Record<string, PartDef>> = {
+  // CS2 섬광탄: 무광 그레이 원통 몸체 + 다크 코어 · 스틸 레버/헤드 · 밝은 핀/링 (메시 이름 = FBX 실측)
+  'flashbang.fbx': {
+    Body: { role: 'base', color: 0x8d949b, metalness: 0.55, roughness: 0.42 }, Core: NADE_DARK, Head: { ...NADE_STEEL, color: 0x6f757c },
+    Lever: NADE_STEEL, PIn_1: { ...NADE_STEEL, color: 0xd2d5d8 }, Pin_2: { ...NADE_STEEL, color: 0xd2d5d8 }, Picker_1: NADE_STEEL, Picker_2: NADE_STEEL,
+  },
+  // CS2 고폭 수류탄: 올리브 드랩 구형 몸체 + 스틸 신관/스푼(handle) · 밝은 안전핀 링
+  'grenade.fbx': {
+    body: { role: 'base', color: 0x46502f, metalness: 0.35, roughness: 0.58 }, body001: NADE_STEEL, head: { ...NADE_STEEL, color: 0x7a8086 },
+    handle: { ...NADE_STEEL, color: 0x8e9399 }, Cylinder001: NADE_DARK, ring: { ...NADE_STEEL, color: 0xd2d5d8 }, ring2: { ...NADE_STEEL, color: 0xd2d5d8 },
+    ball: NADE_DARK, ball2: NADE_DARK,
+  },
   // CS2 기본 AK-47 투톤: 건메탈 스틸 총몸/총열/가스관/가늠쇠 + 호두나무 개머리판·권총 손잡이·상하부 총열덮개.
   // m_gun 은 단일 병합 메시라 삼각형 무게중심(모델 cm 좌표: x = 총구 방향 길이, y = 높이)으로 목재 영역을 분리 — 측면 진단 렌더로 경계 실측
   'ak47.fbx': {
@@ -77,6 +94,14 @@ const BLADE_MASKS: Record<string, BladeMask> = {
     handle: { role: 'dark', color: 0x1c1e23, metalness: 0.6, roughness: 0.5 },
     wrap: { role: 'dark', color: 0x1c1e23, metalness: 0.08, roughness: 0.88 },
   },
+  // 보위 나이프: 단일 메시의 연결 컴포넌트 8개(실측) — #0 칼날, #4 가드, #5 폼멜, #6 손잡이 슬랩, #1·2·3·7 리벳
+  // → 새틴 스틸 날 + 브라스 가드/폼멜/리벳 + 다크 월넛 손잡이 (외부 PNG 텍스처는 저장소에 없음)
+  'bowie_knife.fbx': {
+    comps: { blade: [0], metal: [1, 2, 3, 4, 5, 7] },
+    blade: { role: 'base', color: 0xb9bec4, metalness: 0.92, roughness: 0.22 },
+    metal: { role: 'accent', color: 0xa8854a, metalness: 0.9, roughness: 0.32 },
+    handle: { role: 'dark', color: 0x3a2417, metalness: 0.05, roughness: 0.62 },
+  },
   // M9 총검: 기본은 내장 베이크 텍스처 유지, 가드 뒤(t≈0.435)부터 칼날
   m9_bayonet: { from: 0.435 },
 };
@@ -93,7 +118,9 @@ export interface SkinSet { base: THREE.Material; accent: THREE.Material; skinned
 
 // FBX 가 참조하지만 포함하지 않은 외부 텍스처(예: 카타나의 Blender 베이크 PNG)는 404 대신 1px 투명 이미지로 대체 — parts 재질을 쓰므로 실제로는 사용되지 않는다
 const BLANK_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
-const fbxManager = new THREE.LoadingManager(); fbxManager.setURLModifier((u) => (/katana_Material/i.test(u) ? BLANK_PNG : u));
+// 보위 나이프(TexturesLighting4k/*.png)·섬광탄(Textures/*.tga) 원본 텍스처도 저장소에 없으므로 같은 방식으로 대체 (재질은 BLADE_MASKS/FILE_PARTS 가 지정)
+const MISSING_TEX = /katana_Material|DefaultMaterial_(Base_color|Metallic|Normal_OpenGL|Roughness)|_(Roughness|metalness|normal)\.tga/i;
+const fbxManager = new THREE.LoadingManager(); fbxManager.setURLModifier((u) => (MISSING_TEX.test(u) ? BLANK_PNG : u));
 const fbxLoader = new FBXLoader(fbxManager), gltfLoader = new GLTFLoader();
 const isGlb = (f: string): boolean => /\.(glb|gltf)$/i.test(f);
 const pending = new Map<string, Promise<Source | null>>();

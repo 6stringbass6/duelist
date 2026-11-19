@@ -90,7 +90,7 @@ export function drawCrosshair(ctx: CanvasRenderingContext2D, c: CrosshairConfig,
 // ───────────────────────────── 듀얼 키바인딩 ─────────────────────────────
 export const ACTIONS = [
   'forward', 'back', 'left', 'right', 'jump', 'crouch', 'slide', 'updraft', 'dash', 'ult',
-  'fire', 'alt', 'reload', 'slot1', 'slot2', 'slot3', 'slot4', 'nextWeapon', 'prevWeapon', 'scoreboard', 'loadout', 'menu',
+  'fire', 'alt', 'reload', 'slot1', 'slot2', 'slot3', 'slot4', 'nadeWheel', 'nextWeapon', 'prevWeapon', 'scoreboard', 'loadout', 'menu',
 ] as const;
 export type Action = (typeof ACTIONS)[number];
 /** 바인드 코드: KeyboardEvent.code('KeyW') | 'Mouse0'..'Mouse4' | 'WheelUp' | 'WheelDown' */
@@ -100,14 +100,14 @@ export type Keybinds = Record<Action, BindPair>;
 
 export const ACTION_LABELS: Record<Action, string> = {
   forward: '앞으로', back: '뒤로', left: '왼쪽', right: '오른쪽', jump: '점프', crouch: '앉기', slide: '슬라이딩', updraft: '스킬 Q', dash: '스킬 E', ult: '궁극기 (X)',
-  fire: '사격', alt: '줌 / 보조 사격', reload: '재장전', slot1: '주무기', slot2: '보조무기', slot3: '근접무기', slot4: '투척류',
+  fire: '사격', alt: '줌 / 보조 사격', reload: '재장전', slot1: '주무기', slot2: '보조무기', slot3: '근접무기', slot4: '투척류', nadeWheel: '투척 선택 (홀드)',
   nextWeapon: '다음 무기', prevWeapon: '이전 무기', scoreboard: '스코어보드', loadout: '로드아웃', menu: '메뉴',
 };
 export const DEFAULT_KEYBINDS: Keybinds = {
   forward: ['KeyW', 'ArrowUp'], back: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
   jump: ['Space', 'WheelDown'], crouch: ['ControlLeft', null], slide: ['KeyC', null], updraft: ['KeyQ', null], dash: ['KeyE', null], ult: ['KeyX', null],
   fire: ['Mouse0', null], alt: ['Mouse2', null], reload: ['KeyR', null],
-  slot1: ['Digit1', null], slot2: ['Digit2', null], slot3: ['Digit3', null], slot4: ['Digit4', null],
+  slot1: ['Digit1', null], slot2: ['Digit2', null], slot3: ['Digit3', null], slot4: ['Digit4', null], nadeWheel: ['KeyG', null],
   nextWeapon: [null, null], prevWeapon: ['WheelUp', null], scoreboard: ['Tab', null], loadout: ['KeyB', null], menu: ['Escape', null],
 };
 /** 재할당 불가(브라우저 Pointer Lock 해제 키) */

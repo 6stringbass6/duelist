@@ -1,12 +1,18 @@
 // =====================================================================
 // 컨테이너 개봉 연출 (CS2 방식)
-//  열쇠 해금 · 뚜껑 오픈 → 가로 슬롯 룰렛(고속 → 감속 → 중앙 기준선 정지, 칸이 기준선을 지날 때마다 Web Audio 틱)
+//  3D 상자 등장 → 열쇠 삽입·회전 → 뚜껑 개방 + 등급색 발광(game/case3d) → 가로 슬롯 룰렛
+//  (모든 칸 = skinThumbs 가 실제 무기+스킨 3D 모델을 촬영한 썸네일, 촬영 완료 후 회전 시작)
+//  → 당첨 3D 프리뷰(SkinPreview) + 등급 배너. 기존 흐름: 열쇠 해금 · 뚜껑 오픈 → 가로 슬롯 룰렛(고속 → 감속 → 중앙 기준선 정지, 칸이 기준선을 지날 때마다 Web Audio 틱)
 //  → 당첨 하이라이트. 다중 개봉은 [개별 스킵](현재 상자 결과로 즉시 이동) · [일괄 스킵](3개 이상, 전체 요약으로 이동)
 //  결과는 이미 서버/로컬 엔진에서 확정된 값이며, 이 모듈은 보여 주기만 한다.
 // =====================================================================
 import { CASES, TIERS, caseOdds, getSkin, tierEmblemSvg, tierPool, type CaseKind, type SkinDef, type Tier } from '../config/skins';
 import type { CaseResult } from '../services/economy';
+import type { WeaponId } from '../config/weapons';
 import { skinSwatchUrl } from './skinTextures';
+import { cachedSkinThumb, requestSkinThumb } from './skinThumbs';
+import { CaseStage } from './case3d';
+import { SkinPreview } from './skinPreview';
 
 export interface CaseOpeningHooks {
   /** 결과 카드용 썸네일 HTML (main.ts skinVis) */
@@ -57,11 +63,26 @@ function buildReel(k: CaseKind, win: SkinDef): SkinDef[] {
   });
 }
 
-function cellHtml(s: SkinDef): string {
-  const t = TIERS[s.tier];
-  if (s.tier === 'exrare') return `<div class="co-cell co-rare" style="--tc:${t.color}">${STAR_SVG}<span class="co-cn">${t.name} ★</span></div>`;
+const swatch = (s: SkinDef): string => {
   const u = skinSwatchUrl(s), bg = u ? `url(${u}) center/cover` : `linear-gradient(120deg,${hex(s.material.baseColor)},${hex(s.material.accentColor)})`;
-  return `<div class="co-cell" style="--tc:${t.color}"><span class="co-sw" style="background:${bg}"></span><span class="co-cn">${esc(s.name)}</span></div>`;
+  return `<span class="co-sw" style="background:${bg}"></span>`;
+};
+/** 릴 칸 = 실제 3D 무기+스킨 썸네일. 아직 촬영 중이면 빈 img(hydrateReel 이 채움), WebGL 자체가 불가(null)할 때만 재질 견본 폴백 */
+function cellHtml(s: SkinDef): string {
+  const t = TIERS[s.tier], rare = s.tier === 'exrare', url = cachedSkinThumb(s.weaponId, s.id);
+  const art = url === null ? swatch(s) : `<img class="co-img" ${url ? `src="${url}"` : `data-w="${esc(s.weaponId)}" data-s="${esc(s.id)}"`} alt="" draggable="false" />`;
+  return `<div class="co-cell${rare ? ' co-rare' : ''}" style="--tc:${t.color}">${art}${rare ? STAR_SVG : ''}<span class="co-cn">${esc(s.name)}</span></div>`;
+}
+/** 촬영이 늦어진 칸을 완료되는 대로 채운다 */
+function hydrateReel(root: HTMLElement): void {
+  root.querySelectorAll<HTMLImageElement>('img.co-img[data-w]:not([src])').forEach((img) => {
+    void requestSkinThumb(img.dataset.w as WeaponId, img.dataset.s!).then((url) => { if (url) img.src = url; else { const s = getSkin(img.dataset.s!); if (s) img.outerHTML = swatch(s); } });
+  });
+}
+/** 릴에 들어갈 모든 스킨의 3D 썸네일을 촬영 (중복 제거, 최대 waitMs 대기) */
+function shootReel(reel: SkinDef[], waitMs: number): Promise<unknown> {
+  const uniq = [...new Map(reel.map((s) => [s.id, s])).values()];
+  return Promise.race([Promise.all(uniq.map((s) => requestSkinThumb(s.weaponId as WeaponId, s.id))), new Promise((r) => setTimeout(r, waitMs))]);
 }
 
 // ───────────────────────────── 모달 ─────────────────────────────
@@ -81,14 +102,15 @@ export function runCaseOpening(kind: CaseKind, results: CaseResult[], hooks: Cas
   </div>`;
   const $ = (id: string): HTMLElement => root!.querySelector<HTMLElement>('#' + id)!;
   const stage = $('co-stage'), result = $('co-result'), dots = [...$('co-dots').children] as HTMLElement[];
-  let idx = 0, phase: Phase = 'intro', raf = 0, timer = 0, closed = false, snapToEnd: (() => void) | null = null;
+  let idx = 0, phase: Phase = 'intro', raf = 0, timer = 0, closed = false, snapToEnd: (() => void) | null = null, reel: SkinDef[] = [], token = 0;
   const fast = reduced();
+  const stage3d = new CaseStage(), preview = new SkinPreview();
   const stop = (): void => { cancelAnimationFrame(raf); clearTimeout(timer); };
   const skinOf = (r: CaseResult): SkinDef | null => getSkin(r.skin_id);
   const mark = (i: number): void => { const s = skinOf(results[i]); dots[i].style.background = TIERS[s?.tier ?? results[i].rarity].color; dots[i].classList.add('co-on'); };
 
   function close(): void {
-    if (closed) return; closed = true; stop();
+    if (closed) return; closed = true; stop(); stage3d.dispose(); preview.el.remove();
     root!.classList.add('hidden'); root!.innerHTML = ''; document.removeEventListener('keydown', onKey); hooks.onClose();
   }
   function onKey(e: KeyboardEvent): void {
@@ -99,19 +121,28 @@ export function runCaseOpening(kind: CaseKind, results: CaseResult[], hooks: Cas
 
   function setSub(): void { $('co-sub').textContent = n > 1 ? `${Math.min(idx + 1, n)} / ${n}` : ''; }
 
-  /** 1) 열쇠 해금 + 뚜껑 오픈 */
+  /** 1) 3D 상자 등장 → 열쇠 삽입·회전 → 뚜껑 개방(당첨 등급색 발광). 그동안 릴 썸네일을 촬영하고, 둘 다 끝나면 룰렛 */
   function intro(): void {
-    phase = 'intro'; setSub(); result.innerHTML = '';
-    stage.innerHTML = `<div class="co-intro co-${kind}${idx ? ' co-quick' : ''}"><div class="co-lid"></div><div class="co-box"></div>${def.needsKey ? '<div class="co-key"></div>' : ''}<div class="co-flash"></div></div>`;
-    timer = window.setTimeout(spin, fast ? 150 : idx ? 450 : 1150);
+    phase = 'intro'; setSub(); result.innerHTML = ''; stage.classList.remove('co-stage-win');
+    const r = results[idx], win = skinOf(r), my = ++token;
+    reel = win ? buildReel(kind, win) : [];
+    const shot = shootReel(reel, 6000);
+    const go = (): void => { void shot.then(() => { if (my === token && phase === 'intro') spin(); }); };
+    stage.innerHTML = ''; stage.appendChild(stage3d.el);
+    if (stage3d.init()) void stage3d.play(kind, TIERS[win?.tier ?? r.rarity].color, fast || idx > 0, go);
+    else { // WebGL 불가 → 기존 CSS 상자 연출
+      stage.innerHTML = `<div class="co-intro co-${kind}${idx ? ' co-quick' : ''}"><div class="co-lid"></div><div class="co-box"></div>${def.needsKey ? '<div class="co-key"></div>' : ''}<div class="co-flash"></div></div>`;
+      timer = window.setTimeout(go, fast ? 150 : idx ? 450 : 1150);
+    }
   }
   /** 2) 가로 룰렛 */
   function spin(): void {
     phase = 'spin';
-    const r = results[idx], win = skinOf(r);
-    if (!win) { reveal(); return; }
-    const reel = buildReel(kind, win);
+    const win = skinOf(results[idx]);
+    if (!win || !reel.length) { reveal(); return; }
+    stage3d.stop(); stage.classList.add('co-stage-win');
     stage.innerHTML = `<div class="co-win" id="co-win"><div class="co-strip" id="co-strip">${reel.map(cellHtml).join('')}</div><div class="co-line"></div></div>`;
+    hydrateReel(stage);
     const strip = $('co-strip'), winEl = $('co-win'), cell = (strip.firstElementChild as HTMLElement).offsetWidth;
     const W = winEl.clientWidth, jitter = (Math.random() - 0.5) * cell * 0.7;
     const end = -(WIN_AT * cell + cell / 2 - W / 2) - jitter, T = fast ? 900 : 5600;
@@ -131,15 +162,18 @@ export function runCaseOpening(kind: CaseKind, results: CaseResult[], hooks: Cas
   }
   /** 3) 당첨 하이라이트 */
   function reveal(): void {
-    stop(); phase = 'reveal';
+    stop(); phase = 'reveal'; token++;
+    if (!stage.querySelector('.co-strip') && reel.length) { stage3d.stop(); stage.classList.add('co-stage-win'); stage.innerHTML = `<div class="co-win"><div class="co-strip">${reel.map(cellHtml).join('')}</div><div class="co-line"></div></div>`; hydrateReel(stage); } // 개봉 중 스킵 → 정지 상태의 릴
     snapToEnd?.(); snapToEnd = null;
     const r = results[idx], s = skinOf(r), t = TIERS[s?.tier ?? r.rarity];
     stage.querySelector('.co-strip')?.classList.add('co-dim');
     stage.querySelectorAll('.co-cell')[WIN_AT]?.classList.add('co-hit');
-    result.innerHTML = `<div class="co-reveal" style="--tc:${t.color}"><div class="co-rvis">${s ? hooks.vis(s) : ''}</div><div class="co-rtxt">
+    result.innerHTML = `<div class="co-banner" style="--tc:${t.color}"><span>${esc(t.name)}${(s?.tier ?? r.rarity) === 'exrare' ? ' ★' : ''}</span></div><div class="co-reveal" style="--tc:${t.color}"><div class="co-rvis co-r3d" id="co-rvis"></div><div class="co-rtxt">
       <span class="co-tier">${tierEmblemSvg(s?.tier ?? r.rarity, 16)}${esc(t.name)}${(s?.tier ?? r.rarity) === 'exrare' ? ' ★' : ''}</span>
       <span class="co-name">${esc(s?.name ?? r.skin_id)}</span>
       <span class="co-note">${r.duplicate ? `이미 보유한 스킨 · ◈ ${fmt(r.refund)} 환급` : '새 스킨 획득'}</span></div></div>`;
+    const rv = $('co-rvis'); // 당첨 무기+스킨 3D 프리뷰 (드래그 회전) — WebGL 불가 시 썸네일
+    if (s) { rv.appendChild(preview.el); preview.show(s.weaponId as WeaponId, s.id); }
     hooks.hydrate(result); mark(idx); hooks.onReveal(r, s);
     const last = idx >= n - 1;
     $('co-skip').textContent = last ? (n > 1 ? '결과 요약' : '확인') : '다음 상자';

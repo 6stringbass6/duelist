@@ -10,10 +10,11 @@ import {
 } from '../config/settings';
 import {
   F, MOVE, RULES, SLOT, SLOT_KEYS, THROW, WEAPONS, fireIntervalMs, isGun, isMelee, isThrow, spreadDeg,
-  type GunDef, type WeaponDef, type WeaponId,
+  type GunDef, type ThrowableId, type WeaponDef, type WeaponId,
 } from '../config/weapons';
+import { NadeWheel } from './nadeWheel';
 import { DEFAULT_SKILLS, SKILLS, ULTS, ULT_COST, type SkillId, type UltId } from '../config/skills';
-import { createWeaponMesh, type GameClient } from './network';
+import { createWeaponMesh, pullPin, type GameClient } from './network';
 import { fireWeaponFx } from './skinFx';
 
 type Slot = 1 | 2 | 3 | 4;
@@ -246,7 +247,10 @@ export class PlayerController {
   // 무기
   private nextFireAt = 0; private equipUntil = 0; private nextThrowAt = 0;
   private spray = 0; private heat = 0; private lastShotAt = 0; private adsSince = 0; private adsOn = false;
-  private localAmmo = { secondary: 0, primary: 0, charges: 0 };
+  private localAmmo = { secondary: 0, primary: 0, nades: { grenade: 0, flash: 0 } as Record<ThrowableId, number> };
+  // G 홀드 투척 선택 → 퀵 투척: 4번 슬롯 장착 완료 즉시 자동 투척, 던진 뒤 back 슬롯으로 복귀
+  private readonly wheel = new NadeWheel();
+  private quickNade: { t: ThrowableId; back: Slot } | null = null; private returnAt = 0; private returnSlot: Slot = SLOT.primary;
   private recoilPitch = 0; private recoilYaw = 0; private vmKick = 0;
   private zoom = 1;
   // 뷰모델 / 오버레이
@@ -275,6 +279,7 @@ export class PlayerController {
     this.skillFxEl = mk('transition:opacity .15s;');
     this.flashEl = mk('background:#fff;');
     host.appendChild(this.overlay);
+    document.body.appendChild(this.wheel.el); this.wheel.onPick = (t) => { this.wheel.hide(); this.quickThrow(t); };
 
     this.rebuildBinds();
     this.offs.push(onSettingsChange(() => { this.rebuildBinds(); this.audio.applyVolume(); }));
@@ -309,6 +314,7 @@ export class PlayerController {
     }, { passive: false });
     add(document, 'mousemove', (e: MouseEvent) => {
       if (!this.locked) return;
+      if (this.wheel.open) { this.wheel.move(e.movementX); return; } // 휠이 열려 있는 동안 시점 고정 · 좌우 이동 = 선택
       const s = getSettings(), k = yawRadPerCount(s.sens.valorant) * zoomSensScale(s.hFov, this.zoom, s.sens.adsMult);
       this.applyLook(e.movementX * k, e.movementY * k * (s.sens.invertY ? -1 : 1));
     });
@@ -319,7 +325,7 @@ export class PlayerController {
     this.yaw -= dYaw; this.pitch = Math.max(-UP_LIMIT, Math.min(UP_LIMIT, this.pitch - dPitch));
     if (this.yaw > Math.PI) this.yaw -= Math.PI * 2; else if (this.yaw < -Math.PI) this.yaw += Math.PI * 2;
   }
-  releaseAll(): void { this.held.clear(); this.firePressed = this.altPressed = false; this.moveAxis.x = this.moveAxis.y = 0; }
+  releaseAll(): void { this.wheel.hide(); this.held.clear(); this.firePressed = this.altPressed = false; this.moveAxis.x = this.moveAxis.y = 0; }
   requestCapture(): void { this.audio.resume(); if (this.captureEnabled) void this.dom.requestPointerLock?.(); }
 
   // ── 모바일/외부 입력 주입 API
@@ -334,7 +340,8 @@ export class PlayerController {
   setAction(a: Action, down: boolean): void {
     if (down) { if (this.held.has(a)) return; this.held.add(a); } else { this.held.delete(a); }
     switch (a) {
-      case 'fire': if (down) this.firePressed = true; break;
+      case 'fire': if (down) { if (this.wheel.open) { this.held.delete('fire'); this.commitWheel(); } else this.firePressed = true; } break;
+      case 'nadeWheel': if (down) this.openWheel(); else this.commitWheel(); break;
       case 'alt': if (down) this.altPressed = true; break;
       case 'jump': if (down) this.jumpBufferedAt = performance.now(); break;
       case 'slide': if (down) this.trySlide(); break;
@@ -362,11 +369,11 @@ export class PlayerController {
         this.pos.set(x, y, z); this.vel.set(0, 0, 0); this.yaw = yaw; this.pitch = 0; this.spawnSeq = seq;
         this.alive = true; this.hp = RULES.hp; this.slot = SLOT.primary; this.grounded = true;
         this.slideUntil = 0; this.dashUntil = 0; this.spray = this.heat = 0; this.recoilPitch = this.recoilYaw = 0; this.flashUntil = 0;
-        this.nextFireAt = this.equipUntil = this.nextThrowAt = 0; this.vmKey = '';
+        this.nextFireAt = this.equipUntil = this.nextThrowAt = 0; this.vmKey = ''; this.quickNade = null; this.returnAt = 0; this.wheel.hide();
         this.qReadyAt = this.eReadyAt = 0; this.used = {}; this.silencedUntil = this.ampUntil = this.healUntil = this.shieldBuffUntil = this.driftUntil = this.driftLockUntil = this.castUntil = 0; this.shieldOn = false;
       }),
       n.on('correct', (x, y, z, seq, yaw) => { if (seq === this.spawnSeq) { this.pos.set(x, y, z); this.vel.set(0, 0, 0); if (yaw !== undefined) { this.yaw = yaw; this.pitch = 0; } } }),
-      n.on('ammo', (a) => { this.localAmmo.secondary = a.secondary; this.localAmmo.primary = a.primary; this.localAmmo.charges = a.charges; }),
+      n.on('ammo', (a) => { this.localAmmo.secondary = a.secondary; this.localAmmo.primary = a.primary; this.localAmmo.nades = { ...a.nades }; }),
       n.on('hit', (h) => { this.audio.hit(h.z === 'head'); }),
       n.on('hurt', (h) => { this.hp = h.hp; this.hurtA = Math.min(1, this.hurtA + 0.35 + h.d / 120); this.audio.hurt(); }),
       n.on('flash', (f) => { // 케이오식 섬광: 정면으로 볼수록 길고 강하게
@@ -408,14 +415,33 @@ export class PlayerController {
   private get reloading(): boolean { const a = this.net.ammo; return a.reloadUntil > 0 && a.reloadUntil > this.net.serverNow(); }
   private get frozen(): boolean { return this.net.phase === 'buy' && this.net.mode !== 'range'; }
   private get canAct(): boolean { return this.alive && this.net.phase === 'live'; }
-  private magAmmo(): number { return this.slot === SLOT.secondary ? this.localAmmo.secondary : this.slot === SLOT.primary ? this.localAmmo.primary : this.slot === SLOT.throwable ? this.localAmmo.charges : 0; }
+  private magAmmo(): number { return this.slot === SLOT.secondary ? this.localAmmo.secondary : this.slot === SLOT.primary ? this.localAmmo.primary : this.slot === SLOT.throwable ? this.nadesOf(this.weaponId) : 0; }
+  private nadesOf(id: WeaponId): number { return this.localAmmo.nades[id as ThrowableId] ?? 0; }
 
   switchSlot(s: Slot): void {
     if (!this.alive || s === this.slot) return;
-    this.slot = s; this.net.switchWeapon(s);
+    if (s !== SLOT.throwable) this.quickNade = null;
+    this.returnAt = 0; this.slot = s; this.net.switchWeapon(s);
     const now = performance.now();
     this.equipUntil = now + this.weapon.equipMs; this.nextFireAt = Math.max(this.nextFireAt, this.equipUntil);
     this.spray = this.heat = 0; this.adsOn = false; this.firePressed = this.altPressed = false; this.audio.equip();
+  }
+  // ── G 투척 선택 (홀드 → 좌/우 선택 → 놓기/클릭 = 장착 후 즉시 투척)
+  private openWheel(): void {
+    const n = this.localAmmo.nades;
+    if (!this.alive || n.flash + n.grenade <= 0) return;
+    this.firePressed = false;
+    this.wheel.show(n, (this.net.me?.loadout.throwable ?? 'grenade') as ThrowableId);
+  }
+  private commitWheel(): void { const t = this.wheel.hide(); if (t) this.quickThrow(t); }
+  private quickThrow(t: ThrowableId): void {
+    if (!this.alive || this.nadesOf(t) <= 0) return;
+    const back: Slot = this.slot === SLOT.throwable ? this.quickNade?.back ?? SLOT.primary : this.slot;
+    const changed = this.weaponId !== t;
+    this.net.pickNade(t);
+    if (this.slot !== SLOT.throwable) this.switchSlot(SLOT.throwable);
+    else if (changed) { const now = performance.now(); this.equipUntil = now + this.weapon.equipMs; this.audio.equip(); } // 4번 슬롯에서 종류만 교체 → 재장착 시간
+    this.quickNade = { t, back };
   }
   private tryReload(): void {
     const w = this.weapon;
@@ -524,11 +550,14 @@ export class PlayerController {
         this.nextFireAt = now + w.intervalMs; this.swingT = 1; this.audio.swing(this.weaponId === 'sword');
         this.net.fire(this.eyePos(), this.yaw, this.pitch, false);
       }
-    } else if (isThrow(w)) { // 섬광탄: 좌클릭 원거리 / 우클릭 언더핸드
-      const alt = altEdge && this.weaponId === 'flash';
-      if ((fireEdge || alt) && now >= this.nextThrowAt && this.localAmmo.charges > 0) {
-        this.nextThrowAt = now + THROW.cooldownMs; this.localAmmo.charges--; this.swingT = 1; this.audio.throwItem();
-        this.net.fire(this.eyePos(), this.yaw, this.pitch, alt);
+    } else if (isThrow(w)) { // 섬광탄: 좌클릭 원거리 / 우클릭 언더핸드 · G 퀵 투척은 장착 완료 즉시 원거리 투척
+      const id = this.weaponId as ThrowableId, alt = altEdge && id === 'flash', quick = this.quickNade?.t === id;
+      if ((fireEdge || alt || quick) && now >= this.nextThrowAt && this.nadesOf(id) > 0) {
+        this.nextThrowAt = now + THROW.cooldownMs; this.localAmmo.nades[id]--; this.swingT = 1; this.audio.throwItem();
+        if (this.vm) pullPin(this.vm); // 핀을 뽑고 던짐
+        this.net.fire(this.eyePos(), this.yaw, this.pitch, alt, id);
+        if (quick) { this.returnSlot = this.quickNade!.back; this.returnAt = now + 420; this.quickNade = null; }
+        else if (this.nadesOf(id) <= 0) { this.returnSlot = SLOT.primary; this.returnAt = now + 420; }
       }
     }
   }
@@ -582,6 +611,7 @@ export class PlayerController {
       if (sliding) f |= F.SLIDE; if (this.adsOn) f |= F.ADS; if (!this.grounded) f |= F.AIR;
       n.sendInput(this.spawnSeq, this.pos, this.yaw, this.pitch, f);
     }
+    if (this.returnAt && now >= this.returnAt) { this.returnAt = 0; if (this.alive && this.slot === SLOT.throwable) this.switchSlot(this.returnSlot); } // 투척 후 이전 무기로 복귀
     this.updateViewmodel(dt, now); this.updateOverlay(dt, now);
   }
   private releaseFire(): void { this.firePressed = this.altPressed = false; this.adsOn = false; }
@@ -639,7 +669,7 @@ export class PlayerController {
     }
     return {
       alive: this.alive, hp: this.alive ? Math.max(0, this.hp) : 0, maxHp: RULES.hp, slot: this.slot, weaponId: this.weaponId, weaponName: w.name,
-      ammo: this.magAmmo(), magSize: isGun(w) ? w.mag : isThrow(w) ? w.charges : 0, charges: this.localAmmo.charges, reloading: this.reloading, reloadProgress,
+      ammo: this.magAmmo(), magSize: isGun(w) ? w.mag : isThrow(w) ? w.charges : 0, charges: this.localAmmo.nades.flash + this.localAmmo.nades.grenade, reloading: this.reloading, reloadProgress,
       qCooldown: Math.max(0, (this.qReadyAt - now) / SKILLS[this.skillIdOf('q')].cdMs), eCooldown: Math.max(0, (this.eReadyAt - now) / SKILLS[this.skillIdOf('e')].cdMs),
       q: this.skillHud('q', now), e: this.skillHud('e', now),
       ult: { id: this.ultIdOf(), name: ULTS[this.ultIdOf()].name, icon: ULTS[this.ultIdOf()].icon, pts: this.ultPts, ready: this.ultPts >= ULT_COST, casting: now < this.castUntil, castLeft: Math.max(0, this.castUntil - now) },
@@ -653,6 +683,6 @@ export class PlayerController {
   dispose(): void {
     for (const off of this.offs) off(); this.offs.length = 0;
     if (this.locked) document.exitPointerLock();
-    this.vmRoot.removeFromParent(); this.overlay.remove(); this.audio.dispose();
+    this.vmRoot.removeFromParent(); this.overlay.remove(); this.wheel.el.remove(); this.audio.dispose();
   }
 }

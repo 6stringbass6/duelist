@@ -4,7 +4,7 @@
 // =====================================================================
 import * as THREE from 'three';
 import { io, type Socket } from 'socket.io-client';
-import { F, RULES, SLOT, SLOT_KEYS, WEAPONS, isGun, type GameMode, type HitZone, type Loadout, type MapId, type WeaponId } from '../config/weapons';
+import { F, RULES, SLOT, SLOT_KEYS, WEAPONS, isGun, type GameMode, type HitZone, type Loadout, type MapId, type ThrowableId, type WeaponId } from '../config/weapons';
 import { getSkin } from '../config/skins';
 import { attachSkinFx, fireWeaponFx, skinMaterials, tickSkinMaterials } from './skinFx';
 import { attachFbxModel } from './weaponModels';
@@ -24,7 +24,8 @@ export interface RoomState {
   id: string; code: string | null; mode: GameMode; teamSize: number; mapId: MapId; isPrivate: boolean; hostId: number;
   phase: Phase; endsAt: number; round: number; score: [number, number]; fillBots: boolean; botLevel: number; target: number; players: PlayerInfo[];
 }
-export interface AmmoState { secondary: number; primary: number; charges: number; reloadUntil: number; reloadKey: 'secondary' | 'primary' | null }
+/** charges = 현재 선택 종류 개수(구버전 호환), nades = 종류별 소지 개수 (스폰 시 섬광탄 1 + 수류탄 1) */
+export interface AmmoState { secondary: number; primary: number; charges: number; nades: Record<ThrowableId, number>; reloadUntil: number; reloadKey: 'secondary' | 'primary' | null }
 export interface KillFeedItem { at: number; killer: string; victim: string; killerTeam: number; victimTeam: number; weapon: WeaponId; hs: boolean; assists: string[]; mine: boolean; suicide: boolean }
 export interface Ack { ok: boolean; error?: string; code?: string; applied?: boolean }
 /** [id, x, y, z, yaw, spawnSeq] */
@@ -122,6 +123,18 @@ export function createWeaponMesh(weaponId: WeaponId, skinId?: string | null, vie
   g.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = true; });
   attachSkinFx(g, skinId, viewmodel); // 등급 전용 파츠(홀로그램 윙 / 에너지 코어 링 / 총구 섬광)
   const sk = getSkin(skinId); attachFbxModel(g, weaponId, { base, accent, skinned: !!sk && !sk.glb }, viewmodel, skinId); // FBX 로드 완료 시 박스 모델 교체 (실패 시 폴백 유지)
+  return g;
+}
+
+/** 투척 모델의 안전핀/링/피커 메시 숨김 = '핀을 뽑은' 상태 (FBX 에 애니메이션 클립이 없어 메시 단위로 연출) */
+const PULLED_PIN = /^(ring2?|PIn_1|Pin_2|Picker_[12])$/;
+export function pullPin(g: THREE.Object3D): void { g.traverse((o) => { if (PULLED_PIN.test(o.name)) o.visible = false; }); }
+/** 비행 중인 투척물: 무기 모델 그대로 + 핀을 뽑은 상태 (모델 비동기 장착 후에도 적용) */
+function thrownNadeMesh(type: ThrowableId): THREE.Group {
+  const g = createWeaponMesh(type, null, false), hide = (): void => pullPin(g);
+  const prev = g.userData.onModel as (() => void) | undefined;
+  g.userData.onModel = () => { prev?.(); hide(); };
+  hide();
   return g;
 }
 
@@ -247,7 +260,7 @@ export class GameClient {
   readonly players = new Map<number, PlayerInfo>();
   readonly entities = new Map<number, RemoteEntity>();
   readonly killfeed: KillFeedItem[] = [];
-  ammo: AmmoState = { secondary: 0, primary: 0, charges: 0, reloadUntil: 0, reloadKey: null };
+  ammo: AmmoState = { secondary: 0, primary: 0, charges: 0, nades: { grenade: 0, flash: 0 }, reloadUntil: 0, reloadKey: null };
   /** 내 엔티티의 최신 서버 상태 */
   self = { hp: 0, alive: false, flags: 0, slot: SLOT.primary as number };
   rangeMoving = false;
@@ -257,7 +270,7 @@ export class GameClient {
   private bestRtt = Infinity;
   private syncTimer: ReturnType<typeof setInterval> | null = null;
   private readonly handlers = new Map<string, Set<Handler>>();
-  private readonly projs = new Map<number, { mesh: THREE.Mesh; target: THREE.Vector3 }>();
+  private readonly projs = new Map<number, { mesh: THREE.Object3D; target: THREE.Vector3 }>();
   private readonly walls = new Map<number, { box: MapData['boxes'][number]; mesh: THREE.Mesh; hp: number; max: number }>();
   private readonly orbs = new Map<number, { mesh: THREE.Mesh; base: THREE.Vector3; mine: boolean }>();
   private readonly fx: Fx[] = [];
@@ -348,8 +361,14 @@ export class GameClient {
   sendInput(seq: number, p: THREE.Vector3, yaw: number, pitch: number, flags: number): void {
     this.socket?.volatile.emit('input', { s: seq, p: [r2(p.x), r2(p.y), r2(p.z)], yaw: r3(yaw), pitch: r3(pitch), f: flags });
   }
-  fire(o: THREE.Vector3, yaw: number, pitch: number, alt: boolean): void {
-    this.socket?.emit('fire', { t: Math.round(this.renderTime()), o: [r2(o.x), r2(o.y), r2(o.z)], yaw, pitch, alt });
+  /** nt = 투척 종류(4번 슬롯) — 서버가 투척 직전 선택을 원자적으로 맞춘다 */
+  fire(o: THREE.Vector3, yaw: number, pitch: number, alt: boolean, nt?: ThrowableId): void {
+    this.socket?.emit('fire', { t: Math.round(this.renderTime()), o: [r2(o.x), r2(o.y), r2(o.z)], yaw, pitch, alt, ...(nt ? { nt } : {}) });
+  }
+  /** G 투척 선택: 4번 슬롯이 들 종류 변경 — 로컬 로드아웃 즉시 반영(뷰모델) + 서버 동기화(3인칭) */
+  pickNade(t: ThrowableId): void {
+    const me = this.me; if (me && me.loadout.throwable !== t) me.loadout = { ...me.loadout, throwable: t };
+    this.socket?.emit('nade:pick', { t });
   }
   switchWeapon(slot: 1 | 2 | 3 | 4): void { this.socket?.emit('weapon:switch', { slot }); }
   reload(): void { this.socket?.emit('reload', {}); }
@@ -406,8 +425,9 @@ export class GameClient {
     s.on('orb:add', (m: { id: number; o: number; p: [number, number, number] }) => this.addOrb(m.id, m.p, m.o === this.you));
     s.on('orb:del', (m: { id: number }) => this.removeOrb(m.id));
     s.on('snap', (m: { t: number; e: number[][]; p: number[][]; s: [number, number] }) => this.onSnap(m));
-    s.on('ammo', (m: { s: number; p: number; c: number; r: number; rk: 'secondary' | 'primary' | null }) => {
-      this.ammo = { secondary: m.s, primary: m.p, charges: m.c, reloadUntil: m.r, reloadKey: m.rk }; this.emit('ammo', this.ammo);
+    s.on('ammo', (m: { s: number; p: number; c: number; cg?: number; cf?: number; r: number; rk: 'secondary' | 'primary' | null }) => {
+      const nades = { grenade: m.cg ?? m.c, flash: m.cf ?? m.c }; // 구버전 서버(cg/cf 없음) → 단일 개수로 근사
+      this.ammo = { secondary: m.s, primary: m.p, charges: m.c, nades, reloadUntil: m.r, reloadKey: m.rk }; this.emit('ammo', this.ammo);
     });
     s.on('loadout', (m: { id: number; l: Loadout }) => { const p = this.players.get(m.id); if (p) { p.loadout = m.l; this.entities.get(m.id)?.setInfo(p, this.isAlly(m.id)); } this.emit('loadout', m.id, m.l); });
     s.on('shot', (m: { id: number; w: WeaponId; o: [number, number, number]; h: number[]; alt: boolean }) => this.onShot(m));
@@ -419,9 +439,11 @@ export class GameClient {
     s.on('skill', (m: Parameters<NetEvents['skill']>[0]) => this.emit('skill', m));
     s.on('kill', (m: { k: number; v: number; w: WeaponId; hs: boolean; a: number[]; s: [number, number] }) => this.onKill(m));
     s.on('proj:spawn', (m: { id: number; type: 'grenade' | 'flash' | 'zero'; p: [number, number, number] }) => {
-      const zero = m.type === 'zero';
-      const mesh = new THREE.Mesh(zero ? new THREE.ConeGeometry(0.07, 0.3, 6) : new THREE.SphereGeometry(m.type === 'flash' ? 0.07 : 0.09, 10, 8),
-        new THREE.MeshStandardMaterial({ color: zero ? 0x2a1a4a : m.type === 'flash' ? 0xe8f4ff : 0x4f6b45, emissive: zero ? 0xb06bff : m.type === 'flash' ? 0x9fd8ff : 0xff3b1f, emissiveIntensity: 0.8 }));
+      // 섬광탄/수류탄 = 실제 FBX 모델(안전핀·링이 뽑힌 상태), 억제 나이프(zero) = 발광 원뿔
+      const mesh: THREE.Object3D = m.type === 'zero'
+        ? new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.3, 6), new THREE.MeshStandardMaterial({ color: 0x2a1a4a, emissive: 0xb06bff, emissiveIntensity: 0.8 }))
+        : thrownNadeMesh(m.type);
+      mesh.userData.ownGeo = m.type === 'zero';
       mesh.position.set(m.p[0], m.p[1], m.p[2]); this.scene.add(mesh);
       this.projs.set(m.id, { mesh, target: mesh.position.clone() });
     });
@@ -589,7 +611,7 @@ export class GameClient {
   }
   private removeProj(id: number): void {
     const p = this.projs.get(id); if (!p) return;
-    p.mesh.removeFromParent(); p.mesh.geometry.dispose(); (p.mesh.material as THREE.Material).dispose(); this.projs.delete(id);
+    p.mesh.removeFromParent(); if (p.mesh.userData.ownGeo) { const me = p.mesh as THREE.Mesh; me.geometry.dispose(); (me.material as THREE.Material).dispose(); } this.projs.delete(id); // FBX 투척 모델은 공유 캐시 → dispose 안 함
   }
   private clearEffects(): void {
     for (const id of [...this.projs.keys()]) this.removeProj(id);

@@ -81,8 +81,8 @@ export const WEAPONS = {
              spread: { base: 0.1, perShot: 0.11, max: 1.4, recoverMs: 350 }, adsSpread: 0.85, move: 1, equipMs: 400 },
   marshal: { slot: 1, type: 'gun', auto: false, rps: 1.5, mag: 5, reloadMs: 2500, scale: 1, ranges: [[Infinity, 202, 101, 85]],
              spread: { base: 0, perShot: 0, max: 0, recoverMs: 300, hip: 6.5 }, zoom: 3.5, scopeMs: 150, move: 1, equipMs: 450 },
-  grenade: { slot: 4, type: 'throw', fuseMs: 2000, speed: 21, lift: 3, radius: 6.5, maxDmg: 130, minDmg: 15, selfMult: 0.5, charges: 2, restitution: 0.45, move: 1.06 },
-  flash:   { slot: 4, type: 'throw', fuseMs: 1600, altFuseMs: 1000, speed: 24, altSpeed: 10, lift: 2, altLift: 3.5, maxBlindMs: 2250, altMaxBlindMs: 1500, charges: 2, restitution: 0.5, move: 1.06 },
+  grenade: { slot: 4, type: 'throw', fuseMs: 2000, speed: 21, lift: 3, radius: 6.5, maxDmg: 130, minDmg: 15, selfMult: 0.5, charges: 1, restitution: 0.45, move: 1.06 },
+  flash:   { slot: 4, type: 'throw', fuseMs: 1600, altFuseMs: 1000, speed: 24, altSpeed: 10, lift: 2, altLift: 3.5, maxBlindMs: 2250, altMaxBlindMs: 1500, charges: 1, restitution: 0.5, move: 1.06 },
 };
 for (const w of Object.values(WEAPONS)) if (w.ranges) w.table = w.ranges.map(([d, h, b, l]) => [d, Math.round(h * w.scale), Math.round(b * w.scale), Math.round(l * w.scale)]);
 const damageAt = (w, dist, zone) => { const r = w.table.find((x) => dist <= x[0]) || w.table[w.table.length - 1]; return zone === 'head' ? r[1] : zone === 'body' ? r[2] : r[3]; };
@@ -367,7 +367,7 @@ function newEntity(room, base) {
   const e = {
     id: room.nextId++, isBot: false, sess: null, userId: null, name: '', rp: 0, level: 0, title: null, skins: {}, career: { kd: 0, hs: 0, wr: 0 },
     team: 0, pos: { x: 0, y: 0, z: 0 }, vel: { x: 0, y: 0, z: 0 }, yaw: 0, pitch: 0, flags: 0, hp: 0, alive: false,
-    loadout: { ...DEFAULT_LOADOUT }, pending: null, slot: SLOT.primary, ammo: { secondary: 0, primary: 0 }, charges: 0,
+    loadout: { ...DEFAULT_LOADOUT }, pending: null, slot: SLOT.primary, ammo: { secondary: 0, primary: 0 }, charges: { grenade: 0, flash: 0 },
     reloadUntil: 0, reloadKey: null, nextFireAt: 0, nextThrowAt: 0, spray: 0, heat: 0, lastShotAt: 0, adsSince: 0,
     skillAt: { q: 0, e: 0 }, uses: {}, silencedUntil: 0, ampUntil: 0, healUntil: 0, healAcc: 0, shieldBuffUntil: 0, shield: 0, driftUntil: 0, cast: null, ult: 0, duel: null, dashUntil: 0, protUntil: 0, respawnAt: 0, spawnedAt: 0, spawnSeq: 0, flashedUntil: 0,
     lastMoveAt: 0, violations: 0, hist: [], dmgLog: new Map(), stats: newStats(), persisted: false, ai: null, ...base,
@@ -382,11 +382,19 @@ const roomState = (room) => ({
   target: room.mode === 'tdm' ? room.teamSize * RULES.tdmKillsPerPlayer : RULES.roundsToWin, players: [...room.ents.values()].map(pub),
 });
 const emitPhase = (room, extra = {}) => emitRoom(room, 'phase', { phase: room.phase, endsAt: room.endsAt, round: room.round, score: room.score, ...extra });
-function emitAmmo(e) { emitTo(e, 'ammo', { s: e.ammo.secondary, p: e.ammo.primary, c: e.charges, r: e.reloadUntil, rk: e.reloadKey }); }
+// 투척류는 종류별 개별 소지 (스폰 시 섬광탄 1 + 수류탄 1) — c = 현재 선택 종류의 개수(구버전 호환), cg/cf = 종류별
+const NADES = ['grenade', 'flash'];
+const nadeTotal = (e) => (e.charges.grenade | 0) + (e.charges.flash | 0);
+function emitAmmo(e) { emitTo(e, 'ammo', { s: e.ammo.secondary, p: e.ammo.primary, c: e.charges[e.loadout.throwable] | 0, cg: e.charges.grenade | 0, cf: e.charges.flash | 0, r: e.reloadUntil, rk: e.reloadKey }); }
+/** G 투척 선택: 4번 슬롯이 들 투척류 종류 변경 → 방 전원에게 로드아웃 갱신(3인칭 손 모델) */
+function pickNade(room, e, t) {
+  if (!NADES.includes(t) || e.loadout.throwable === t) return;
+  e.loadout = { ...e.loadout, throwable: t }; emitRoom(room, 'loadout', { id: e.id, l: e.loadout }); emitAmmo(e);
+}
 
 function refill(e) {
   e.ammo.secondary = WEAPONS[e.loadout.secondary].mag; e.ammo.primary = WEAPONS[e.loadout.primary].mag;
-  e.charges = WEAPONS[e.loadout.throwable].charges; e.reloadUntil = 0; e.reloadKey = null;
+  e.charges = { grenade: WEAPONS.grenade.charges, flash: WEAPONS.flash.charges }; e.reloadUntil = 0; e.reloadKey = null;
 }
 function spawnEntity(room, e, pt, now) {
   if (e.pending) { e.loadout = e.pending; e.pending = null; emitRoom(room, 'loadout', { id: e.id, l: e.loadout }); }
@@ -487,10 +495,10 @@ function botThink(room, b, now) {
     } else if (ai.state !== 'engage' && b.ammo[key] < w.mag * 0.4) startReload(room, b, now);
   }
   // 투척 (추격 중 마지막 목격 지점으로)
-  if (ai.state === 'chase' && ai.lastSeen && now >= ai.utilAt && b.charges > 0 && now - ai.lastSeenAt < 2500 && Math.random() < P.util) {
+  if (ai.state === 'chase' && ai.lastSeen && now >= ai.utilAt && nadeTotal(b) > 0 && now - ai.lastSeenAt < 2500 && Math.random() < P.util) {
     const d = dist2(b.pos, ai.lastSeen);
     if (d > 8 && d < 32) {
-      const wid = b.loadout.throwable, w = WEAPONS[wid], alt = wid === 'flash' && d < 12, sp = alt ? w.altSpeed : w.speed;
+      const wid = b.charges[b.loadout.throwable] > 0 ? b.loadout.throwable : NADES.find((t) => b.charges[t] > 0), w = WEAPONS[wid], alt = wid === 'flash' && d < 12, sp = alt ? w.altSpeed : w.speed;
       b.yaw = Math.atan2(-(ai.lastSeen.x - b.pos.x), -(ai.lastSeen.z - b.pos.z));
       b.pitch = 0.5 * Math.asin(clamp((THROW_G * d) / (sp * sp), 0, 1)) * 0.8;
       throwProj(room, b, wid, { alt }, now); ai.utilAt = now + rand(6000, 14000);
@@ -665,8 +673,8 @@ function meleeAttack(room, e, w, wid, m, now) {
 }
 function throwProj(room, e, wid, m, now) {
   const w = WEAPONS[wid];
-  if (e.charges <= 0 || now < e.nextThrowAt) return;
-  e.charges--; e.nextThrowAt = now + 900; e.protUntil = 0;
+  if ((e.charges[wid] | 0) <= 0 || now < e.nextThrowAt) return;
+  e.charges[wid]--; e.nextThrowAt = now + 900; e.protUntil = 0;
   if (!e.isBot) { e.yaw = fin(m.yaw, e.yaw); e.pitch = clamp(fin(m.pitch, e.pitch), -1.55, 1.55); }
   const alt = !!m.alt && wid === 'flash', dir = dirFrom(e.yaw, e.pitch), eye = eyeOf(e), sp = alt ? w.altSpeed : w.speed; // 섬광: 좌클릭 원거리 / 우클릭 언더핸드
   const start = raycastWorld(room.map, eye, dir, 0.6) ? eye : { x: eye.x + dir.x * 0.4, y: eye.y + dir.y * 0.4, z: eye.z + dir.z * 0.4 };
@@ -1307,8 +1315,11 @@ on('room:config', 4, inGame((room, e, m) => {
       e.nextFireAt = Math.max(e.nextFireAt, now + (WEAPONS[e.loadout[SLOT_KEYS[s]]].equipMs || 250) - 60); emitAmmo(e);
     }));
     // 사격/근접/투척: {t:서버시각 추정, o:[x,y,z], yaw, pitch, alt}
+    // G 투척 선택 휠: {t:'grenade'|'flash'} — 선택만 바꾸고(장착은 weapon:switch), 실제 투척은 fire 의 nt 로도 원자적으로 지정 가능
+    on('nade:pick', 10, inGame((room, e, m) => { if (e.alive) pickNade(room, e, m.t); }));
     on('fire', 40, inGame((room, e, m, now) => {
       if (!canAct(room, e) || now < e.driftUntil || e.cast) return;
+      if (e.slot === SLOT.throwable && m.nt) pickNade(room, e, m.nt);
       const wid = e.loadout[SLOT_KEYS[e.slot]], w = WEAPONS[wid];
       if (w.type === 'melee') meleeAttack(room, e, w, wid, m, now);
       else if (w.type === 'throw') throwProj(room, e, wid, m, now);

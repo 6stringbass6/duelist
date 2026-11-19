@@ -578,6 +578,7 @@ th{font-family:var(--c-en);font-weight:500;font-size:11px;letter-spacing:.2em;te
 #lobby .c-ccard .c-vis{position:relative;height:150px}
 #lobby .c-case{width:62%;max-width:180px;height:auto;filter:drop-shadow(0 14px 18px rgba(0,0,0,.8))}
 #lobby .c-ccard.c-none .c-case{opacity:.35}
+#lobby .c-case3d{width:88%;max-width:260px;aspect-ratio:16/10;object-fit:contain;filter:drop-shadow(0 14px 18px rgba(0,0,0,.7))}
 #lobby .c-xn{position:absolute;right:14px;top:12px;font-family:'IBM Plex Mono',monospace;font-size:13px;color:#0a0a0a;background:var(--cs,#fdcb6e);padding:2px 8px;min-width:34px;text-align:center}
 #lobby .c-ccard.c-none .c-xn{background:#262421;color:#8a857a}
 #lobby .c-qty{display:flex;border:1px solid #262421;width:fit-content}
@@ -648,7 +649,39 @@ th{font-family:var(--c-en);font-weight:500;font-size:11px;letter-spacing:.2em;te
 .co-btn{appearance:none;background:none;border:1px solid #fdcb6e;color:#fdcb6e;font-family:Jost,"Noto Sans KR",sans-serif;font-weight:500;font-size:12px;letter-spacing:.14em;padding:0 22px;min-height:44px;cursor:pointer;transition:background .3s,color .3s}
 .co-btn:hover{background:#fdcb6e;color:#0a0a0a}.co-btn.co-fill{background:#fdcb6e;color:#0a0a0a}.co-btn.co-ghost{border-color:#3a3732;color:#f2efe8}.co-btn.co-ghost:hover{background:#f2efe8;color:#0a0a0a}
 :is(.co-btn,.co-x):focus-visible{outline:2px solid #fdcb6e;outline-offset:2px}
-@media (max-width:720px){.co-modal{--co-cell:100px;padding:8px}.co-reveal{grid-template-columns:1fr;gap:10px;text-align:center}.co-tier{justify-content:center}.co-name{font-size:22px}.co-sum{grid-template-columns:repeat(2,minmax(0,1fr))}.co-acts{width:100%}.co-acts .co-btn{flex:1}}
+/* G 홀드 투척 선택 (좌 섬광탄 / 우 수류탄) */
+.nw{position:fixed;left:50%;top:50%;z-index:40;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:14px;font-family:"Noto Sans KR",system-ui,sans-serif;color:#f2efe8;pointer-events:auto}
+.nw[hidden]{display:none}
+.nw-row{display:flex;align-items:stretch}
+.nw-split{width:1px;margin:18px 0;background:linear-gradient(transparent,#fdcb6e66,transparent)}
+.nw-opt{appearance:none;position:relative;width:min(220px,40vw);padding:14px 16px 16px;display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto;row-gap:8px;align-items:end;background:rgba(10,10,10,.72);border:1px solid #262421;color:inherit;font:inherit;text-align:left;cursor:pointer;backdrop-filter:blur(6px);transition:border-color .12s,background .12s,transform .12s,opacity .12s}
+.nw-l{border-right:none}.nw-r{border-left:none}
+.nw-opt::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:#fdcb6e;transform:scaleX(0);transition:transform .14s}
+.nw-vis{grid-column:1/3;height:116px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.nw-vis img{height:100%;max-width:100%;object-fit:contain;filter:drop-shadow(0 8px 10px rgba(0,0,0,.7))}
+.nw-vis img:not([src]){visibility:hidden}
+.nw-name{font-size:15px;font-weight:500}
+.nw-n{font-family:"IBM Plex Mono",monospace;font-size:13px;color:#8a857a}
+.nw-opt.nw-on{background:rgba(253,203,110,.1);border-color:#fdcb6e;transform:scale(1.04);z-index:1}
+.nw-opt.nw-on::after{transform:none}.nw-opt.nw-on .nw-n{color:#fdcb6e}
+.nw-opt.nw-off{opacity:.35;cursor:not-allowed}
+.nw-hint{font-size:12px;color:#8a857a;background:rgba(10,10,10,.6);padding:5px 10px}
+@media (prefers-reduced-motion:reduce){.nw-opt,.nw-opt::after{transition:none}}
+/* 3D 상자 무대 · 3D 썸네일 릴 · 당첨 배너 */
+.co-3d{position:relative;width:100%;height:clamp(240px,42vh,380px);background:radial-gradient(ellipse 46% 60% at 50% 72%,rgba(253,203,110,.07),transparent 70%)}
+.co-3d canvas{display:block;width:100%;height:100%}
+.co-stage-win{min-height:210px}
+.co-cell .co-img{position:absolute;left:6px;right:6px;top:8px;height:calc(100% - 52px);width:calc(100% - 12px);object-fit:contain;filter:drop-shadow(0 6px 10px rgba(0,0,0,.6))}
+.co-cell.co-rare .co-star{left:auto;right:8px;top:8px;width:20px;height:20px;margin:0;filter:drop-shadow(0 0 6px rgba(228,174,57,.9))}
+.co-win{height:190px}
+.co-r3d{position:relative;height:220px;cursor:grab}
+.co-reveal:has(.co-r3d){grid-template-columns:minmax(0,360px) minmax(0,1fr)}
+.co-banner{position:relative;margin:22px 0 0;height:44px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--tc) 55%,transparent) 30%,color-mix(in srgb,var(--tc) 55%,transparent) 70%,transparent);animation:coBanner .5s cubic-bezier(.2,.7,.2,1) both}
+.co-banner::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 35%,rgba(255,255,255,.55) 50%,transparent 65%);transform:translateX(-100%);animation:coSweep 1.1s .35s ease-out both}
+.co-banner span{position:relative;font-family:Jost,"Noto Sans KR",sans-serif;font-size:20px;font-weight:500;letter-spacing:.24em;color:#fff;text-shadow:0 0 18px var(--tc),0 1px 2px rgba(0,0,0,.6)}
+@keyframes coBanner{from{transform:scaleX(.2);opacity:0}to{transform:none;opacity:1}}
+@keyframes coSweep{to{transform:translateX(100%)}}
+@media (max-width:720px){.co-modal{--co-cell:100px;padding:8px}.co-reveal,.co-reveal:has(.co-r3d){grid-template-columns:1fr;gap:10px;text-align:center}.co-tier{justify-content:center}.co-name{font-size:22px}.co-sum{grid-template-columns:repeat(2,minmax(0,1fr))}.co-acts{width:100%}.co-acts .co-btn{flex:1}}
 @media (prefers-reduced-motion:reduce){.co-modal *{animation:none!important}}
 #lobby .c-tiles+.c-chips{margin-bottom:18px}
 #lobby .c-tbl td{color:#f2efe8}
@@ -696,7 +729,7 @@ th{font-family:var(--c-en);font-weight:500;font-size:11px;letter-spacing:.2em;te
 .fr-act{display:flex;gap:6px}
 .fr-empty{padding:22px 0;color:var(--c-mut);font-size:13px}
 </style>
-  <script type="module" crossorigin src="/assets/index-DtC31JFk.js"></script>
+  <script type="module" crossorigin src="/assets/index-Cy_pyEOw.js"></script>
 </head>
 <body>
 <div id="app">

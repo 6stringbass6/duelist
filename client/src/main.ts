@@ -19,6 +19,7 @@ import { BUY_QTYS, CASES, SHOP_PRICES, SKINS, SKIN_WEAPONS, TIERS, TIER_ORDER, X
 import { awardGuestMatchXp, buyShopSkin, buyStoreItem, equipGuestSkin, guestDaily, guestSkins, inventoryOf, levelOf, normalizeDaily, openCases, permanentPrice, permanentStock, type StoreItem } from './services/economy';
 import { SkinPreview } from './game/skinPreview';
 import { runCaseOpening } from './game/caseOpening';
+import { cachedCaseThumb, requestCaseThumb } from './game/case3d';
 import { cachedSkinThumb, requestSkinThumb } from './game/skinThumbs';
 import {
   GameError, changeNickname, claimDailyLogin, claimMission, equipSkin, equipTitle, fetchBundle, fetchMatchHistory, getNicknameChangeCost, getProfile,
@@ -173,6 +174,10 @@ function skinVis(w: string, s: SkinDef | null, cls = 'c-thumb'): string {
 }
 /** innerHTML 렌더 후 호출 — 아직 촬영 안 된 썸네일을 요청해 채운다 */
 function hydrateThumbs(root: HTMLElement): void {
+  root.querySelectorAll<HTMLImageElement>('img[data-case]:not([src])').forEach((img) => {
+    const k = img.dataset.case as CaseKind;
+    void requestCaseThumb(k).then((url) => { if (!img.isConnected) return; if (url) { img.src = url; img.classList.add('c-ld'); } else img.outerHTML = CASE_ART[k]; });
+  });
   root.querySelectorAll<HTMLImageElement>('img[data-thumb-w]:not([src])').forEach((img) => {
     const w = img.dataset.thumbW as WeaponId, id = img.dataset.thumbS || null;
     void requestSkinThumb(w, id).then((url) => {
@@ -316,7 +321,7 @@ function htmlLoadout(): string {
   const l = getProfile()!.loadout;
   const slots = SLOT_ROWS.map(([k, en, ko]) => {
     const w = l[k], s = equippedSkin(w);
-    return `<button type="button" class="c-slot${ldSlot === k ? ' c-on' : ''}" data-ldslot="${k}"><span class="c-sk">0${SLOT[k]}</span><span class="c-st">${en} <span class="c-stk">${ko}</span></span><span class="c-sl">${k === 'melee' ? 'M9 배요네트 · 버터플라이 · 카람빗 · 스켈레톤 · 카타나' : WEAPONS_BY_SLOT[k].map(wName).join(' · ')}</span><span class="c-ss">${esc(wName(w))} · ${esc(s ? s.name : '기본 외형')}</span></button>`;
+    return `<button type="button" class="c-slot${ldSlot === k ? ' c-on' : ''}" data-ldslot="${k}"><span class="c-sk">0${SLOT[k]}</span><span class="c-st">${en} <span class="c-stk">${ko}</span></span><span class="c-sl">${k === 'melee' ? MELEE_SECTS.map((m) => m.title.replace(/ 나이프$/, '')).join(' · ') : WEAPONS_BY_SLOT[k].map(wName).join(' · ')}</span><span class="c-ss">${esc(wName(w))} · ${esc(s ? s.name : '기본 외형')}</span></button>`;
   }).join('');
   const abil = (['q', 'e', 'x'] as const).map((k) => {
     const d = k === 'x' ? ULTS[l.x] : SKILLS[l[k]];
@@ -332,12 +337,13 @@ function htmlLoadout(): string {
 // 근접(3번) 슬롯: 모델별로 섹션을 나눠 보여 준다. 단검 = M9 배요네트(기본) / 버터플라이 / 카람빗, 장검 = 카타나.
 // ⚠ 새 근접 모델 추가 시 반드시 MELEE_SECTS(+특수 모델은 MELEE_SPECIAL)에 등록할 것 — 보관함 상단 무기 선택 칩(htmlMeleeChips)도 여기서 파생된다.
 type MeleeSect = { key: string; title: string; en: string; weapon: 'dagger' | 'sword'; std: boolean; match: (s: SkinDef) => boolean };
-const MELEE_SPECIAL = new Set(['butterfly', 'karambit', 'skeleton']);
+const MELEE_SPECIAL = new Set(['butterfly', 'karambit', 'skeleton', 'bowie']);
 const MELEE_SECTS: MeleeSect[] = [
   { key: 'm9', title: 'M9 배요네트', en: 'M9 Bayonet', weapon: 'dagger', std: true, match: (s) => !MELEE_SPECIAL.has(s.collection ?? '') },
   { key: 'butterfly', title: '버터플라이 나이프', en: 'Butterfly Knife', weapon: 'dagger', std: false, match: (s) => s.collection === 'butterfly' },
   { key: 'karambit', title: '카람빗', en: 'Karambit', weapon: 'dagger', std: false, match: (s) => s.collection === 'karambit' },
   { key: 'skeleton', title: '스켈레톤 나이프', en: 'Skeleton Knife', weapon: 'dagger', std: false, match: (s) => s.collection === 'skeleton' },
+  { key: 'bowie', title: '보위 나이프', en: 'Bowie Knife', weapon: 'dagger', std: false, match: (s) => s.collection === 'bowie' },
   { key: 'katana', title: '카타나', en: 'Katana', weapon: 'sword', std: true, match: () => true },
 ];
 /** 무기별 보유 목록: 구버전 skin_id 는 현행 스킨으로 환산(같은 스킨으로 겹치면 장착 중인 쪽 우선), 장착 요청은 DB 에 저장된 원본 ID 로 보낸다 */
@@ -425,6 +431,13 @@ const CASE_ART: Record<CaseKind | 'key', string> = {
   store: '<svg class="c-case" viewBox="0 0 160 110" aria-hidden="true"><path d="M14 34 L80 14 L146 34 L146 92 L80 104 L14 92 Z" fill="var(--cs)" opacity=".18"/><path d="M14 34 L80 14 L146 34 L80 52 Z" fill="var(--cs)" opacity=".45"/><path d="M14 34 L80 52 L80 104 L14 92 Z M146 34 L80 52 L80 104 L146 92 Z" fill="none" stroke="var(--cs)" stroke-width="1.5"/><path d="M104 66 a7 7 0 1 1 0.1 0 M110 70 L128 78 M122 75 L120 81 M127 77 L125 83" fill="none" stroke="var(--cs)" stroke-width="1.8"/></svg>',
   key: '<svg class="c-case" viewBox="0 0 160 110" aria-hidden="true"><circle cx="52" cy="55" r="22" fill="var(--cs)" opacity=".2" stroke="var(--cs)" stroke-width="1.5"/><circle cx="52" cy="55" r="8" fill="none" stroke="var(--cs)" stroke-width="1.5"/><path d="M74 55 H138 M118 55 V70 M130 55 V66" fill="none" stroke="var(--cs)" stroke-width="3"/></svg>',
 };
+/** 상자 카드 비주얼 — 3D 무기 상자(game/case3d, Ammunition case + Keys) 렌더 썸네일. 열쇠 카드 · WebGL 불가 시 SVG */
+function caseVis(art: CaseKind | 'key'): string {
+  if (art === 'key') return CASE_ART.key;
+  const url = cachedCaseThumb(art);
+  if (url === null) return CASE_ART[art];
+  return `<img class="c-case c-case3d${url ? ' c-ld' : ''}" alt="${esc(CASES[art].name)}" draggable="false" data-case="${art}"${url ? ` src="${url}"` : ''} />`;
+}
 const CASE_TINT: Record<CaseKind | 'key', string> = { drop: '#9fb3c8', store: '#fdcb6e', key: '#e6d3a3' };
 const buyQty: Record<StoreItem, number> = { key: 1, store_case: 1 };
 const openQty: Record<CaseKind, number> = { drop: 1, store: 1 };
@@ -443,7 +456,7 @@ function htmlShop(): string {
   const p = getProfile()!, inv = inventoryOf(p);
   const storeCard = (item: StoreItem, art: CaseKind | 'key', name: string, desc: string, unit: number, own: number): string => {
     const q = buyQty[item];
-    return `<div class="c-card c-ccard" style="--cs:${CASE_TINT[art]}"><div class="c-vis">${CASE_ART[art]}<span class="c-xn" title="보유 개수">x${own}</span></div><div class="c-body">
+    return `<div class="c-card c-ccard" style="--cs:${CASE_TINT[art]}"><div class="c-vis">${caseVis(art)}<span class="c-xn" title="보유 개수">x${own}</span></div><div class="c-body">
       <span class="c-cn2">${esc(name)}</span><span class="c-cw">${esc(desc)}</span>
       ${art === 'store' ? `<button type="button" class="c-link2" data-odds>${oddsOpen ? '확률 숨기기' : '확률 보기'}</button>${oddsOpen ? oddsHtml('store') : ''}` : ''}
       ${qtyPills('bq', item, q)}
@@ -457,7 +470,7 @@ function htmlShop(): string {
   <div class="c-grid c-grid3 c-cgrid">
     ${storeCard('store_case', 'store', CASES.store.name, `${CASES.store.desc}. 군용·제한된·비밀의 무기만 나옵니다.`, SHOP_PRICES.storeCase, inv.storeCases)}
     ${storeCard('key', 'key', '무기 상자 열쇠', `${CASES.drop.name} 1개를 여는 데 1개가 쓰입니다.`, SHOP_PRICES.key, inv.keys)}
-    <div class="c-card c-ccard" style="--cs:${CASE_TINT.drop}"><div class="c-vis">${CASE_ART.drop}<span class="c-xn">x${inv.dropCases}</span></div><div class="c-body"><span class="c-cn2">${CASES.drop.name}</span><span class="c-cw">판매하지 않습니다. 매치를 플레이해 레벨이 오르면 매주 1개 지급됩니다 · 현재 Lv.${levelOf(inv.xp)} (${fmt(inv.xp % XP_PER_LEVEL)} / ${fmt(XP_PER_LEVEL)} XP)</span>${oddsHtml('drop')}<div class="c-row"><button type="button" class="c-btn c-ghostb" data-gocases>보관함에서 열기</button></div></div></div>
+    <div class="c-card c-ccard" style="--cs:${CASE_TINT.drop}"><div class="c-vis">${caseVis('drop')}<span class="c-xn">x${inv.dropCases}</span></div><div class="c-body"><span class="c-cn2">${CASES.drop.name}</span><span class="c-cw">판매하지 않습니다. 매치를 플레이해 레벨이 오르면 매주 1개 지급됩니다 · 현재 Lv.${levelOf(inv.xp)} (${fmt(inv.xp % XP_PER_LEVEL)} / ${fmt(XP_PER_LEVEL)} XP)</span>${oddsHtml('drop')}<div class="c-row"><button type="button" class="c-btn c-ghostb" data-gocases>보관함에서 열기</button></div></div></div>
   </div>
   <div class="c-ph c-ph2"><span class="c-h1">Today</span><span class="c-h2">오늘의 상점 · ${untilReset()} · 최대 비밀의 무기</span></div>
   ${dailyCards ? `<div class="c-grid">${dailyCards}</div>` : '<div class="c-empty">오늘의 상점을 불러오지 못했습니다. 탭을 다시 열어 주세요.</div>'}
@@ -469,7 +482,7 @@ function htmlShop(): string {
 function htmlContainers(): string {
   const inv = inventoryOf(getProfile());
   const card = (art: CaseKind | 'key', name: string, n: number, desc: string, action: string): string =>
-    `<div class="c-card c-ccard${n ? '' : ' c-none'}" style="--cs:${CASE_TINT[art]}"><div class="c-vis">${CASE_ART[art]}<span class="c-xn">x${n}</span></div><div class="c-body"><span class="c-cn2">${esc(name)}</span><span class="c-cw">${esc(desc)}</span>${action}</div></div>`;
+    `<div class="c-card c-ccard${n ? '' : ' c-none'}" style="--cs:${CASE_TINT[art]}"><div class="c-vis">${caseVis(art)}<span class="c-xn">x${n}</span></div><div class="c-body"><span class="c-cn2">${esc(name)}</span><span class="c-cw">${esc(desc)}</span>${action}</div></div>`;
   const opener = (k: CaseKind, max: number): string => {
     const q = Math.min(openQty[k], Math.max(1, max)); openQty[k] = q;
     return max < 1 ? `<div class="c-row"><span class="c-lock">${k === 'drop' && inv.dropCases > 0 ? '무기 상자 열쇠가 필요합니다' : '보유한 컨테이너가 없습니다'}</span><button type="button" class="c-btn c-ghostb" data-gotab="shop">상점</button></div>`

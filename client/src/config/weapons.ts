@@ -84,9 +84,9 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
 
   // ── 4번: 투척류
   grenade: { id: 'grenade', slot: 4, type: 'throw', name: '수류탄', desc: '바운드 후 범위 폭발.', fuseMs: 2000, speed: 21, lift: 3, radius: 6.5, maxDmg: 130, minDmg: 15, selfMult: 0.5,
-    charges: 2, restitution: 0.45, move: 1.06, equipMs: 300, model: 'grenade' },
+    charges: 1, restitution: 0.45, move: 1.06, equipMs: 300, model: 'grenade' },
   flash: { id: 'flash', slot: 4, type: 'throw', name: '섬광탄', desc: '좌클릭 원거리 투척 / 우클릭 언더핸드. 시야 내 적 실명.', fuseMs: 1600, altFuseMs: 1000, speed: 24, altSpeed: 10, lift: 2, altLift: 3.5,
-    maxBlindMs: 2250, altMaxBlindMs: 1500, charges: 2, restitution: 0.5, move: 1.06, equipMs: 300, model: 'flash' },
+    maxBlindMs: 2250, altMaxBlindMs: 1500, charges: 1, restitution: 0.5, move: 1.06, equipMs: 300, model: 'flash' },
 };
 
 export const WEAPONS_BY_SLOT: Record<SlotKey, WeaponId[]> = { // 키 순서 = 로드아웃 UI 표시 순서
