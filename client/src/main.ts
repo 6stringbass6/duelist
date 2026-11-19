@@ -13,7 +13,8 @@ import {
   MODES, RULES, SLOT, SLOT_KEYS, WEAPONS, WEAPONS_BY_SLOT, damageTable, isGun, tdmTargetKills, tierInfo, tierLevel, tierProgress,
   type GameMode, type Loadout, type SlotKey, type WeaponId,
 } from './config/weapons';
-import { preloadWeaponModels } from './game/weaponModels';
+import { preloadWeaponModels, WEAPON_MODELS } from './game/weaponModels';
+import { CharacterRig, loadCharacterAssets } from './game/character';
 import { skinSwatchUrl } from './game/skinTextures';
 import { BUY_QTYS, CASES, SHOP_PRICES, SKINS, SKIN_WEAPONS, TIERS, TIER_ORDER, XP_PER_LEVEL, caseOdds, getSkin, resolveSkinId, skinsForWeapon, tierEmblemSvg, type CaseKind, type SkinDef, type Tier } from './config/skins';
 import { awardGuestMatchXp, buyShopSkin, buyStoreItem, equipGuestSkin, guestDaily, guestSkins, inventoryOf, levelOf, normalizeDaily, openCases, permanentPrice, permanentStock, type StoreItem } from './services/economy';
@@ -28,7 +29,7 @@ import {
   type AccountBundle, type DailyLoginResult, type FriendRow, type MatchRow, type PartyInvite,
 } from './services/supabase';
 import { SKILLS, SKILL_IDS, ULTS, ULT_IDS, ULT_COST, type SkillId, type UltId } from './config/skills';
-import { GameClient, type MatchEnd, type MatchPlayerResult, type MatchReward, type PlayerInfo, type RoomState } from './game/network';
+import { GameClient, createWeaponMesh, type MatchEnd, type MatchPlayerResult, type MatchReward, type PlayerInfo, type RoomState } from './game/network';
 import { PlayerController } from './game/playerController';
 import { HS_ICON, killBannerHtml, playBannerParticles, weaponIcon } from './game/killUi';
 
@@ -51,7 +52,18 @@ const TOUCH = isTouchDevice();
 const stage = $('stage'), xhair = $<HTMLCanvasElement>('xhair'), xctx = xhair.getContext('2d')!;
 const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0b0f18);
 const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.05, 600);
-preloadWeaponModels();
+/** 모델 로딩 직후 무기(월드/뷰모델)·캐릭터 셰이더를 사전 컴파일 → 첫 사격/무기 교체/캐릭터 스폰 시 셰이더 컴파일 멈칫 제거 */
+function warmShaders(): void {
+  if (!renderer) return;
+  const tmp = new THREE.Group(); tmp.position.set(0, -500, 0); scene.add(tmp);
+  for (const id of Object.keys(WEAPON_MODELS) as WeaponId[]) { tmp.add(createWeaponMesh(id, null, false)); tmp.add(createWeaponMesh(id, null, true)); }
+  let rig: CharacterRig | null = null;
+  void loadCharacterAssets().then((a) => { if (a) { rig = new CharacterRig(a, 0xffffff, 0); tmp.add(rig.root); } }).finally(() => {
+    try { renderer.compile(scene, camera); } catch { /* 컴파일 실패해도 렌더 시점에 정상 컴파일됨 */ }
+    rig?.dispose(); scene.remove(tmp); // 공유 지오메트리/캐시 재질은 dispose 하지 않는다
+  });
+}
+void preloadWeaponModels().then(() => { if (renderer) warmShaders(); else requestAnimationFrame(() => warmShaders()); });
 const net = new GameClient(scene);
 const pc = new PlayerController(camera, stage, net);
 let renderer!: THREE.WebGLRenderer, rendererAA = false;
@@ -1536,7 +1548,7 @@ let last = performance.now();
 function frame(now: number): void {
   requestAnimationFrame(frame);
   if (!limiter(now)) return;
-  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (view === 'game' && net.room) { autoFireTick(); pc.update(dt); net.update(dt); updateHud(now); }
   if (view === 'game') renderer.render(scene, camera);
 }

@@ -125,7 +125,7 @@ function addRim(m: THREE.MeshStandardMaterial, color: THREE.Color, strength: { v
   m.customProgramCacheKey = () => 'duelist-rim';
 }
 
-const _q = new THREE.Quaternion();
+const _q = new THREE.Quaternion(), _hp = new THREE.Vector3();
 /** 엔티티 1개분 Swat 인스턴스 */
 export class CharacterRig {
   readonly root = new THREE.Group(); // 엔티티 그룹에 붙는 래퍼 (-Z 전방 · 미터 단위)
@@ -231,7 +231,7 @@ export class CharacterRig {
     if (this.snap) {
       this.snapT += dt; const t = Math.min(1, this.snapT / FADE);
       for (let i = 0; i < b.length; i++) b[i].quaternion.slerpQuaternions(this.snap[i], _q.copy(b[i].quaternion), t);
-      b[0].position.lerpVectors(this.snapHips, b[0].position.clone(), t);
+      b[0].position.lerpVectors(this.snapHips, _hp.copy(b[0].position), t);
       if (t >= 1) this.snap = null;
     }
     if (this.fp) for (const hb of this.headBones) hb.scale.setScalar(0);

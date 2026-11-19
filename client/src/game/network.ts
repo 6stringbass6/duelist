@@ -143,6 +143,21 @@ function thrownNadeMesh(type: ThrowableId): THREE.Group {
 const COLOR_ALLY = 0x3b9cff, COLOR_ENEMY = 0xff4655, COLOR_DUMMY = 0xffa23a;
 const HEAD_GEO = new THREE.SphereGeometry(0.23, 16, 12);
 const FX_GEO = new THREE.SphereGeometry(1, 16, 12);
+// ── 이펙트 풀: 지오메트리 공용 + 머티리얼 재사용 (매 사격/폭발마다 생성·dispose 하던 GC/GPU 업로드 스파이크 제거) ──
+const FX_SPHERE_WIRE = new THREE.SphereGeometry(1, 20, 14);
+const FX_WAVE_GEO = new THREE.CylinderGeometry(0.8, 0.8, 40, 12, 1, true);
+const TRACER_GEO = (() => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, 1], 3)); return g; })(); // 단위 선분(+Z) → scale = 길이
+const fxMatPool = new Map<string, THREE.Material[]>();
+function fxMat(key: string, make: () => THREE.Material): THREE.Material {
+  const m = fxMatPool.get(key)?.pop() ?? make(); m.userData.poolKey = key; m.visible = true; return m;
+}
+const _fxV = new THREE.Vector3(), _fxUp = new THREE.Vector3(0, 1, 0), _fxZ = new THREE.Vector3(0, 0, 1);
+/** 폭발 PointLight 풀 — 씬에 항상 남겨 두고 intensity 만 바꾼다(라이트 개수 변화 = 전 재질 셰이더 재컴파일 → 폭발 순간 끊김 방지) */
+const blastLights: THREE.PointLight[] = [], blastFree: THREE.PointLight[] = [];
+function takeBlastLight(scene: THREE.Scene, color: number, intensity: number, dist: number, p: [number, number, number]): THREE.PointLight {
+  let l = blastFree.pop(); if (!l) { l = new THREE.PointLight(0xffffff, 0, 30); scene.add(l); blastLights.push(l); }
+  l.color.setHex(color); l.intensity = intensity; l.distance = dist; l.position.set(p[0], p[1], p[2]); return l;
+}
 class RemoteEntity {
   readonly group = new THREE.Group();
   /** Swat.fbx 로드 전/실패 시 쓰는 절차적 박스 캐릭터 */
@@ -314,7 +329,7 @@ export class GameClient {
   private readonly rayO = { x: 0, y: 0, z: 0 };
   private readonly rayD = { x: 0, y: 0, z: 0 };
 
-  constructor(readonly scene: THREE.Scene) { this.impacts = new ImpactFx(scene); }
+  constructor(readonly scene: THREE.Scene) { this.impacts = new ImpactFx(scene); blastFree.push(takeBlastLight(scene, 0xffffff, 0, 30, [0, -1000, 0])); } // 폭발 라이트 1개 미리 생성(첫 폭발 셰이더 재컴파일 방지)
 
   // ── 이벤트
   on<K extends keyof NetEvents>(ev: K, fn: NetEvents[K]): () => void {
@@ -597,19 +612,19 @@ export class GameClient {
     else if (!best) this.impacts.hitSpark(e.x, ty, e.z, 0, 0.5, 0);
   }
   private spawnTracer(from: THREE.Vector3, x: number, y: number, z: number, color: number): void {
-    const geo = new THREE.BufferGeometry().setFromPoints([from.clone(), new THREE.Vector3(x, y, z)]);
-    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9 }));
+    const line = new THREE.Line(TRACER_GEO, fxMat('tracer' + color, () => new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9 })) as THREE.LineBasicMaterial);
+    line.position.copy(from); _fxV.set(x, y, z).sub(from); line.scale.setScalar(Math.max(1e-4, _fxV.length())); if (_fxV.lengthSq() > 0) line.quaternion.setFromUnitVectors(_fxZ, _fxV.normalize()); line.frustumCulled = false;
     this.scene.add(line); this.fx.push({ obj: line, life: 0.09, max: 0.09, kind: 'tracer' });
   }
   private spawnBlast(type: 'grenade' | 'flash' | 'zero', p: [number, number, number]): void {
     if (type === 'zero') { // 제로/포인트: 반경 12m 감지 파동
-      const r = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), new THREE.MeshBasicMaterial({ color: 0xb06bff, transparent: true, opacity: 0.5, depthWrite: false, wireframe: true }));
+      const r = new THREE.Mesh(FX_SPHERE_WIRE, fxMat('zero', () => new THREE.MeshBasicMaterial({ color: 0xb06bff, transparent: true, opacity: 0.5, depthWrite: false, wireframe: true })));
       r.position.set(p[0], p[1], p[2]); r.userData.radius = 12 / 0.8; this.scene.add(r); this.fx.push({ obj: r, life: 0.7, max: 0.7, kind: 'boom' }); return;
     }
     const flash = type === 'flash';
-    const m = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshBasicMaterial({ color: flash ? 0xffffff : 0xff8a30, transparent: true, opacity: 0.85, depthWrite: false }));
+    const m = new THREE.Mesh(FX_GEO, fxMat(flash ? 'flash' : 'nade', () => new THREE.MeshBasicMaterial({ color: flash ? 0xffffff : 0xff8a30, transparent: true, opacity: 0.85, depthWrite: false })));
     m.position.set(p[0], p[1], p[2]); m.userData.radius = flash ? 1.6 : (WEAPONS.grenade.type === 'throw' ? WEAPONS.grenade.radius ?? 6.5 : 6.5);
-    const light = new THREE.PointLight(flash ? 0xffffff : 0xff7a20, flash ? 6 : 4, flash ? 30 : 18); m.add(light);
+    m.userData.light = takeBlastLight(this.scene, flash ? 0xffffff : 0xff7a20, flash ? 6 : 4, flash ? 30 : 18, p);
     this.scene.add(m); this.fx.push({ obj: m, life: flash ? 0.22 : 0.4, max: flash ? 0.22 : 0.4, kind: 'boom' });
   }
   private addWall(id: number, b: number[], hp: number): void {
@@ -636,9 +651,9 @@ export class GameClient {
   }
   /** 청부 계약: 전방 직선 파동 */
   private spawnWave(o: [number, number, number], d: [number, number, number]): void {
-    const len = 40, m = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, len, 12, 1, true), new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
-    const dir = new THREE.Vector3(d[0], d[1], d[2]); m.position.set(o[0] + d[0] * len / 2, o[1] - 0.2 + d[1] * len / 2, o[2] + d[2] * len / 2);
-    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir); this.scene.add(m); this.fx.push({ obj: m, life: 0.5, max: 0.5, kind: 'pop' });
+    const len = 40, m = new THREE.Mesh(FX_WAVE_GEO, fxMat('wave', () => new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending })));
+    const dir = _fxV.set(d[0], d[1], d[2]); m.position.set(o[0] + d[0] * len / 2, o[1] - 0.2 + d[1] * len / 2, o[2] + d[2] * len / 2);
+    m.quaternion.setFromUnitVectors(_fxUp, dir); this.scene.add(m); this.fx.push({ obj: m, life: 0.5, max: 0.5, kind: 'pop' });
   }
   private removeProj(id: number): void {
     const p = this.projs.get(id); if (!p) return;
@@ -678,9 +693,13 @@ export class GameClient {
     tickSkinMaterials(performance.now() / 1000);
   }
 }
+/** 지오메트리는 공용이라 dispose 하지 않고, 머티리얼은 풀로 반환(불투명도 복원) — 폭발 PointLight 는 자식에서 제거 */
 function disposeFx(f: Fx): void {
-  f.obj.removeFromParent(); const m = f.obj as THREE.Mesh;
-  m.geometry?.dispose(); (m.material as THREE.Material)?.dispose();
+  f.obj.removeFromParent(); const m = f.obj as THREE.Mesh, mat = m.material as THREE.Material & { opacity: number };
+  const light = f.obj.userData.light as THREE.PointLight | undefined; if (light) { light.intensity = 0; f.obj.userData.light = undefined; blastFree.push(light); }
+  const key = mat?.userData.poolKey as string | undefined; if (!key) return;
+  mat.opacity = key === 'tracer' || key.startsWith('tracer') ? 0.9 : key === 'wave' ? 0.55 : key === 'zero' ? 0.5 : 0.85;
+  (fxMatPool.get(key) ?? fxMatPool.set(key, []).get(key)!).push(mat);
 }
 const r2 = (v: number): number => Math.round(v * 100) / 100;
 const r3 = (v: number): number => Math.round(v * 1000) / 1000;

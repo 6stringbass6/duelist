@@ -276,7 +276,7 @@ function load(def: ModelDef | undefined): Promise<Source | null> {
 /** 해당 무기/스킨이 쓰는 모델 파일의 로드가 끝나면(실패 포함) resolve — 이후 createWeaponMesh 는 동기로 실제 모델을 붙인다 */
 export function weaponModelReady(weaponId: WeaponId, skinId?: string | null): Promise<void> { return load(modelFor(weaponId, skinId)).then(() => undefined); }
 /** 시작 시 한 번 호출 — 사용하는 모델을 미리 받아 둔다 */
-export function preloadWeaponModels(): void { for (const id of Object.keys(WEAPON_MODELS) as WeaponId[]) void load(WEAPON_MODELS[id]); }
+export function preloadWeaponModels(): Promise<void> { return Promise.all((Object.keys(WEAPON_MODELS) as WeaponId[]).map((id) => load(WEAPON_MODELS[id]))).then(() => undefined); }
 
 const nativeCache = new Map<string, THREE.MeshStandardMaterial>();
 const native = (m: THREE.Material): THREE.MeshStandardMaterial => {

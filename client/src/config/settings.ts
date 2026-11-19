@@ -169,7 +169,7 @@ export function applyGraphicsPreset(g: GraphicsSettings, preset: Exclude<Graphic
   return { ...g, ...GRAPHICS_PRESETS[preset], preset };
 }
 export const effectiveFpsCap = (g: GraphicsSettings): number => (g.fpsCap === 'custom' ? clamp(Math.round(g.customFps), 10, 1000) : g.fpsCap);
-export const effectivePixelRatio = (g: GraphicsSettings): number => Math.min(3, (typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1) * g.resolutionScale);
+export const effectivePixelRatio = (g: GraphicsSettings): number => Math.min(2, Math.min(1.5, typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1) * g.resolutionScale); // 4K/Retina 에서 프레임 급락 방지: 기기 DPR 상한 1.5
 /** rAF 기반 프레임 제한기. `if (limiter(now)) render()` */
 export function createFrameLimiter(getFps: () => number): (now: number) => boolean {
   let last = 0;

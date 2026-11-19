@@ -228,7 +228,7 @@ export function buildArena(map: MapData): ArenaBuild {
 
   const setShadows = (mode: 'off' | 'low' | 'high'): void => {
     sun.castShadow = mode !== 'off';
-    const size = mode === 'high' ? 2048 : 1024;
+    const size = 1024; // 그림자 맵 해상도 상한 1024 (high/low 동일 — 캐스터 수·필터만 차이)
     if (sun.shadow.mapSize.x !== size) { sun.shadow.mapSize.set(size, size); sun.shadow.map?.dispose(); sun.shadow.map = null; }
     for (const m of shadowMeshes) { m.castShadow = mode !== 'off' && m !== floor; m.receiveShadow = mode !== 'off'; }
   };
