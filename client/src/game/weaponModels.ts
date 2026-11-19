@@ -13,8 +13,8 @@ import { getSkin } from '../config/skins';
 /** file 에 확장자(.glb/.gltf)가 있으면 GLTFLoader, 없으면 FBXLoader(.fbx).
  *  grip = 뒤쪽 끝에서 손잡이 위치(0~1, 모델 길이 비율) → 그 지점이 뷰모델 원점, roll = 길이축 회전(rad, 평평한 면을 카메라 쪽으로) */
 export const WEAPON_MODELS: Partial<Record<WeaponId, ModelDef>> = {
-  // M9 Bayonet(FBX, 단위 ≈ mm, 날끝 +X, 손잡이 -X, 내장 UV/베이크 텍스처) — 기본 스킨은 원본 텍스처 유지, 구매 스킨은 평면 UV 로 재질 교체
-  dagger: { file: 'm9_bayonet', length: 0.3, grip: 0.15, own: true },
+  // M9 Bayonet(GLB, knife.blend → Blender CLI 변환: 날끝 +X · 날 -Y · 두께 Z, 메시 = blade/garda/handle) — 31cm, 손잡이 중앙(t≈0.19) 파지
+  dagger: { file: 'm9_bayonet.glb', length: 0.31, grip: 0.19 },
   // 카타나(FBX, 단위 ≈ cm, 날끝 -X · 칼날 평면 = XZ · 날(볼록면) +Z, 칼집 포함) → 칼집 제거, 날끝 +X · 날이 아래(-Y)로 향하도록 회전.
   // 파일 내 재질이 1개(Material.001, 외부 PNG 미포함)라 메시 이름으로 부위별 재질/스킨 역할을 지정한다.
   sword: {
@@ -76,8 +76,9 @@ const FILE_PARTS: Record<string, Record<string, PartDef>> = {
 /** 근접 무기 칼날 마스크 — 단일 병합 메시를 [손잡이(0), 칼날(1), 금속 파츠(2)] 삼각형 그룹으로 나눈다.
  *  comps = 모델의 실제 위상(위치 용접 후 삼각형 연결 컴포넌트, 삼각형 수 내림차순 순위) 기준 칼날/금속 컴포넌트 → 파츠 경계가 모델링 그대로 떨어진다(우선 사용)
  *  from = (comps 없는 모델용) 길이축 위치 절단(0=손잡이 끝 ~ 1=날끝), handleOnly = 통째로 손잡이인 메시(예: 파라코드),
- *  blade/handle/metal/wrap = 기본(스킨 미적용) 재질 — 생략 시 모델 내장 재질 유지. 스킨 적용 시 칼날에만 스킨 재질, 금속 파츠·손잡이는 기본 유지. */
-interface BladeMask { from?: number; comps?: { blade: number[]; metal?: number[] }; handleOnly?: RegExp; blade?: PartDef; handle?: PartDef; metal?: PartDef; wrap?: PartDef }
+ *  blade/handle/metal/wrap = 기본(스킨 미적용) 재질 — 생략 시 모델 내장 재질 유지. 스킨 적용 시 칼날에만 스킨 재질, 금속 파츠·손잡이는 기본 유지.
+ *  mats = 칼날 외 부위에서 원본 재질 이름별 기본 재질(handle/wrap 보다 우선) */
+interface BladeMask { from?: number; comps?: { blade: number[]; metal?: number[] }; handleOnly?: RegExp; blade?: PartDef; handle?: PartDef; metal?: PartDef; wrap?: PartDef; mats?: Record<string, PartDef> }
 const KARAMBIT_STEEL: PartDef = { role: 'base', color: 0x687382, metalness: 0.88, roughness: 0.24 };
 const BLADE_MASKS: Record<string, BladeMask> = {
   // CS2 카람빗: 연결 컴포넌트 7개(측면 색상 진단 렌더로 확인) — #0 손잡이 몸체+볼스터, #1 핑거 링, #2 칼날, #3·4 그립 인서트, #5·6 볼스터 인서트
@@ -102,8 +103,13 @@ const BLADE_MASKS: Record<string, BladeMask> = {
     metal: { role: 'accent', color: 0xa8854a, metalness: 0.9, roughness: 0.32 },
     handle: { role: 'dark', color: 0x3a2417, metalness: 0.05, roughness: 0.62 },
   },
-  // M9 총검: 기본은 내장 베이크 텍스처 유지, 가드 뒤(t≈0.435)부터 칼날
-  m9_bayonet: { from: 0.435 },
+  // M9 총검: blade 메시 전체 = 칼날(내장 브러시드 스틸 텍스처 유지), garda·handle = 손잡이.
+  // 원본 'Black plastic' 은 ColorRamp 노드 재질이라 glTF 에선 스크래치 마스크가 base color 로 나와 → 무광 블랙 폴리머로 대체, 'Dark iron'(폼멜)은 다크 스틸
+  'm9_bayonet.glb': {
+    from: 0, handleOnly: /^(garda|handle)/,
+    handle: { role: 'dark', color: 0x141519, metalness: 0.1, roughness: 0.78 },
+    mats: { 'Dark iron': { role: 'dark', color: 0x34383e, metalness: 0.85, roughness: 0.42 } },
+  },
 };
 
 /** own = FBX 라도 내장 UV/텍스처를 유지(GLB 와 동일 취급). 스킨 적용 시에만 평면 UV 사용
@@ -321,8 +327,8 @@ function build(src: Source, skin: SkinSet, roll = 0): THREE.Group {
   const own = (m: THREE.Material, def?: PartDef): THREE.Material => (def ? partMat(def) : src.glb && curMesh ? glbNative(curMesh, m) : native(m));
   const pickMasked = (m: THREE.Material, group: number): THREE.Material =>
     group === 1 ? (skin.skinned ? skin.base : own(m, mask!.blade))
-      : group === 2 ? own(m, mask!.metal ?? mask!.blade)
-        : own(m, curMesh && mask!.handleOnly?.test(curMesh.name) ? mask!.wrap ?? mask!.handle : mask!.handle);
+      : group === 2 ? own(m, mask!.mats?.[m.name] ?? mask!.metal ?? mask!.blade)
+        : own(m, mask!.mats?.[m.name] ?? (curMesh && mask!.handleOnly?.test(curMesh.name) ? mask!.wrap ?? mask!.handle : mask!.handle));
   inner.traverse((o) => {
     const me = o as THREE.Mesh; if (!me.isMesh) return;
     curMesh = me;
