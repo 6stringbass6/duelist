@@ -12,6 +12,7 @@ import { SERVER_URL, socketAuthPayload } from '../services/supabase';
 import type { SkillId, UltId } from '../config/skills';
 import { buildArena, textSprite, type ArenaBuild, type MapData, type World } from './arena';
 import { ImpactFx } from './impactFx';
+import { CharacterRig, loadCharacterAssets } from './character';
 
 // ───────────────────────────── 타입 ─────────────────────────────
 export type Phase = 'lobby' | 'buy' | 'live' | 'roundEnd' | 'ended';
@@ -144,8 +145,13 @@ const HEAD_GEO = new THREE.SphereGeometry(0.23, 16, 12);
 const FX_GEO = new THREE.SphereGeometry(1, 16, 12);
 class RemoteEntity {
   readonly group = new THREE.Group();
+  /** Swat.fbx 로드 전/실패 시 쓰는 절차적 박스 캐릭터 */
+  private readonly legacy = new THREE.Group();
   private readonly upper = new THREE.Group();
   private readonly hand = new THREE.Group();
+  private rig: CharacterRig | null = null;
+  private disposed = false;
+  private prevX = NaN; private prevZ = NaN; private prevYaw = 0; private vx = 0; private vz = 0; private yawRate = 0; private fireT = 0;
   private readonly bodyMat: THREE.MeshStandardMaterial;
   private readonly neonMat: THREE.MeshStandardMaterial;
   private tag: THREE.Sprite | null = null;
@@ -165,7 +171,7 @@ class RemoteEntity {
     const gear = new THREE.MeshStandardMaterial({ color: 0x0c0e12, roughness: 0.45, metalness: 0.6 }); // 관절/장비 — 더 어둡고 금속감
     this.neonMat = new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 1.6, roughness: 0.3, metalness: 0.2 });
     const visorMat = new THREE.MeshStandardMaterial({ color: 0x05070a, roughness: 0.15, metalness: 0.9, emissive: color, emissiveIntensity: 0.25 });
-    const g = this.group;
+    const g = this.legacy; this.group.add(g);
     g.add(part(dark, 0.2, 0.72, 0.24, -0.14, 0.36, 0), part(dark, 0.2, 0.72, 0.24, 0.14, 0.36, 0));       // 다리
     g.add(part(gear, 0.22, 0.16, 0.27, -0.14, 0.08, -0.01), part(gear, 0.22, 0.16, 0.27, 0.14, 0.08, -0.01)); // 부츠
     g.add(part(gear, 0.23, 0.1, 0.27, -0.14, 0.4, 0), part(gear, 0.23, 0.1, 0.27, 0.14, 0.4, 0));        // 무릎 관절
@@ -184,14 +190,21 @@ class RemoteEntity {
     this.hand.position.set(0.24, -0.1, -0.42); this.upper.add(this.hand);
     g.add(this.upper);
     g.traverse((o) => { if ((o as THREE.Mesh).isMesh) { o.castShadow = true; o.userData.entityId = info.id; } });
+    void loadCharacterAssets().then((a) => {
+      if (!a || this.disposed) return;
+      this.rig = new CharacterRig(a, this.teamColor(), info.id);
+      this.group.add(this.rig.root); this.legacy.visible = false; this.legacy.scale.y = 1;
+      if (this.weapon) this.rig.socket.add(this.weapon);
+    });
     const mkFx = (color: number, r: number): THREE.Mesh => { // 스킬 상태 이펙트 구체 (데미지 증폭 붉은 오라 / 보호막 / 봉인)
       const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.28, depthWrite: false, blending: THREE.AdditiveBlending });
-      this.fxMat.push(mat); const m = new THREE.Mesh(FX_GEO, mat); m.scale.setScalar(r); m.position.y = 0.95; m.visible = false; g.add(m); return m;
+      this.fxMat.push(mat); const m = new THREE.Mesh(FX_GEO, mat); m.scale.setScalar(r); m.position.y = 0.95; m.visible = false; this.group.add(m); return m;
     };
     this.aura = mkFx(0xff2a2a, 1.05); this.bubble = mkFx(0x5ef0ff, 0.95);
     this.setTag(ally);
-    g.visible = false;
+    this.group.visible = false;
   }
+  private teamColor(): number { return this.info.dummy ? COLOR_DUMMY : this.ally ? COLOR_ALLY : COLOR_ENEMY; }
   private setTag(ally: boolean): void {
     if (this.tag) { this.tag.material.map?.dispose(); this.tag.material.dispose(); this.tag.removeFromParent(); }
     if (this.info.dummy) return;
@@ -199,12 +212,12 @@ class RemoteEntity {
   }
   setInfo(info: PlayerInfo, ally: boolean): void {
     const renamed = info.name !== this.info.name; this.info = info; this.ally = ally;
-    const color = info.dummy ? COLOR_DUMMY : ally ? COLOR_ALLY : COLOR_ENEMY; this.bodyMat.color.setHex(color); this.bodyMat.emissive.setHex(color); this.neonMat.color.setHex(color); this.neonMat.emissive.setHex(color);
+    const color = this.teamColor(); this.rig?.setColor(color); this.bodyMat.color.setHex(color); this.bodyMat.emissive.setHex(color); this.neonMat.color.setHex(color); this.neonMat.emissive.setHex(color);
     if (renamed) this.setTag(ally);
     this.weaponKey = '';
   }
   push(s: Snap): void { this.buf.push(s); if (this.buf.length > 40) this.buf.shift(); }
-  onShot(): void { this.kick = 1; fireWeaponFx(this.weapon); }
+  onShot(): void { this.kick = 1; this.fireT = 0.3; fireWeaponFx(this.weapon); }
   muzzleWorld(out: THREE.Vector3): THREE.Vector3 {
     const m = this.weapon?.userData.muzzle as THREE.Object3D | undefined;
     return m && this.group.visible ? m.getWorldPosition(out) : out.set(this.x, this.y + 1.45, this.z);
@@ -221,25 +234,43 @@ class RemoteEntity {
     const g = this.group; g.visible = this.alive && !(this.flags & F.INVIS && !this.ally); if (!this.alive) return; // 차원 표류: 적에게는 완전 은신
     g.position.set(this.x, this.y, this.z); g.rotation.y = this.yaw;
     const low = this.flags & (F.CROUCH | F.SLIDE);
-    g.scale.y += ((low ? 0.64 : 1) - g.scale.y) * Math.min(1, dt * 14);
+    if (!this.rig) this.legacy.scale.y += ((low ? 0.64 : 1) - this.legacy.scale.y) * Math.min(1, dt * 14);
     this.kick = Math.max(0, this.kick - dt * 9);
     this.upper.rotation.x = this.pitch + this.kick * 0.06; this.hand.position.z = -0.42 + this.kick * 0.05;
     const ghost = !!(this.flags & F.INVIS), cast = !!(this.flags & F.CAST), t = performance.now() / 1000;
     this.bodyMat.transparent = !!(this.flags & F.PROT) || ghost || cast; this.bodyMat.opacity = ghost ? 0.2 : cast ? 0.45 + 0.25 * Math.sin(t * 20) : this.flags & F.PROT ? 0.45 : 1;
     this.bodyMat.emissiveIntensity = this.flags & (F.DASH | F.HEAL) ? 0.7 : 0.18;
     this.neonMat.transparent = this.bodyMat.transparent; this.neonMat.opacity = this.bodyMat.opacity;
+    this.rig?.setLook(this.bodyMat.opacity, !!(this.flags & (F.DASH | F.HEAL)));
     this.aura.visible = !!(this.flags & F.AMP);
     if (this.aura.visible) this.aura.scale.setScalar(1.05 + 0.08 * Math.sin(t * 9));
     this.fxMat[1].color.setHex(this.flags & F.SILENCED ? 0xb06bff : 0x5ef0ff); this.bubble.visible = !!(this.flags & (F.SHIELD | F.SILENCED));
-    if (this.tag) this.tag.scale.y = 0.4 / g.scale.y;
     // 손에 든 무기 + 스킨
     const wid = this.info.loadout[SLOT_KEYS[(this.slot as 1 | 2 | 3 | 4)] ?? 'primary'] as WeaponId, skin = this.info.skins?.[wid] ?? '', key = wid + '|' + skin;
     if (key !== this.weaponKey) {
       this.weaponKey = key; this.weapon?.removeFromParent();
-      this.weapon = createWeaponMesh(wid, skin); this.hand.add(this.weapon);
+      this.weapon = createWeaponMesh(wid, skin); (this.rig?.socket ?? this.hand).add(this.weapon);
     }
+    if (this.rig) this.updateRig(dt, wid, low !== 0);
+  }
+  /** 스냅샷 보간 위치에서 로컬 속도·선회 속도를 구해 Swat 애니메이션 상태를 결정 */
+  private updateRig(dt: number, wid: WeaponId, low: boolean): void {
+    const rig = this.rig!, f = this.flags, k = Math.min(1, dt * 10);
+    if (Number.isNaN(this.prevX) || dt <= 0) { this.prevX = this.x; this.prevZ = this.z; this.prevYaw = this.yaw; }
+    const ivx = (this.x - this.prevX) / Math.max(dt, 1e-3), ivz = (this.z - this.prevZ) / Math.max(dt, 1e-3);
+    const tele = Math.hypot(ivx, ivz) > 30; // 스폰 텔레포트는 무시
+    this.vx += ((tele ? 0 : ivx) - this.vx) * k; this.vz += ((tele ? 0 : ivz) - this.vz) * k;
+    this.yawRate += (shortAngle(this.yaw - this.prevYaw) / Math.max(dt, 1e-3) - this.yawRate) * k;
+    this.prevX = this.x; this.prevZ = this.z; this.prevYaw = this.yaw;
+    const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw); // 전방 = (-sin, -cos), 오른쪽 = (cos, -sin)
+    this.fireT = Math.max(0, this.fireT - dt);
+    rig.update(dt, {
+      rifle: wid === 'vandal' || wid === 'phantom', firing: this.fireT > 0, reloading: !!(f & F.RELOAD), crouch: low, air: !!(f & F.AIR),
+      fwd: -this.vx * sin - this.vz * cos, side: this.vx * cos - this.vz * sin, turning: Math.abs(this.yawRate) > 1.5, pitch: this.pitch,
+    });
   }
   dispose(): void {
+    this.disposed = true; this.rig?.dispose();
     this.group.removeFromParent(); this.bodyMat.dispose(); this.neonMat.dispose(); for (const m of this.fxMat) m.dispose();
     if (this.tag) { this.tag.material.map?.dispose(); this.tag.material.dispose(); }
   }
