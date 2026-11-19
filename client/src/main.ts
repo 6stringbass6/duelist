@@ -175,7 +175,7 @@ function skinVis(w: string, s: SkinDef | null, cls = 'c-thumb'): string {
 /** innerHTML 렌더 후 호출 — 아직 촬영 안 된 썸네일을 요청해 채운다 */
 function hydrateThumbs(root: HTMLElement): void {
   root.querySelectorAll<HTMLImageElement>('img[data-case]:not([src])').forEach((img) => {
-    const k = img.dataset.case as CaseKind;
+    const k = img.dataset.case as CaseKind | 'key';
     void requestCaseThumb(k).then((url) => { if (!img.isConnected) return; if (url) { img.src = url; img.classList.add('c-ld'); } else img.outerHTML = CASE_ART[k]; });
   });
   root.querySelectorAll<HTMLImageElement>('img[data-thumb-w]:not([src])').forEach((img) => {
@@ -433,10 +433,9 @@ const CASE_ART: Record<CaseKind | 'key', string> = {
 };
 /** 상자 카드 비주얼 — 3D 무기 상자(game/case3d, Ammunition case + Keys) 렌더 썸네일. 열쇠 카드 · WebGL 불가 시 SVG */
 function caseVis(art: CaseKind | 'key'): string {
-  if (art === 'key') return CASE_ART.key;
   const url = cachedCaseThumb(art);
   if (url === null) return CASE_ART[art];
-  return `<img class="c-case c-case3d${url ? ' c-ld' : ''}" alt="${esc(CASES[art].name)}" draggable="false" data-case="${art}"${url ? ` src="${url}"` : ''} />`;
+  return `<img class="c-case c-case3d${url ? ' c-ld' : ''}" alt="${art === 'key' ? '무기 상자 열쇠' : esc(CASES[art].name)}" draggable="false" data-case="${art}"${url ? ` src="${url}"` : ''} />`;
 }
 const CASE_TINT: Record<CaseKind | 'key', string> = { drop: '#9fb3c8', store: '#fdcb6e', key: '#e6d3a3' };
 const buyQty: Record<StoreItem, number> = { key: 1, store_case: 1 };

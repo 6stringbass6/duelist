@@ -7,7 +7,7 @@
 //       뚜껑 = TopBase(상판) · TopMetal(상단 프레임) · TopDevice(중앙 레버/잠금장치)
 //   - 로드 시 재질 그룹 기준으로 몸체/뚜껑 두 메시로 분할(정점 버퍼 공유) → 뚜껑은 뒤쪽(-Z) 아래 모서리 경첩 피벗
 //   - 원본 텍스처(Export_Text/Blender/*.png)는 FBX 에 내장돼 있지 않아 재질을 직접 지정한다(검게 나오지 않게)
-//   - 열쇠는 모델에 없어 절차적 열쇠를 TopDevice 정면(자물쇠 마커)에 꽂는다
+//   - 열쇠: public/models/worn_key.fbx (낡은 황동 재질 직접 지정). 길이축 -Z(날 끝) 로 정규화해 TopDevice 정면(자물쇠 마커)에 꽂는다 (로드 실패 시 절차적 열쇠)
 //  로드 실패 시 같은 리그 구조의 절차적 상자로 폴백. 결과 리그는 폭 1.0 으로 정규화, 바닥 y=0.
 // =====================================================================
 import * as THREE from 'three';
@@ -19,6 +19,7 @@ import type { CaseKind } from '../config/skins';
 export interface CaseRig { root: THREE.Group; lid: THREE.Group; key: THREE.Group; glow: THREE.Mesh; lock: THREE.Vector3; height: number }
 
 const CRATE_URL = (import.meta.env?.BASE_URL ?? '/') + 'models/scifi_crate.fbx';
+const KEY_URL = (import.meta.env?.BASE_URL ?? '/') + 'models/worn_key.fbx';
 /** 뚜껑에 속하는 재질 그룹 (그 외 = 몸체) */
 const LID_GROUP = /^Top/;
 const BLANK_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
@@ -89,7 +90,33 @@ function loadExternal(): Promise<CrateSrc | null> {
   return external;
 }
 
-// ───────────────────────────── 열쇠 (공용) · 절차적 폴백 상자 ─────────────────────────────
+// ───────────────────────────── 열쇠 모델 (worn_key.fbx) ─────────────────────────────
+/** 정규화 후 열쇠 전체 길이 · 날 끝이 놓일 z (자물쇠에 약간 꽂히도록 키 공간에서 -Z 쪽) */
+const KEY_LEN = 0.3, KEY_TIP_Z = -0.1;
+/** 원본: 길이축 = Y(날 끝 -Y · 손잡이 고리 +Y), 두께 = Z, 폭 = X. → 길이축을 -Z(날 끝)로 돌리고 날 끝 중앙을 원점 축에 맞춘다 */
+function prepareKey(loaded: THREE.Object3D): THREE.Group {
+  const brass = new THREE.MeshStandardMaterial({ color: 0xb98d45, metalness: 0.92, roughness: 0.38 }); // 낡은 황동 (텍스처 경로 누락 대비 직접 지정)
+  loaded.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { m.material = brass; m.castShadow = m.receiveShadow = true; } });
+  const inner = new THREE.Group(); inner.add(loaded); inner.rotation.x = Math.PI / 2; // (x,y,z) → (x,-z,y): 날 끝(-Y) → -Z
+  inner.updateMatrixWorld(true);
+  const b = new THREE.Box3().setFromObject(inner), sz = b.getSize(new THREE.Vector3()), c = b.getCenter(new THREE.Vector3());
+  const s = KEY_LEN / Math.max(1e-6, sz.z); inner.scale.setScalar(s);
+  inner.position.set(-c.x * s, -c.y * s, KEY_TIP_Z - b.min.z * s);
+  const key = new THREE.Group(); key.add(inner); // 납작한 면 = XZ(수평, 위에서 내려다보는 카메라에 고리가 보임) · Z축 회전 = 열쇠 돌리기
+  return key;
+}
+let keyLoad: Promise<THREE.Group | null> | null = null;
+function loadKey(): Promise<THREE.Group | null> {
+  keyLoad ??= (async () => {
+    const mgr = new THREE.LoadingManager(); mgr.setURLModifier((u) => (/\.(png|jpe?g|tga)$/i.test(u) && !/^(data|blob):/.test(u) ? BLANK_PNG : u));
+    return prepareKey(await new FBXLoader(mgr).loadAsync(KEY_URL));
+  })().catch((e) => { console.warn('[case3d] 열쇠 모델 로드 실패 → 절차적 열쇠:', e); return null; });
+  return keyLoad;
+}
+/** 열쇠 인스턴스 (지오메트리·재질 공유 복제). 로드 실패 시 절차적 열쇠 */
+async function createKeyModel(): Promise<THREE.Group> { const k = await loadKey(); return k ? k.clone(true) : makeKey(); }
+
+// ───────────────────────────── 열쇠 (절차적 폴백) · 절차적 폴백 상자 ─────────────────────────────
 const boxMesh = (m: THREE.Material, w: number, h: number, d: number, x: number, y: number, z: number): THREE.Mesh => { const me = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); me.position.set(x, y, z); return me; };
 /** 열쇠: 링 + 자루 + 키 비트 (정규화 공간 크기, 길이축 = -Z · 자물쇠에 꽂히는 끝이 -Z) */
 function makeKey(): THREE.Group {
@@ -116,7 +143,7 @@ function pivotAt(obj: THREE.Object3D, at: THREE.Vector3, parent: THREE.Object3D,
   const p = new THREE.Group(); p.name = name; p.position.copy(at); parent.add(p); p.updateMatrixWorld(true);
   p.attach(obj); return p;
 }
-function rig({ root: src, lock: rawLock }: CrateSrc): CaseRig {
+function rig({ root: src, lock: rawLock }: CrateSrc, keyModel: THREE.Group): CaseRig {
   const root = new THREE.Group(), holder = new THREE.Group(); root.add(holder); holder.add(src);
   // 1) 정규화: 폭(가장 긴 수평축) 1.0, 바닥 y=0, 중심 정렬
   src.updateMatrixWorld(true);
@@ -129,7 +156,7 @@ function rig({ root: src, lock: rawLock }: CrateSrc): CaseRig {
   const lid = pivotAt(lidObj, new THREE.Vector3(0, lb.min.y, lb.min.z), root, 'case_lid_pivot');
   // 3) 열쇠: 자물쇠(레버/잠금장치 정면) 앞에서 대기 → 개봉 연출에서 꽂고 돌림
   const lock = holder.localToWorld(rawLock.clone());
-  const key = new THREE.Group(); key.name = 'keys_pivot'; key.add(makeKey()); key.position.copy(lock).add(new THREE.Vector3(0, 0, 0.11)); root.add(key);
+  const key = new THREE.Group(); key.name = 'keys_pivot'; key.add(keyModel); key.position.copy(lock).add(new THREE.Vector3(0, 0, 0.11)); root.add(key);
   // 4) 내부 발광면 (뚜껑이 열리면 등급색으로 빛남)
   const bb = new THREE.Box3().setFromObject(bodyObj), bs = bb.getSize(new THREE.Vector3()), bc = bb.getCenter(new THREE.Vector3());
   const glow = new THREE.Mesh(new THREE.PlaneGeometry(bs.x * 0.72, bs.z * 0.66), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
@@ -141,10 +168,11 @@ function rig({ root: src, lock: rawLock }: CrateSrc): CaseRig {
 /** 상자 리그 생성 — scifi_crate.fbx 복제(지오메트리 공유) + 종류별 재질. 로드 실패 시 절차적 상자 */
 export async function createCaseRig(kind: CaseKind): Promise<CaseRig> {
   const ext = await loadExternal();
-  if (!ext) return rig(proceduralCrate(kind));
+  const keyModel = await createKeyModel();
+  if (!ext) return rig(proceduralCrate(kind), keyModel);
   const M = crateMaterials(kind), root = ext.root.clone(true);
   root.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) m.material = (m.material as THREE.Material[]).map((x) => M[x.name] ?? M.body); });
-  return rig({ root, lock: ext.lock.clone() });
+  return rig({ root, lock: ext.lock.clone() }, keyModel);
 }
 
 // ───────────────────────────── 공용 조명 장면 ─────────────────────────────
@@ -169,22 +197,29 @@ function stageScene(r: THREE.WebGLRenderer): { scene: THREE.Scene; spot: THREE.S
 
 // ───────────────────────────── 상점 카드 썸네일 (오프스크린 촬영 → 캐시 URL) ─────────────────────────────
 const TW = 640, TH = 400;
-const thumbs = new Map<CaseKind, Promise<string | null>>();
-const thumbUrl = new Map<CaseKind, string | null>();
+export type ThumbKind = CaseKind | 'key';
+const thumbs = new Map<ThumbKind, Promise<string | null>>();
+const thumbUrl = new Map<ThumbKind, string | null>();
 let thumbR: THREE.WebGLRenderer | null = null, thumbFail = false;
-/** 이미 촬영된 상자 썸네일 (없으면 undefined, WebGL 불가면 null) */
-export const cachedCaseThumb = (kind: CaseKind): string | null | undefined => thumbUrl.get(kind);
-export function requestCaseThumb(kind: CaseKind): Promise<string | null> {
+/** 이미 촬영된 상자/열쇠 썸네일 (없으면 undefined, WebGL 불가면 null) */
+export const cachedCaseThumb = (kind: ThumbKind): string | null | undefined => thumbUrl.get(kind);
+export function requestCaseThumb(kind: ThumbKind): Promise<string | null> {
   let p = thumbs.get(kind);
   if (!p) {
     p = (async () => {
       if (thumbFail) return null;
       try { thumbR ??= makeRenderer(TW, TH, true); } catch (e) { console.warn('[case3d] WebGL 불가 — SVG 폴백', e); thumbFail = true; return null; }
       const { scene } = stageScene(thumbR), cam = new THREE.PerspectiveCamera(26, TW / TH, 0.05, 20);
-      const r = await createCaseRig(kind); r.root.rotation.y = -0.5; scene.add(r.root);
-      r.key.position.set(0.62, 0.02, 0.18); r.key.rotation.set(Math.PI / 2, 0, 0.9); // 열쇠는 상자 앞 바닥에 눕혀 함께 촬영
+      // 상자 썸네일엔 열쇠를 넣지 않는다(상자 단독). 열쇠는 'key' 썸네일 · 개봉 연출에서만 노출
+      let subject: THREE.Object3D;
+      if (kind === 'key') {
+        const k = await createKeyModel(); // 길이축 = Z, 납작한 면이 위(+Y)를 향함
+        const flat = new THREE.Group(); flat.add(k); flat.rotation.y = Math.PI / 2 + 0.5; // 길이축을 수평(대각)으로
+        subject = flat; k.updateMatrixWorld(true); const bb = new THREE.Box3().setFromObject(flat); flat.position.y = -bb.min.y + 0.004; // 바닥에 올림
+      } else { const r = await createCaseRig(kind); r.key.removeFromParent(); r.root.rotation.y = -0.5; subject = r.root; }
+      scene.add(subject);
       // 바운딩 구 기준 자동 프레이밍 (3/4 위에서 내려다보는 고정 방향)
-      const sph = new THREE.Box3().setFromObject(r.root).getBoundingSphere(new THREE.Sphere()), dir = new THREE.Vector3(0.42, 0.42, 0.8).normalize();
+      const sph = new THREE.Box3().setFromObject(subject).getBoundingSphere(new THREE.Sphere()), dir = new THREE.Vector3(0.42, 0.42, 0.8).normalize();
       const dist = sph.radius / Math.sin(THREE.MathUtils.degToRad(cam.fov / 2)) * 0.98;
       cam.position.copy(sph.center).addScaledVector(dir, dist); cam.lookAt(sph.center);
       thumbR.render(scene, cam); thumbR.render(scene, cam);
