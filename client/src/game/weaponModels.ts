@@ -1,16 +1,15 @@
 // =====================================================================
-// Quaternius FBX 총기 모델 로더 — 1회 비동기 로드 → 캐시 → clone 재사용.
+// Quaternius 총기 모델 로더 (FBX → GLB 변환본) — 1회 비동기 로드 → 캐시 → clone 재사용.
 // 로딩 전/실패 시에는 호출측의 프로시저럴(박스) 모델이 그대로 폴백으로 남는다.
 // FBX 규약(실측): 총열 방향 = +X, 위 = +Y, 원점 ≈ 그립. 게임 규약: 전방 = -Z → Y축 +90° 회전.
 // =====================================================================
 import * as THREE from 'three';
-import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { WeaponId } from '../config/weapons';
 import { getSkin } from '../config/skins';
 
 /** 무기 → FBX 파일, 정규화 전체 길이(m, 개머리판~총구) */
-/** file 에 확장자(.glb/.gltf)가 있으면 GLTFLoader, 없으면 FBXLoader(.fbx).
+/** file = 모델 이름(확장자 .fbx/.glb/없음 모두 같은 이름의 .glb 를 GLTFLoader 로 로드).
  *  grip = 뒤쪽 끝에서 손잡이 위치(0~1, 모델 길이 비율) → 그 지점이 뷰모델 원점, roll = 길이축 회전(rad, 평평한 면을 카메라 쪽으로) */
 export const WEAPON_MODELS: Partial<Record<WeaponId, ModelDef>> = {
   // M9 Bayonet(GLB, knife.blend → Blender CLI 변환: 날끝 +X · 날 -Y · 두께 Z, 메시 = blade/garda/handle) — 31cm, 손잡이 중앙(t≈0.19) 파지
@@ -122,12 +121,7 @@ interface PartDef { role: Role; color: number; metalness: number; roughness: num
 interface Source { glb: boolean; root: THREE.Object3D; roles: Map<string, Role>; scale: number; offset: THREE.Vector3; muzzle: THREE.Vector3; parts?: Record<string, PartDef>; mask?: BladeMask; axis: { y: Float32Array; x0: number; len: number } }
 export interface SkinSet { base: THREE.Material; accent: THREE.Material; skinned: boolean }
 
-// FBX 가 참조하지만 포함하지 않은 외부 텍스처(예: 카타나의 Blender 베이크 PNG)는 404 대신 1px 투명 이미지로 대체 — parts 재질을 쓰므로 실제로는 사용되지 않는다
-const BLANK_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
-// 보위 나이프(TexturesLighting4k/*.png)·섬광탄(Textures/*.tga) 원본 텍스처도 저장소에 없으므로 같은 방식으로 대체 (재질은 BLADE_MASKS/FILE_PARTS 가 지정)
-const MISSING_TEX = /katana_Material|DefaultMaterial_(Base_color|Metallic|Normal_OpenGL|Roughness)|_(Roughness|metalness|normal)\.tga/i;
-const fbxManager = new THREE.LoadingManager(); fbxManager.setURLModifier((u) => (MISSING_TEX.test(u) ? BLANK_PNG : u));
-const fbxLoader = new FBXLoader(fbxManager), gltfLoader = new GLTFLoader();
+const gltfLoader = new GLTFLoader();
 const isGlb = (f: string): boolean => /\.(glb|gltf)$/i.test(f);
 const pending = new Map<string, Promise<Source | null>>();
 const ready = new Map<string, Source>();
@@ -258,7 +252,10 @@ function load(def: ModelDef | undefined): Promise<Source | null> {
   let p = pending.get(def.file);
   if (!p) {
     const glb = isGlb(def.file);
-    const raw: Promise<THREE.Object3D> = glb ? gltfLoader.loadAsync(BASE + def.file).then((g) => g.scene) : fbxLoader.loadAsync(BASE + (/.fbx$/i.test(def.file) ? def.file : def.file + ".fbx"));
+    // 모든 무기/투척물 모델은 .glb 로 변환됨 — def.file 이 .fbx/확장자 없음이어도 같은 이름의 .glb 를 GLTFLoader 로 로드한다.
+    // (glb 플래그 = 원본이 GLB 인가: 내장 PBR/UV 사용 여부 판단용이라 변환 여부와 무관하게 원래 의미를 유지)
+    const url = glb ? def.file : def.file.replace(/\.fbx$/i, '') + '.glb';
+    const raw: Promise<THREE.Object3D> = gltfLoader.loadAsync(BASE + url).then((g) => g.scene);
     p = raw.then((loaded) => {
       let root = loaded;
       if (def.hide) { const drop: THREE.Object3D[] = []; loaded.traverse((o) => { if ((o as THREE.Mesh).isMesh && def.hide!.test(o.name)) drop.push(o); }); for (const o of drop) o.removeFromParent(); }
