@@ -61,7 +61,7 @@ const FILE_PARTS: Record<string, Record<string, PartDef>> = {
     m_gun: {
       role: 'base', ...AK_STEEL,
       split: {
-        test: (x, y) => x < -3.6 || (x < 3 && y < 3.5) || (x > 22.5 && x < 39.6 && y < 9.6) || (x > 27.6 && x < 39.6 && y > 10.6), // 개머리판 · 손잡이 · 하부/상부 덮개
+        test: (x, y) => x < -3.6 || (x < 3 && y < 3.5) || (x > 22.5 && x < 39.6 && y < 9.6) || (x > 27.6 && x < 39.6 && y > 9.6), // 개머리판 · 손잡이 · 하부/상부 덮개 + 중앙 가로 띠(y 9.6~10.6)
         part: { role: 'base', color: 0x87492a, metalness: 0.05, roughness: 0.68, grain: true },
       },
     },
