@@ -83,6 +83,12 @@ const GUN_SHAPES: Record<string, GunShape> = {
   marshal: { len: 0.6, h: 0.065, barrel: 0.4, mag: 0.08, stock: 0.3, scope: true },
 };
 const UNIT_BOX = new THREE.BoxGeometry(1, 1, 1);
+// 투척물 폴백 몸체 — 호출마다 생성하지 않고 공유
+const NADE_GEO = { flash: new THREE.CylinderGeometry(0.035, 0.035, 0.13, 10), grenade: new THREE.SphereGeometry(0.06, 12, 10) };
+const NADE_MAT = {
+  flash: new THREE.MeshStandardMaterial({ color: 0xdfe7ef, roughness: 0.5, metalness: 0.4, emissive: 0x88ccff, emissiveIntensity: 0.4 }),
+  grenade: new THREE.MeshStandardMaterial({ color: 0x3f5a3a, roughness: 0.5, metalness: 0.4 }),
+};
 const part = (mat: THREE.Material, w: number, h: number, d: number, x: number, y: number, z: number): THREE.Mesh => {
   const m = new THREE.Mesh(UNIT_BOX, mat); m.scale.set(w, h, d); m.position.set(x, y, z); return m;
 };
@@ -117,8 +123,7 @@ export function createWeaponMesh(weaponId: WeaponId, skinId?: string | null, vie
     muzzle.position.set(0, 0, -0.12);
   } else {
     const flash = weaponId === 'flash';
-    const body = new THREE.Mesh(flash ? new THREE.CylinderGeometry(0.035, 0.035, 0.13, 10) : new THREE.SphereGeometry(0.06, 12, 10),
-      new THREE.MeshStandardMaterial({ color: flash ? 0xdfe7ef : 0x3f5a3a, roughness: 0.5, metalness: 0.4, emissive: flash ? 0x88ccff : 0x000000, emissiveIntensity: flash ? 0.4 : 0 }));
+    const body = new THREE.Mesh(flash ? NADE_GEO.flash : NADE_GEO.grenade, flash ? NADE_MAT.flash : NADE_MAT.grenade);
     g.add(body, part(accent, 0.03, 0.03, 0.03, 0, flash ? 0.08 : 0.065, 0));
   }
   g.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = true; });
@@ -142,6 +147,10 @@ function thrownNadeMesh(type: ThrowableId): THREE.Group {
 // ───────────────────────────── 원격 캐릭터 ─────────────────────────────
 const COLOR_ALLY = 0x3b9cff, COLOR_ENEMY = 0xff4655, COLOR_DUMMY = 0xffa23a;
 const HEAD_GEO = new THREE.SphereGeometry(0.23, 16, 12);
+// 투사체(억제 나이프)·오브: 공유 지오메트리/재질 (스폰마다 생성·dispose 하지 않는다)
+const ZERO_GEO = new THREE.ConeGeometry(0.07, 0.3, 6), ZERO_MAT = new THREE.MeshStandardMaterial({ color: 0x2a1a4a, emissive: 0xb06bff, emissiveIntensity: 0.8 });
+const ORB_GEO = new THREE.SphereGeometry(0.22, 14, 10);
+const ORB_MAT_MINE = new THREE.MeshBasicMaterial({ color: 0x5ef0ff, transparent: true, opacity: 0.95 }), ORB_MAT_FOE = new THREE.MeshBasicMaterial({ color: 0x9aa7b4, transparent: true, opacity: 0.45 });
 const FX_GEO = new THREE.SphereGeometry(1, 16, 12);
 // ── 이펙트 풀: 지오메트리 공용 + 머티리얼 재사용 (매 사격/폭발마다 생성·dispose 하던 GC/GPU 업로드 스파이크 제거) ──
 const FX_SPHERE_WIRE = new THREE.SphereGeometry(1, 20, 14);
@@ -487,10 +496,9 @@ export class GameClient {
     s.on('proj:spawn', (m: { id: number; type: 'grenade' | 'flash' | 'zero'; p: [number, number, number] }) => {
       // 섬광탄/수류탄 = 실제 FBX 모델(안전핀·링이 뽑힌 상태), 억제 나이프(zero) = 발광 원뿔
       const mesh: THREE.Object3D = m.type === 'zero'
-        ? new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.3, 6), new THREE.MeshStandardMaterial({ color: 0x2a1a4a, emissive: 0xb06bff, emissiveIntensity: 0.8 }))
+        ? new THREE.Mesh(ZERO_GEO, ZERO_MAT)
         : thrownNadeMesh(m.type);
-      mesh.userData.ownGeo = m.type === 'zero';
-      mesh.position.set(m.p[0], m.p[1], m.p[2]); this.scene.add(mesh);
+            mesh.position.set(m.p[0], m.p[1], m.p[2]); this.scene.add(mesh);
       this.projs.set(m.id, { mesh, target: mesh.position.clone() });
     });
     s.on('proj:explode', (m: { id: number; type: 'grenade' | 'flash' | 'zero'; p: [number, number, number] }) => {
@@ -642,12 +650,12 @@ export class GameClient {
     w.mesh.removeFromParent(); (w.mesh.material as THREE.Material).dispose(); this.walls.delete(id);
   }
   private addOrb(id: number, p: [number, number, number], mine: boolean): void {
-    const m = new THREE.Mesh(new THREE.SphereGeometry(0.22, 14, 10), new THREE.MeshBasicMaterial({ color: mine ? 0x5ef0ff : 0x9aa7b4, transparent: true, opacity: mine ? 0.95 : 0.45 }));
+    const m = new THREE.Mesh(ORB_GEO, mine ? ORB_MAT_MINE : ORB_MAT_FOE);
     m.position.set(p[0], p[1], p[2]); this.scene.add(m); this.orbs.set(id, { mesh: m, base: m.position.clone(), mine });
   }
   private removeOrb(id: number): void {
     const o = this.orbs.get(id); if (!o) return;
-    o.mesh.removeFromParent(); o.mesh.geometry.dispose(); (o.mesh.material as THREE.Material).dispose(); this.orbs.delete(id);
+    o.mesh.removeFromParent(); this.orbs.delete(id); // 공유 지오메트리/재질
   }
   /** 청부 계약: 전방 직선 파동 */
   private spawnWave(o: [number, number, number], d: [number, number, number]): void {
@@ -657,7 +665,7 @@ export class GameClient {
   }
   private removeProj(id: number): void {
     const p = this.projs.get(id); if (!p) return;
-    p.mesh.removeFromParent(); if (p.mesh.userData.ownGeo) { const me = p.mesh as THREE.Mesh; me.geometry.dispose(); (me.material as THREE.Material).dispose(); } this.projs.delete(id); // FBX 투척 모델은 공유 캐시 → dispose 안 함
+    p.mesh.removeFromParent(); this.projs.delete(id); // 투사체 지오메트리/재질은 모두 공유 → dispose 안 함
   }
   private clearEffects(): void {
     for (const id of [...this.projs.keys()]) this.removeProj(id);

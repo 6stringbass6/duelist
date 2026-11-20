@@ -73,7 +73,7 @@ function makeRenderer(): void {
   if (renderer) { renderer.dispose(); renderer.domElement.remove(); }
   rendererAA = g.antialias !== 'off';
   renderer = new THREE.WebGLRenderer({ antialias: rendererAA, powerPreference: 'high-performance' });
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false; renderer.outputColorSpace = THREE.SRGBColorSpace;
   stage.prepend(renderer.domElement);
   { const pm = new THREE.PMREMGenerator(renderer); scene.environment?.dispose(); scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture; scene.environmentIntensity = 0.35; pm.dispose(); } // 금속/클리어코트 반사용 약한 IBL
   applyGraphics();
@@ -1544,13 +1544,13 @@ addEventListener('wheel', captureBind, { capture: true, passive: false });
 
 // ───────────────────────────── 메인 루프 (프레임 제한: 30/60/90/120/사용자 지정) ─────────────────────────────
 const limiter = createFrameLimiter(() => effectiveFpsCap(getSettings().graphics));
-let last = performance.now();
+let last = performance.now(), shadowTick = 0;
 function frame(now: number): void {
   requestAnimationFrame(frame);
   if (!limiter(now)) return;
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (view === 'game' && net.room) { autoFireTick(); pc.update(dt); net.update(dt); updateHud(now); }
-  if (view === 'game') renderer.render(scene, camera);
+  if (view === 'game') { renderer.shadowMap.needsUpdate = (shadowTick++ & 1) === 0; renderer.render(scene, camera); } // 그림자 맵은 2프레임마다 1회만 재계산
 }
 requestAnimationFrame(frame);
 document.addEventListener('visibilitychange', () => { if (document.hidden) pc.releaseAll(); });
