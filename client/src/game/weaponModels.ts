@@ -184,7 +184,8 @@ function splitParts(root: THREE.Object3D, parts: Record<string, PartDef>): void 
   root.updateMatrixWorld(true);
   root.traverse((o) => {
     const me = o as THREE.Mesh, sp = parts[me.name]?.split;
-    if (me.isMesh && sp && !Array.isArray(me.material)) splitTris(me, (_t, x, y) => (sp.test(x, y) ? 1 : 0));
+    // sp.test 의 임계값은 모델 원본 cm 좌표 기준 — GLB 는 루트 스케일 0.01(m)로 구워져 있으므로 월드 좌표를 cm 로 환산해 넘긴다
+    if (me.isMesh && sp && !Array.isArray(me.material)) { const k = 1 / me.matrixWorld.getMaxScaleOnAxis(); splitTris(me, (_t, x, y) => (sp.test(x * k, y * k) ? 1 : 0)); }
   });
 }
 
