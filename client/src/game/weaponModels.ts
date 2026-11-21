@@ -13,8 +13,7 @@ import { getSkin } from '../config/skins';
  *  grip = 뒤쪽 끝에서 손잡이 위치(0~1, 모델 길이 비율) → 그 지점이 뷰모델 원점, roll = 길이축 회전(rad, 평평한 면을 카메라 쪽으로) */
 export const WEAPON_MODELS: Partial<Record<WeaponId, ModelDef>> = {
   // M9 Bayonet(GLB, knife.blend → Blender CLI 변환: 날끝 +X · 날 -Y · 두께 Z, 메시 = blade/garda/handle) — 31cm, 손잡이 중앙(t≈0.19) 파지
-  dagger: { file: 'm9_bayonet.glb', length: 0.31, grip: 0.19 },
-  // 카타나(FBX, 단위 ≈ cm, 날끝 -X · 칼날 평면 = XZ · 날(볼록면) +Z, 칼집 포함) → 칼집 제거, 날끝 +X · 날이 아래(-Y)로 향하도록 회전.
+  dagger: { file: 'm9_bayonet.glb', length: 0.31, grip: 0.19 },  // 카타나(FBX, 단위 ≈ cm, 날끝 -X · 칼날 평면 = XZ · 날(볼록면) +Z, 칼집 포함) → 칼집 제거, 날끝 +X · 날이 아래(-Y)로 향하도록 회전.
   // 파일 내 재질이 1개(Material.001, 외부 PNG 미포함)라 메시 이름으로 부위별 재질/스킨 역할을 지정한다.
   sword: {
     file: 'katana', length: 1.0, grip: 0.18, own: true, rot: [-Math.PI / 2, Math.PI, 0], hide: /^Plane00[37]$/,
@@ -78,16 +77,20 @@ const FILE_PARTS: Record<string, Record<string, PartDef>> = {
  *  blade/handle/metal/wrap = 기본(스킨 미적용) 재질 — 생략 시 모델 내장 재질 유지. 스킨 적용 시 칼날에만 스킨 재질, 금속 파츠·손잡이는 기본 유지.
  *  mats = 칼날 외 부위에서 원본 재질 이름별 기본 재질(handle/wrap 보다 우선) */
 interface BladeMask { from?: number; comps?: { blade: number[]; metal?: number[] }; handleOnly?: RegExp; blade?: PartDef; handle?: PartDef; metal?: PartDef; wrap?: PartDef; mats?: Record<string, PartDef> }
-/** CS2 표면 경화 #387 블루젬: 시트의 가장 큰 코발트 블루 덩어리를 칼날 측면 전체에 배치 (평면 UV: u = 길이축 0~1, v = 높이/길이) */
-const KARAMBIT_STEEL: PartDef = { role: 'base', color: 0xffffff, metalness: 0.88, roughness: 0.24, sheet: { url: 'textures/case_hardened.png', rotation: 0, repeat: [0.4, 1.1], offset: [-0.28, 0.58] } };
-const KARAMBIT_RING: PartDef = { role: 'base', color: 0x141619, metalness: 0.88, roughness: 0.24 };
+/** 카람빗 재질. 손잡이·핑거 링 = 모든 스킨 공통 매트 차콜 폴리머, 기본(바닐라) 칼날 = 건메탈 탄소강 */
+const KARAMBIT_POLYMER: PartDef = { role: 'dark', color: 0x181a1e, metalness: 0.15, roughness: 0.82 };
+const KARAMBIT_VANILLA_BLADE: PartDef = { role: 'base', color: 0x2d323a, metalness: 0.84, roughness: 0.34 };
+/** 스킨별 칼날 재질(GlbSpec.variant). 표면 경화 #387 블루젬: 시트의 큰 코발트 블루 덩어리를 칼날 측면 전체에 1:1 비율로 배치 (평면 UV: u = 길이축 0~1, v = 높이/길이) */
+const BLADE_VARIANTS: Record<string, PartDef> = {
+  case_hardened_387: { role: 'base', color: 0xa8bce6, metalness: 0.76, roughness: 0.26, envMapIntensity: 0.8, sheet: { url: 'textures/case_hardened.png', rotation: 0, repeat: [0.5, 0.5], offset: [-0.37, 0.41] } },
+};
+const DAMASCUS_FILE = 'damascus_karambit.glb';
 const BLADE_MASKS: Record<string, BladeMask> = {
-  // CS2 카람빗: 연결 컴포넌트 7개(측면 색상 진단 렌더로 확인) — #0 손잡이 몸체+볼스터, #1 핑거 링, #2 칼날, #3·4 그립 인서트, #5·6 볼스터 인서트
-  // → 칼날·핑거 링 = 스틸, 나머지 = 매트 차콜 폴리머. 칼날 경계 = 볼스터와 맞닿는 모델링 이음선 그대로
-  'karambit.fbx': {
+  // CS2 카람빗(damascus_karambit.glb): 단일 메시·연결 컴포넌트 3개(실측) — #0 손잡이 몸체(4730 tri), #1 핑거 링(948), #2 칼날(858)
+  // → 칼날 = 바닐라 건메탈(스킨 variant 가 덮어씀), 손잡이·핑거 링 = 매트 차콜 폴리머. 내장 다마스커스 PBR 텍스처는 원본 root 재질에 그대로 보존(embeddedMaterials)
+  [DAMASCUS_FILE]: {
     comps: { blade: [2], metal: [1] },
-    blade: KARAMBIT_STEEL, metal: KARAMBIT_RING,
-    handle: { role: 'dark', color: 0x15171a, metalness: 0.12, roughness: 0.82 },
+    blade: KARAMBIT_VANILLA_BLADE, metal: KARAMBIT_POLYMER, handle: KARAMBIT_POLYMER,
   },
   // CS2 바닐라 스켈레톤: 내장 Fade 텍스처를 덮어쓰는 무광 다크 스틸 날 + 차콜 그레이 프레임/링, 파라코드(Plane001)는 통째로 손잡이
   'skeleton_knife.glb': {
@@ -116,10 +119,10 @@ const BLADE_MASKS: Record<string, BladeMask> = {
 /** own = FBX 라도 내장 UV/텍스처를 유지(GLB 와 동일 취급). 스킨 적용 시에만 평면 UV 사용
  *  rot = 정규화 전에 모델에 굽는 회전(Euler XYZ) → 길이축을 +X 로 맞춤, hide = 제거할 메시 이름(예: 칼집),
  *  parts = 메시 이름별 기본 재질 + 스킨 역할(재질이 하나뿐인 모델용, 부모 메시 이름이 아닌 메시 자신의 이름 기준) */
-type ModelDef = { file: string; length: number; grip?: number; roll?: number; own?: boolean; rot?: [number, number, number]; hide?: RegExp; parts?: Record<string, PartDef> };
+type ModelDef = { file: string; length: number; grip?: number; roll?: number; own?: boolean; rot?: [number, number, number]; hide?: RegExp; parts?: Record<string, PartDef>; variant?: string };
 type Role = 'base' | 'accent' | 'dark' | 'glass';
 /** split = 단일 메시 안의 2차 영역(rot 적용 후 모델 좌표 x/y 로 판정) → 기본 외형에서만 part 재질, 스킨 장착 시엔 메시 전체가 기존처럼 role 스킨. grain = 나뭇결 텍스처 */
-interface PartDef { role: Role; color: number; metalness: number; roughness: number; grain?: boolean; sheet?: SheetMap; split?: { test: (x: number, y: number) => boolean; part: PartDef } }
+interface PartDef { role: Role; color: number; metalness: number; roughness: number; envMapIntensity?: number; grain?: boolean; sheet?: SheetMap; split?: { test: (x: number, y: number) => boolean; part: PartDef } }
 /** 원본 시트 이미지(public/textures)를 평면 UV 로 매핑하는 변환 — THREE.Texture 의 center/rotation/repeat/offset 그대로 */
 interface SheetMap { url: string; rotation: number; repeat: [number, number]; offset: [number, number] }
 interface Source { glb: boolean; root: THREE.Object3D; roles: Map<string, Role>; scale: number; offset: THREE.Vector3; muzzle: THREE.Vector3; parts?: Record<string, PartDef>; mask?: BladeMask; axis: { y: Float32Array; x0: number; len: number } }
@@ -252,6 +255,14 @@ function prepare(root: THREE.Object3D, length: number, glb: boolean, grip?: numb
 /** 스킨 전용 모델(GLB)이 있으면 그것, 없으면 무기 기본 모델 */
 const modelFor = (id: WeaponId, skinId?: string | null): ModelDef | undefined => getSkin(skinId)?.glb ?? WEAPON_MODELS[id];
 
+/** 칼날 재질: 스킨 variant 가 있으면 그것, 없으면 마스크 기본(바닐라) */
+const bladeOf = (def: ModelDef): PartDef | undefined => (def.variant ? BLADE_VARIANTS[def.variant] : undefined) ?? BLADE_MASKS[def.file]?.blade;
+/** 모델에 내장된 원본 재질(예: damascus_karambit.glb 의 다마스커스 PBR 텍스처) — 로드 후 향후 다마스커스 스틸 스킨이 그대로 재사용할 수 있게 보존 */
+export const embeddedMaterials = (file: string): THREE.Material[] => {
+  const out = new Set<THREE.Material>(); ready.get(file)?.root.traverse((o) => { if ((o as THREE.Mesh).isMesh) matsOf(o as THREE.Mesh).forEach((m) => out.add(m)); });
+  return [...out];
+};
+
 function load(def: ModelDef | undefined): Promise<Source | null> {
   if (!def) return Promise.resolve(null);
   let p = pending.get(def.file);
@@ -261,7 +272,7 @@ function load(def: ModelDef | undefined): Promise<Source | null> {
     // (glb 플래그 = 원본이 GLB 인가: 내장 PBR/UV 사용 여부 판단용이라 변환 여부와 무관하게 원래 의미를 유지)
     const url = glb ? def.file : def.file.replace(/\.fbx$/i, '') + '.glb';
     const raw: Promise<THREE.Object3D> = gltfLoader.loadAsync(BASE + url).then((g) => g.scene);
-    p = Promise.all([raw, preloadSheet(BLADE_MASKS[def.file]?.blade?.sheet)]).then(([loaded]) => {
+    p = Promise.all([raw, preloadSheet(bladeOf(def)?.sheet)]).then(([loaded]) => {
       let root = loaded;
       if (def.hide) { const drop: THREE.Object3D[] = []; loaded.traverse((o) => { if ((o as THREE.Mesh).isMesh && def.hide!.test(o.name)) drop.push(o); }); for (const o of drop) o.removeFromParent(); }
       if (def.rot) { root = new THREE.Group(); loaded.rotation.set(...def.rot); root.add(loaded); } // build() 가 inner.rotation.x(roll)을 덮어쓰므로 한 겹 감싸서 굽는다
@@ -301,7 +312,7 @@ function sheetTex(s: SheetMap): THREE.Texture {
 }
 const partMat = (p: PartDef): THREE.MeshStandardMaterial => {
   let r = partCache.get(p);
-  if (!r) { r = new THREE.MeshStandardMaterial({ color: p.color, metalness: p.metalness, roughness: p.roughness, envMapIntensity: p.metalness > 0.5 ? 1.6 : 1, map: p.sheet ? sheetTex(p.sheet) : p.grain ? woodGrain() : null }); partCache.set(p, r); }
+  if (!r) { r = new THREE.MeshStandardMaterial({ color: p.color, metalness: p.metalness, roughness: p.roughness, envMapIntensity: p.envMapIntensity ?? (p.metalness > 0.5 ? 1.6 : 1), map: p.sheet ? sheetTex(p.sheet) : p.grain ? woodGrain() : null }); partCache.set(p, r); }
   return r;
 };
 
@@ -322,7 +333,7 @@ function glbNative(mesh: THREE.Mesh, m: THREE.Material): THREE.Material {
   return c;
 }
 
-function build(src: Source, skin: SkinSet, roll = 0): THREE.Group {
+function build(src: Source, skin: SkinSet, roll = 0, blade?: PartDef): THREE.Group {
   const wrap = new THREE.Group(); wrap.rotation.y = Math.PI / 2; wrap.scale.setScalar(src.scale); // +X(총열) → -Z(전방)
   const inner = src.root.clone(true); inner.position.copy(src.offset); inner.rotation.x = roll; wrap.add(inner);
   let curMesh: THREE.Mesh | null = null;
@@ -338,13 +349,13 @@ function build(src: Source, skin: SkinSet, roll = 0): THREE.Group {
   const mask = src.mask;
   const own = (m: THREE.Material, def?: PartDef): THREE.Material => (def ? partMat(def) : src.glb && curMesh ? glbNative(curMesh, m) : native(m));
   const pickMasked = (m: THREE.Material, group: number): THREE.Material =>
-    group === 1 ? (skin.skinned ? skin.base : own(m, mask!.blade))
+    group === 1 ? (skin.skinned ? skin.base : own(m, blade ?? mask!.blade))
       : group === 2 ? own(m, mask!.mats?.[m.name] ?? mask!.metal ?? mask!.blade)
         : own(m, mask!.mats?.[m.name] ?? (curMesh && mask!.handleOnly?.test(curMesh.name) ? mask!.wrap ?? mask!.handle : mask!.handle));
   inner.traverse((o) => {
     const me = o as THREE.Mesh; if (!me.isMesh) return;
     curMesh = me;
-    const puv = src.glb && (skin.skinned || mask?.blade?.sheet) ? planarUvs.get(me.geometry) : undefined, flag = bladeVerts.get(me.geometry);
+    const puv = src.glb && (skin.skinned || (blade ?? mask?.blade)?.sheet) ? planarUvs.get(me.geometry) : undefined, flag = bladeVerts.get(me.geometry);
     if (puv && !(mask && !flag)) { // 마스크 모델의 손잡이 전용 메시는 원본 UV 유지
       let uv = puv;
       if (flag) { const orig = me.geometry.attributes.uv; uv = new Float32Array(puv); if (orig) for (let i = 0; i < flag.length; i++) if (flag[i] !== 1) { uv[i * 2] = orig.getX(i); uv[i * 2 + 1] = orig.getY(i); } }
@@ -360,7 +371,7 @@ function build(src: Source, skin: SkinSet, roll = 0): THREE.Group {
 export function attachFbxModel(g: THREE.Group, weaponId: WeaponId, skin: SkinSet, viewmodel: boolean, skinId?: string | null): void {
   const def = modelFor(weaponId, skinId); if (!def) return;
   const apply = (src: Source): void => {
-    const model = build(src, skin, def.roll ?? 0);
+    const model = build(src, skin, def.roll ?? 0, bladeOf(def));
     model.traverse((o) => { if ((o as THREE.Mesh).isMesh) { o.castShadow = !viewmodel; if (viewmodel) { o.frustumCulled = false; o.renderOrder = 10; } } });
     const mz = g.userData.muzzle as THREE.Object3D;
     for (const c of [...g.children]) if (c !== mz && !c.userData.keep) c.removeFromParent(); // 등급 파츠(userData.keep)는 유지
