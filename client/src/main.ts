@@ -385,7 +385,7 @@ function skinCards(w: string, pool: SkinDef[], withStd: boolean, active = true):
   const cards = sorted.filter(byRarity).map((s) => {
     const o = own.get(s.id), eq = !!o?.equipped;
     const act = !o ? '<span class="c-lock">미보유 · 컨테이너·상점에서 획득</span>' : eq && active ? `<span class="c-own">${eqLabel}</span>` : `<button type="button" class="c-btn" data-equip="${esc(o.raw)}" data-ew="${w}">장착</button>`;
-    return `<div class="c-card${eq && active ? ' c-eq' : ''}"><div class="c-vis">${skinVis(w, s)}</div>${tag(eq)}<div class="c-body">${tierBadge(s.tier)}<span class="c-cn2">${esc(s.name)}</span><span class="c-cw">${esc(wName(w))} · ${TIERS[s.tier].name}</span><div class="c-row">${act}</div></div></div>`;
+    return `<div class="c-card${eq && active ? ' c-eq' : ''}"><div class="c-vis">${skinVis(w, s)}</div>${tag(eq)}<div class="c-body">${tierBadge(s.tier)}<span class="c-cn2">${esc(s.name)}</span><span class="c-cw">${esc(wName(w))} · ${TIERS[s.tier].name}${s.patternSeed ? ` · 패턴 #${s.patternSeed}` : ''}</span><div class="c-row">${act}</div></div></div>`;
   });
   return { cards: (withStd && rarity === 'all' ? [std] : []).concat(cards), own };
 }
@@ -469,7 +469,7 @@ function untilReset(): string {
   return `${h}시간 ${String(m).padStart(2, '0')}분 후 갱신`;
 }
 function shopSkinCard(s: SkinDef, price: number, has: boolean, src: 'daily' | 'perm'): string {
-  return `<div class="c-card"><div class="c-vis">${skinVis(s.weaponId, s)}</div><div class="c-body">${tierBadge(s.tier)}<span class="c-cn2">${esc(s.name)}</span><span class="c-cw">${esc(wName(s.weaponId))} · ${TIERS[s.tier].name}</span><div class="c-row"><span class="c-price"><span class="c-gem"></span>${fmt(price)}</span>${has ? '<span class="c-own">보유 중</span>' : `<button type="button" class="c-btn" data-buy="${s.id}" data-src="${src}">구매</button>`}</div></div></div>`;
+  return `<div class="c-card"><div class="c-vis">${skinVis(s.weaponId, s)}</div><div class="c-body">${tierBadge(s.tier)}<span class="c-cn2">${esc(s.name)}</span><span class="c-cw">${esc(wName(s.weaponId))} · ${TIERS[s.tier].name}${s.patternSeed ? ` · 패턴 #${s.patternSeed}` : ''}</span><div class="c-row"><span class="c-price"><span class="c-gem"></span>${fmt(price)}</span>${has ? '<span class="c-own">보유 중</span>' : `<button type="button" class="c-btn" data-buy="${s.id}" data-src="${src}">구매</button>`}</div></div></div>`;
 }
 function htmlShop(): string {
   const p = getProfile()!, inv = inventoryOf(p);

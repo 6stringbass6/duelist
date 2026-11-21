@@ -78,13 +78,15 @@ const FILE_PARTS: Record<string, Record<string, PartDef>> = {
  *  blade/handle/metal/wrap = 기본(스킨 미적용) 재질 — 생략 시 모델 내장 재질 유지. 스킨 적용 시 칼날에만 스킨 재질, 금속 파츠·손잡이는 기본 유지.
  *  mats = 칼날 외 부위에서 원본 재질 이름별 기본 재질(handle/wrap 보다 우선) */
 interface BladeMask { from?: number; comps?: { blade: number[]; metal?: number[] }; handleOnly?: RegExp; blade?: PartDef; handle?: PartDef; metal?: PartDef; wrap?: PartDef; mats?: Record<string, PartDef> }
-const KARAMBIT_STEEL: PartDef = { role: 'base', color: 0x687382, metalness: 0.88, roughness: 0.24 };
+/** CS2 표면 경화 #387 블루젬: 시트의 가장 큰 코발트 블루 덩어리를 칼날 측면 전체에 배치 (평면 UV: u = 길이축 0~1, v = 높이/길이) */
+const KARAMBIT_STEEL: PartDef = { role: 'base', color: 0xffffff, metalness: 0.88, roughness: 0.24, sheet: { url: 'textures/case_hardened.png', rotation: 0, repeat: [0.4, 1.1], offset: [-0.28, 0.58] } };
+const KARAMBIT_RING: PartDef = { role: 'base', color: 0x141619, metalness: 0.88, roughness: 0.24 };
 const BLADE_MASKS: Record<string, BladeMask> = {
   // CS2 카람빗: 연결 컴포넌트 7개(측면 색상 진단 렌더로 확인) — #0 손잡이 몸체+볼스터, #1 핑거 링, #2 칼날, #3·4 그립 인서트, #5·6 볼스터 인서트
   // → 칼날·핑거 링 = 스틸, 나머지 = 매트 차콜 폴리머. 칼날 경계 = 볼스터와 맞닿는 모델링 이음선 그대로
   'karambit.fbx': {
     comps: { blade: [2], metal: [1] },
-    blade: KARAMBIT_STEEL, metal: KARAMBIT_STEEL,
+    blade: KARAMBIT_STEEL, metal: KARAMBIT_RING,
     handle: { role: 'dark', color: 0x15171a, metalness: 0.12, roughness: 0.82 },
   },
   // CS2 바닐라 스켈레톤: 내장 Fade 텍스처를 덮어쓰는 무광 다크 스틸 날 + 차콜 그레이 프레임/링, 파라코드(Plane001)는 통째로 손잡이
@@ -117,7 +119,9 @@ const BLADE_MASKS: Record<string, BladeMask> = {
 type ModelDef = { file: string; length: number; grip?: number; roll?: number; own?: boolean; rot?: [number, number, number]; hide?: RegExp; parts?: Record<string, PartDef> };
 type Role = 'base' | 'accent' | 'dark' | 'glass';
 /** split = 단일 메시 안의 2차 영역(rot 적용 후 모델 좌표 x/y 로 판정) → 기본 외형에서만 part 재질, 스킨 장착 시엔 메시 전체가 기존처럼 role 스킨. grain = 나뭇결 텍스처 */
-interface PartDef { role: Role; color: number; metalness: number; roughness: number; grain?: boolean; split?: { test: (x: number, y: number) => boolean; part: PartDef } }
+interface PartDef { role: Role; color: number; metalness: number; roughness: number; grain?: boolean; sheet?: SheetMap; split?: { test: (x: number, y: number) => boolean; part: PartDef } }
+/** 원본 시트 이미지(public/textures)를 평면 UV 로 매핑하는 변환 — THREE.Texture 의 center/rotation/repeat/offset 그대로 */
+interface SheetMap { url: string; rotation: number; repeat: [number, number]; offset: [number, number] }
 interface Source { glb: boolean; root: THREE.Object3D; roles: Map<string, Role>; scale: number; offset: THREE.Vector3; muzzle: THREE.Vector3; parts?: Record<string, PartDef>; mask?: BladeMask; axis: { y: Float32Array; x0: number; len: number } }
 export interface SkinSet { base: THREE.Material; accent: THREE.Material; skinned: boolean }
 
@@ -257,7 +261,7 @@ function load(def: ModelDef | undefined): Promise<Source | null> {
     // (glb 플래그 = 원본이 GLB 인가: 내장 PBR/UV 사용 여부 판단용이라 변환 여부와 무관하게 원래 의미를 유지)
     const url = glb ? def.file : def.file.replace(/\.fbx$/i, '') + '.glb';
     const raw: Promise<THREE.Object3D> = gltfLoader.loadAsync(BASE + url).then((g) => g.scene);
-    p = raw.then((loaded) => {
+    p = Promise.all([raw, preloadSheet(BLADE_MASKS[def.file]?.blade?.sheet)]).then(([loaded]) => {
       let root = loaded;
       if (def.hide) { const drop: THREE.Object3D[] = []; loaded.traverse((o) => { if ((o as THREE.Mesh).isMesh && def.hide!.test(o.name)) drop.push(o); }); for (const o of drop) o.removeFromParent(); }
       if (def.rot) { root = new THREE.Group(); loaded.rotation.set(...def.rot); root.add(loaded); } // build() 가 inner.rotation.x(roll)을 덮어쓰므로 한 겹 감싸서 굽는다
@@ -285,9 +289,19 @@ const native = (m: THREE.Material): THREE.MeshStandardMaterial => {
 
 /** parts 기본 재질(미장착 스킨) — 금속 부위는 장면 환경맵 반사를 받도록 envMapIntensity 를 높인다 */
 const partCache = new Map<PartDef, THREE.MeshStandardMaterial>();
+const texLoader = new THREE.TextureLoader();
+const sheetBase = new Map<string, THREE.Texture>();
+/** 모델 로드 전에 시트 이미지를 먼저 받아 둔다 → 썸네일/프리뷰가 텍스처 미로드(검은 칼날) 상태로 캡처되지 않게 */
+const preloadSheet = (s?: SheetMap): Promise<unknown> => (!s || sheetBase.has(s.url) ? Promise.resolve() : texLoader.loadAsync((import.meta.env?.BASE_URL ?? '/') + s.url).then((t) => sheetBase.set(s.url, t)));
+function sheetTex(s: SheetMap): THREE.Texture {
+  const t = sheetBase.get(s.url)!.clone(); t.needsUpdate = true;
+  t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8;
+  t.center.set(0.5, 0.5); t.rotation = s.rotation; t.repeat.set(...s.repeat); t.offset.set(...s.offset);
+  return t;
+}
 const partMat = (p: PartDef): THREE.MeshStandardMaterial => {
   let r = partCache.get(p);
-  if (!r) { r = new THREE.MeshStandardMaterial({ color: p.color, metalness: p.metalness, roughness: p.roughness, envMapIntensity: p.metalness > 0.5 ? 1.6 : 1, map: p.grain ? woodGrain() : null }); partCache.set(p, r); }
+  if (!r) { r = new THREE.MeshStandardMaterial({ color: p.color, metalness: p.metalness, roughness: p.roughness, envMapIntensity: p.metalness > 0.5 ? 1.6 : 1, map: p.sheet ? sheetTex(p.sheet) : p.grain ? woodGrain() : null }); partCache.set(p, r); }
   return r;
 };
 
@@ -330,7 +344,7 @@ function build(src: Source, skin: SkinSet, roll = 0): THREE.Group {
   inner.traverse((o) => {
     const me = o as THREE.Mesh; if (!me.isMesh) return;
     curMesh = me;
-    const puv = src.glb && skin.skinned ? planarUvs.get(me.geometry) : undefined, flag = bladeVerts.get(me.geometry);
+    const puv = src.glb && (skin.skinned || mask?.blade?.sheet) ? planarUvs.get(me.geometry) : undefined, flag = bladeVerts.get(me.geometry);
     if (puv && !(mask && !flag)) { // 마스크 모델의 손잡이 전용 메시는 원본 UV 유지
       let uv = puv;
       if (flag) { const orig = me.geometry.attributes.uv; uv = new Float32Array(puv); if (orig) for (let i = 0; i < flag.length; i++) if (flag[i] !== 1) { uv[i * 2] = orig.getX(i); uv[i * 2 + 1] = orig.getY(i); } }

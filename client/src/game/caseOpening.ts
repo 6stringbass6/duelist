@@ -170,7 +170,7 @@ export function runCaseOpening(kind: CaseKind, results: CaseResult[], hooks: Cas
     stage.querySelectorAll('.co-cell')[WIN_AT]?.classList.add('co-hit');
     result.innerHTML = `<div class="co-banner" style="--tc:${t.color}"><span>${esc(t.name)}${(s?.tier ?? r.rarity) === 'exrare' ? ' ★' : ''}</span></div><div class="co-reveal" style="--tc:${t.color}"><div class="co-rvis co-r3d" id="co-rvis"></div><div class="co-rtxt">
       <span class="co-tier">${tierEmblemSvg(s?.tier ?? r.rarity, 16)}${esc(t.name)}${(s?.tier ?? r.rarity) === 'exrare' ? ' ★' : ''}</span>
-      <span class="co-name">${esc(s?.name ?? r.skin_id)}</span>
+      <span class="co-name">${esc(s?.name ?? r.skin_id)}${s?.patternSeed ? ` <small>패턴 #${s.patternSeed}</small>` : ''}</span>
       <span class="co-note">${r.duplicate ? `이미 보유한 스킨 · ◈ ${fmt(r.refund)} 환급` : '새 스킨 획득'}</span></div></div>`;
     const rv = $('co-rvis'); // 당첨 무기+스킨 3D 프리뷰 (드래그 회전) — WebGL 불가 시 썸네일
     if (s) { rv.appendChild(preview.el); preview.show(s.weaponId as WeaponId, s.id); }
