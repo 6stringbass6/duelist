@@ -4,6 +4,7 @@
 // 좌표계: y-up, yaw=0 → -Z 방향. forward = (-sin(yaw)cos(p), sin(p), -cos(yaw)cos(p))
 // =====================================================================
 import crypto from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -257,8 +258,6 @@ function findPath(nav, sx, sz, gx, gz) {
 
 // ───────────────────────────── 5. 맵 (서버가 지오메트리의 단일 원본 → 클라에 전송) ─────────────────────────────
 const B = (cx, cz, w, d, h, y = 0, kind = 'block') => [cx - w / 2, y, cz - d / 2, cx + w / 2, y + h, cz + d / 2, kind];
-const sym = (list) => list.flatMap((b) => [b, [-b[3], b[1], -b[5], -b[0], b[4], -b[2], b[6]]]); // 원점 대칭
-const overlaps = (a, b, m = 0) => a[0] < b[3] + m && a[3] > b[0] - m && a[2] < b[5] + m && a[5] > b[2] - m;
 function mkMap(id, name, bounds, wallH, boxes, spawns, extra = {}) {
   const { x0, x1, z0, z1 } = bounds, T = 2;
   const all = [...boxes,
@@ -276,41 +275,10 @@ function mkMap(id, name, bounds, wallH, boxes, spawns, extra = {}) {
   }
   return { id, name, bounds, wallH, boxes: all, spawns, nav, duel, ...extra };
 }
-const mkSpawns = (z, xs, yaw) => xs.map((x) => ({ x, y: 0, z, yaw }));
-function buildGrid() {
-  const boxes = [
-    B(0, 0, 14, 14, 1.0, 0, 'platform'), B(0, 0, 4, 4, 4, 1.0, 'pillar'),
-    ...sym([
-      B(0, -44, 24, 1.5, 3.5, 0, 'wall'),                                  // 스폰 차폐벽: 스폰열(x±10)보다 넓게 → 시작 시 상호 시야 차단, 좌우(|x|>12)로 우회
-      B(-9, -34, 10, 1.2, 1.4, 0, 'cover'), B(9, -34, 10, 1.2, 1.4, 0, 'cover'),
-      B(-16, -10, 3, 3, 3), B(-24, 4, 3, 3, 3), B(16, -18, 3, 3, 3),
-      B(-10, -22, 6, 2, 2.2, 0, 'wall'), B(-30, -14, 2, 8, 3.2, 0, 'wall'), B(28, -26, 8, 2, 3.2, 0, 'wall'),
-      B(-38, -30, 6, 6, 6, 0, 'tower'), B(-33.5, -30, 3, 3, 3, 0, 'step'), B(-31, -30, 2, 3, 1.5, 0, 'step'),
-      B(40, -8, 6, 6, 6, 0, 'tower'), B(40, -12.5, 3, 3, 3, 0, 'step'),
-      B(-48, 0, 4, 12, 2.5, 0, 'platform'),
-    ]),
-  ];
-  for (let gx = -45; gx <= 45; gx += 15) for (let gz = -45; gz <= 45; gz += 15) { // 그리드 기둥
-    if (Math.abs(gx) < 12 && Math.abs(gz) < 12) continue;
-    const p = B(gx, gz, 1.5, 1.5, 5, 0, 'pillar');
-    if (!boxes.some((b) => overlaps(p, b, 1.5))) boxes.push(p);
-  }
-  const xs = [-10, -6, -2, 2, 6, 10];
-  return mkMap('grid', 'GRID', { x0: -60, x1: 60, z0: -60, z1: 60 }, 12, boxes, [mkSpawns(-52, xs, Math.PI), mkSpawns(52, xs, 0)]);
-}
-function buildArena() {
-  const boxes = [
-    B(0, 0, 4, 4, 3.2, 0, 'block'),
-    ...sym([
-      B(0, -15.5, 21, 1.2, 3.2, 0, 'wall'),                                // 스폰 차폐벽: 스폰열(x±9) 전체를 가림 → 시작 시 상호 시야 차단, 좌우(|x|>10.5)로 우회
-      B(-8, -4, 1.2, 8, 3.2, 0, 'wall'), B(-13, 5, 5, 1.2, 3.2, 0, 'wall'),
-      B(-6, -10.5, 4, 1.2, 1.3, 0, 'cover'), B(6, -10.5, 4, 1.2, 1.3, 0, 'cover'),
-      B(-17, -9, 4, 4, 1.6, 0, 'crate'), B(-17.5, -13.5, 3, 3, 3.2, 0, 'crate'), B(13, -6, 2.5, 2.5, 2.5, 0, 'crate'),
-      B(-19.5, 0, 5, 10, 2.0, 0, 'ledge'), B(-19.5, -6.5, 5, 3, 1.0, 0, 'step'),
-    ]),
-  ];
-  const xs = [-9, -6, -3, 3, 6, 9];
-  return mkMap('arena', 'ARENA', { x0: -22, x1: 22, z0: -22, z1: 22 }, 8, boxes, [mkSpawns(-19.5, xs, Math.PI), mkSpawns(19.5, xs, 0)]);
+// 메시 맵: client/scripts/gen-map-colliders.mjs 가 모델(FBX/GLB)을 복셀화해 만든 충돌 박스·스폰·모델 변환값
+function loadMeshMap(id) {
+  const m = JSON.parse(readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'maps', `${id}.json`), 'utf8'));
+  return mkMap(m.id, m.name, m.bounds, m.wallH, m.boxes, m.spawns, { model: m.model, fallY: m.fallY });
 }
 function buildRange() {
   const marks = [5, 10, 20, 30, 50, 70, 100, 150], xs = [-3, 3, -5, 5, 0, -4, 4, 0];
@@ -318,8 +286,10 @@ function buildRange() {
   return mkMap('range', 'THE RANGE', { x0: -15, x1: 15, z0: -160, z1: 8 }, 8, boxes, [[{ x: 0, y: 0, z: 3, yaw: 0 }], []],
     { marks: marks.map((m) => ({ z: -m + 3, label: `${m}m` })), dummies: marks.map((m, i) => ({ x: xs[i], y: 0, z: -m + 3, yaw: Math.PI })) });
 }
-export const MAPS = { grid: buildGrid(), arena: buildArena(), range: buildRange() };
-const mapPublic = (m) => ({ id: m.id, name: m.name, bounds: m.bounds, wallH: m.wallH, boxes: m.boxes, spawns: m.spawns, marks: m.marks || [], duel: m.duel || null });
+export const MAPS = { killhouse: loadMeshMap('killhouse'), warehouse: loadMeshMap('warehouse'), range: buildRange() };
+const BATTLE_MAPS = ['killhouse', 'warehouse'];
+const battleMap = (id) => (BATTLE_MAPS.includes(id) ? id : null);
+const mapPublic = (m) => ({ id: m.id, name: m.name, bounds: m.bounds, wallH: m.wallH, boxes: m.boxes, spawns: m.spawns, marks: m.marks || [], duel: m.duel || null, model: m.model || null });
 
 // ───────────────────────────── 6. 방 / 엔티티 ─────────────────────────────
 let io = null, roomSeq = 0;
@@ -1229,17 +1199,17 @@ export function attach(ioInstance) {
 
     on('profile:refresh', 1, () => { if (sess.userId && supabase) loadProfile(sess).then(() => socket.emit('hello', { serverTime: clock.now(), guest: false, name: sess.name, rp: sess.rp, tier: tierLevel(sess.rp, sess.rankPos), tierLabel: tierLabel(tierLevel(sess.rp, sess.rankPos)), loadout: sess.loadout })).catch(() => {}); });
 
-    // 빠른 매칭: {mode:'classic'|'ranked'|'tdm'|'range', teamSize:1..6, map?:'grid'|'arena'}
+    // 빠른 매칭: {mode:'classic'|'ranked'|'tdm'|'range', teamSize:1..6, map?:'killhouse'|'warehouse'}
     on('queue:join', 3, (m, now) => {
       if (sess.room) removeHuman(sess, now);
       const mode = ['classic', 'ranked', 'tdm', 'range'].includes(m.mode) ? m.mode : 'classic';
       if (mode === 'range') { addHuman(createRange(sess, now), sess, now); return { ok: true }; }
       if (mode === 'ranked' && sess.guest) return { ok: false, error: 'LOGIN_REQUIRED' };
       const teamSize = clamp(Math.floor(fin(m.teamSize, 1)), 1, mode === 'ranked' ? 3 : 6);
-      const mapReq = m.map === 'grid' || m.map === 'arena' ? m.map : null;
+      const mapReq = battleMap(m.map);
       let room = findRoom(mode, teamSize, mapReq, sess);
       if (!room) {
-        const mapId = mapReq || (teamSize <= 2 ? 'arena' : teamSize >= 4 ? 'grid' : pick(['grid', 'arena']));
+        const mapId = mapReq || pick(BATTLE_MAPS);
         room = createRoom({ mode, teamSize, mapId, botLevel: clamp(tierLevel(sess.rp, sess.rankPos), 0, 19) });
         addHuman(room, sess, now); startMatch(room, now);
         return { ok: true };
@@ -1249,7 +1219,7 @@ export function attach(ioInstance) {
     // 사설 내전: 4자리 코드
     on('room:create', 2, (m, now) => {
       if (sess.room) removeHuman(sess, now);
-      const room = createRoom({ mode: m.mode === 'tdm' ? 'tdm' : 'classic', teamSize: clamp(Math.floor(fin(m.teamSize, 1)), 1, 6), mapId: m.map === 'grid' ? 'grid' : 'arena',
+      const room = createRoom({ mode: m.mode === 'tdm' ? 'tdm' : 'classic', teamSize: clamp(Math.floor(fin(m.teamSize, 1)), 1, 6), mapId: battleMap(m.map) || BATTLE_MAPS[0],
         isPrivate: true, fillBots: m.fillBots !== false, botLevel: clamp(Math.floor(fin(m.botLevel, 6)), 0, 19) });
       addHuman(room, sess, now);
       return { ok: true, code: room.code };
@@ -1271,7 +1241,7 @@ export function attach(ioInstance) {
 on('room:config', 4, inGame((room, e, m) => {
       if (room.phase !== 'lobby') return { ok: false, error: 'NOT_ALLOWED' };
       if (m.mode === 'classic' || m.mode === 'tdm') room.mode = m.mode;
-      if (m.map === 'grid' || m.map === 'arena') { room.mapId = m.map; room.map = roomMap(MAPS[m.map]); }
+      if (battleMap(m.map)) { room.mapId = m.map; room.map = roomMap(MAPS[m.map]); }
       if (Number.isFinite(m.teamSize)) { const ts = clamp(Math.floor(m.teamSize), 1, 6); if ([0, 1].every((t) => teamEnts(room, t).length <= ts)) room.teamSize = ts; }
       if (typeof m.fillBots === 'boolean') room.fillBots = m.fillBots;
       if (Number.isFinite(m.botLevel)) room.botLevel = clamp(Math.floor(m.botLevel), 0, 19);
@@ -1305,7 +1275,7 @@ on('room:config', 4, inGame((room, e, m) => {
       const w = WEAPONS[e.loadout[SLOT_KEYS[e.slot]]];
       const maxSp = Math.max(MOVE.run * (w?.move || 1), MOVE.slideV) * (now < e.dashUntil + 300 || now < e.driftUntil + 300 ? MOVE.dashMult : 1);
       const dr = e.duel ? room.map.duel.rect : null, oob = dr ? p[0] < dr.x0 || p[0] > dr.x1 || p[2] < dr.z0 || p[2] > dr.z1 : p[0] < bd.x0 || p[0] > bd.x1 || p[2] < bd.z0 || p[2] > bd.z1;
-      const bad = d > maxSp * dt * 1.4 + 0.5 || oob || p[1] < -0.5 || p[1] > 40 || insideSolid(room.map, p[0], p[1] + 0.9, p[2]);
+      const bad = d > maxSp * dt * 1.4 + 0.5 || oob || p[1] < (room.map.fallY ?? -0.5) || p[1] > 40 || insideSolid(room.map, p[0], p[1] + 0.9, p[2]);
       if (bad) { if (++e.violations > 4) { e.violations = 0; e.lastMoveAt = now; socket.emit('pos:correct', { p: [e.pos.x, e.pos.y, e.pos.z], s: e.spawnSeq }); } return; }
       e.violations = Math.max(0, e.violations - 0.05); e.lastMoveAt = now;
       e.vel.x = (p[0] - e.pos.x) / dt; e.vel.z = (p[2] - e.pos.z) / dt;

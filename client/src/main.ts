@@ -10,8 +10,8 @@ import {
   type Action, type CrosshairLines, type CrosshairPresetId, type FpsCap, type Settings,
 } from './config/settings';
 import {
-  MODES, RULES, SLOT, SLOT_KEYS, WEAPONS, WEAPONS_BY_SLOT, damageTable, isGun, tdmTargetKills, tierEmblemUrl, tierInfo, tierLevel, tierProgress,
-  type GameMode, type Loadout, type SlotKey, type WeaponId,
+  BATTLE_MAPS, MAP_NAMES, MODES, RULES, SLOT, SLOT_KEYS, WEAPONS, WEAPONS_BY_SLOT, damageTable, isGun, tdmTargetKills, tierEmblemUrl, tierInfo, tierLevel, tierProgress,
+  mapName, type BattleMapId, type GameMode, type Loadout, type SlotKey, type WeaponId,
 } from './config/weapons';
 import { preloadWeaponModels, WEAPON_MODELS } from './game/weaponModels';
 import { CharacterRig, loadCharacterAssets } from './game/character';
@@ -298,7 +298,7 @@ function htmlPlay(): string {
   if (!m.teamSizes.includes(play.size)) play.size = m.teamSizes[0];
   const modes = (Object.keys(MODES) as GameMode[]).map((k, i) => `<button type="button" class="c-mode${k === play.mode ? ' c-on' : ''}" data-mode="${k}"><span class="c-idx">0${i + 1}</span><span><span class="c-mt">${MODE_EN[k]}<span class="c-mk">${MODES[k].name}</span></span><span class="c-md">${esc(MODES[k].desc)}</span></span>${k === 'ranked' ? tierImg(tierInfo(tierLevel(p.rank_points)), 30) : ''}<span class="c-ar"></span></button>`).join('');
   const opts = play.mode === 'range' ? '' : `<div class="c-opts"><div class="c-srow"><span>인원</span><div class="c-pills">${m.teamSizes.map((n) => `<button type="button" class="c-pill${n === play.size ? ' c-on' : ''}" data-size="${n}">${n}v${n}</button>`).join('')}</div></div>
-    <div class="c-srow"><span>맵</span><div class="c-pills">${([['', '자동'], ['grid', 'GRID'], ['arena', 'ARENA']] as const).map(([k, n]) => `<button type="button" class="c-pill${k === play.map ? ' c-on' : ''}" data-map="${k}">${n}</button>`).join('')}</div></div></div>`;
+    <div class="c-srow"><span>맵</span><div class="c-pills">${MAP_OPTS.map(([k, n]) => `<button type="button" class="c-pill${k === play.map ? ' c-on' : ''}" data-map="${k}">${n}</button>`).join('')}</div></div></div>`;
   const plus = `<button type="button" class="c-pslot" data-friends aria-label="파티원 초대"><span class="c-plus">+</span><span>초대</span></button>`;
   const sk = (k: 'q' | 'e' | 'x'): string => {
     const d = k === 'x' ? ULTS[l.x] : SKILLS[l[k]];
@@ -539,7 +539,7 @@ function htmlCareer(): string {
   let body = '';
   if (careerSub === 'matches') {
     const RES = { win: ['승리', 'c-win'], loss: ['패배', 'c-loss'], draw: ['무승부', 'c-loss'], left: ['이탈', 'c-loss'] } as const;
-    const rows = history.map((m) => `<tr><td>${esc(MODES[m.mode as GameMode]?.name ?? m.mode)} ${m.team_size}v${m.team_size}</td><td class="c-n">${esc(m.map.toUpperCase())}</td><td><span class="${RES[m.result][1]}">${RES[m.result][0]}</span></td><td class="c-n">${m.kills} / ${m.deaths} / ${m.assists}</td><td class="c-n">${m.rp_delta ? (m.rp_delta > 0 ? '+' : '') + m.rp_delta : '—'}</td><td class="c-n">${fmt(m.credits_earned)}</td></tr>`).join('');
+    const rows = history.map((m) => `<tr><td>${esc(MODES[m.mode as GameMode]?.name ?? m.mode)} ${m.team_size}v${m.team_size}</td><td class="c-n">${esc(mapName(m.map))}</td><td><span class="${RES[m.result][1]}">${RES[m.result][0]}</span></td><td class="c-n">${m.kills} / ${m.deaths} / ${m.assists}</td><td class="c-n">${m.rp_delta ? (m.rp_delta > 0 ? '+' : '') + m.rp_delta : '—'}</td><td class="c-n">${fmt(m.credits_earned)}</td></tr>`).join('');
     body = `<div class="c-tblw"><table class="c-tbl"><thead><tr><th>Mode</th><th>Map</th><th>Result</th><th>K / D / A</th><th>RP</th><th>Credits</th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="c-loss">기록이 없습니다.</td></tr>'}</tbody></table></div>`;
   } else if (careerSub === 'missions') {
     const p = getProfile()!, today = ((Math.max(1, p.login_streak) - 1) % 7) + 1;
@@ -684,7 +684,7 @@ async function inviteFriend(f: FriendRow): Promise<void> {
   if (!(await ensureConnected())) return;
   if (!net.room) {
     const mode = play.mode === 'tdm' ? 'tdm' : 'classic';
-    const r = await net.createRoom({ mode, teamSize: Math.max(2, play.size), map: play.map || 'arena', fillBots: play.fillBots, botLevel: tierLevel(getProfile()?.rank_points ?? 0) });
+    const r = await net.createRoom({ mode, teamSize: Math.max(2, play.size), map: play.map || BATTLE_MAPS[0], fillBots: play.fillBots, botLevel: tierLevel(getProfile()?.rank_points ?? 0) });
     if (!r.ok) { toast(ackMsg(r.error), 'bad'); return; }
     for (let i = 0; i < 20 && !net.room; i++) await new Promise((res) => setTimeout(res, 100));
   }
@@ -783,12 +783,14 @@ $('nick-ok').onclick = async () => {
 };
 
 // ───────────────────────────── 플레이 모달 / 매칭 / 사설 방 ─────────────────────────────
-const play = { mode: 'classic' as GameMode, size: 1, map: '' as '' | 'grid' | 'arena', fillBots: true, botLevel: 6 };
+const play = { mode: 'classic' as GameMode, size: 1, map: '' as '' | BattleMapId, fillBots: true, botLevel: 6 };
+/** 맵 선택지: 자동(서버 랜덤) + 대전 맵 */
+const MAP_OPTS: ['' | BattleMapId, string][] = [['', '자동'], ...BATTLE_MAPS.map((k): [BattleMapId, string] => [k, MAP_NAMES[k]])];
 function renderPlay(): void {
   const m = MODES[play.mode]; if (!m.teamSizes.includes(play.size)) play.size = m.teamSizes[0];
   const modes = (Object.keys(MODES) as GameMode[]).map((k) => `<div class="mode ${k === play.mode ? 'on' : ''}" data-mode="${k}"><b>${MODES[k].name}</b>${MODES[k].badge ? `<span class="badge">${MODES[k].badge}</span>` : ''}${k === 'ranked' ? tierImg(tierInfo(tierLevel(getProfile()?.rank_points ?? 0)), 22) : ''}<small>${MODES[k].desc}</small></div>`).join('');
   const sizes = m.teamSizes.map((n) => `<button class="sm ${n === play.size ? 'on' : ''}" data-size="${n}">${n}v${n}${play.mode === 'tdm' ? ` · ${tdmTargetKills(n)}킬` : ''}</button>`).join('');
-  const maps = ([['', '자동'], ['grid', 'GRID'], ['arena', 'ARENA']] as const).map(([k, n]) => `<button class="sm ${k === play.map ? 'on' : ''}" data-map="${k}">${n}</button>`).join('');
+  const maps = MAP_OPTS.map(([k, n]) => `<button class="sm ${k === play.map ? 'on' : ''}" data-map="${k}">${n}</button>`).join('');
   const priv = play.mode === 'classic' || play.mode === 'tdm';
   $('play-body').innerHTML = `<div class="modes">${modes}</div>
   ${play.mode === 'range' ? '' : `<div class="col" style="margin-top:14px"><div class="row" style="flex-wrap:wrap"><span class="mut" style="width:60px">인원</span>${sizes}</div><div class="row"><span class="mut" style="width:60px">맵</span>${maps}</div></div>`}
@@ -803,7 +805,7 @@ function renderPlay(): void {
     $<HTMLInputElement>('play-fill').onchange = (e) => { play.fillBots = (e.target as HTMLInputElement).checked; };
     $('play-create').onclick = async () => {
       if (!(await ensureConnected())) return;
-      const r = await net.createRoom({ mode: play.mode as 'classic' | 'tdm', teamSize: play.size, map: play.map || 'arena', fillBots: play.fillBots, botLevel: tierLevel(getProfile()?.rank_points ?? 0) });
+      const r = await net.createRoom({ mode: play.mode as 'classic' | 'tdm', teamSize: play.size, map: play.map || BATTLE_MAPS[0], fillBots: play.fillBots, botLevel: tierLevel(getProfile()?.rank_points ?? 0) });
       if (!r.ok) toast(ackMsg(r.error), 'bad'); else show('m-play', false);
     };
     $('play-join').onclick = async () => {
@@ -824,7 +826,7 @@ async function ensureConnected(): Promise<boolean> {
   if (net.connected) return true;
   try { net.disconnect(); await net.connect(); return true; } catch (e) { toast('서버 연결 실패: ' + errMsg(e), 'bad'); return false; }
 }
-async function startQueue(mode: GameMode, size: number, map?: 'grid' | 'arena', cancelled: () => boolean = () => false): Promise<void> {
+async function startQueue(mode: GameMode, size: number, map?: BattleMapId, cancelled: () => boolean = () => false): Promise<void> {
   if (!(await ensureConnected()) || cancelled()) return;
   const r = await net.queueJoin(mode, size, map);
   if (cancelled()) { if (r.ok && net.room) await net.leaveRoom(); return; }
@@ -837,8 +839,8 @@ function renderRoom(): void {
   const host = room.hostId === net.you, me = net.me;
   const col = (t: number): string => { const list = room.players.filter((p) => p.team === t); return `<div class="card grow"><h3 style="color:${t === 0 ? 'var(--ally)' : 'var(--enemy)'}">${t === 0 ? 'A 팀' : 'B 팀'} (${list.length}/${room.teamSize})</h3>${list.map((p) => `<div class="row" style="padding:4px 0">${p.id === room.hostId ? '👑' : ''}<b>${esc(p.name)}</b><span class="right">${tierTag(tierInfo(p.tier), 18)}</span></div>`).join('') || '<div class="mut">비어 있음</div>'}${me && me.team !== t ? `<button class="sm" style="margin-top:8px" data-team="${t}">이 팀으로</button>` : ''}</div>`; };
   $('room-body').innerHTML = `<div class="card col"><div class="row"><h3 style="font-size:20px">사설 방</h3><span class="chip" style="font-size:18px;letter-spacing:4px">코드 ${esc(room.code)}</span><button class="right" id="room-invite">친구 초대</button><button class="ghost" id="room-leave">나가기</button></div>
-    <div class="row" style="flex-wrap:wrap"><span class="chip">${MODES[room.mode].name}</span><span class="chip">${room.teamSize}v${room.teamSize}</span><span class="chip">${room.mapId.toUpperCase()}</span><span class="chip">봇 채우기 ${room.fillBots ? 'ON' : 'OFF'}</span><span class="chip">봇 난이도 ${tierTxt(tierInfo(room.botLevel))}</span></div>
-    ${host ? `<div class="row" style="flex-wrap:wrap"><select id="rc-mode"><option value="classic">클래식</option><option value="tdm">팀 데스매치</option></select><select id="rc-map"><option value="arena">ARENA</option><option value="grid">GRID</option></select><select id="rc-size">${[1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}">${n}v${n}</option>`).join('')}</select><select id="rc-bot">${Array.from({ length: 20 }, (_, i) => `<option value="${i}">${tierInfo(i).labelKo}</option>`).join('')}</select><label class="row"><input type="checkbox" id="rc-fill" ${room.fillBots ? 'checked' : ''}/> 봇 채우기</label></div>` : '<div class="mut">방장이 게임을 시작하기를 기다리는 중…</div>'}
+    <div class="row" style="flex-wrap:wrap"><span class="chip">${MODES[room.mode].name}</span><span class="chip">${room.teamSize}v${room.teamSize}</span><span class="chip">${mapName(room.mapId)}</span><span class="chip">봇 채우기 ${room.fillBots ? 'ON' : 'OFF'}</span><span class="chip">봇 난이도 ${tierTxt(tierInfo(room.botLevel))}</span></div>
+    ${host ? `<div class="row" style="flex-wrap:wrap"><select id="rc-mode"><option value="classic">클래식</option><option value="tdm">팀 데스매치</option></select><select id="rc-map">${BATTLE_MAPS.map((k) => `<option value="${k}">${MAP_NAMES[k]}</option>`).join('')}</select><select id="rc-size">${[1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}">${n}v${n}</option>`).join('')}</select><select id="rc-bot">${Array.from({ length: 20 }, (_, i) => `<option value="${i}">${tierInfo(i).labelKo}</option>`).join('')}</select><label class="row"><input type="checkbox" id="rc-fill" ${room.fillBots ? 'checked' : ''}/> 봇 채우기</label></div>` : '<div class="mut">방장이 게임을 시작하기를 기다리는 중…</div>'}
     <div class="row" style="align-items:stretch">${col(0)}${col(1)}</div>${host ? '<button class="pri" id="room-start">게임 시작</button>' : ''}</div>`;
   $('room-leave').onclick = () => { void net.leaveRoom(); void enterLobby(); };
   $('room-invite').onclick = () => void openFriends();
@@ -846,7 +848,7 @@ function renderRoom(): void {
   if (host) {
     const sel = (id: string, v: string | number): HTMLSelectElement => { const e = $<HTMLSelectElement>(id); e.value = String(v); return e; };
     sel('rc-mode', room.mode).onchange = (e) => void net.configRoom({ mode: (e.target as HTMLSelectElement).value as 'classic' | 'tdm' });
-    sel('rc-map', room.mapId).onchange = (e) => void net.configRoom({ map: (e.target as HTMLSelectElement).value as 'grid' | 'arena' });
+    sel('rc-map', room.mapId).onchange = (e) => void net.configRoom({ map: (e.target as HTMLSelectElement).value as BattleMapId });
     sel('rc-size', room.teamSize).onchange = (e) => void net.configRoom({ teamSize: +(e.target as HTMLSelectElement).value });
     sel('rc-bot', room.botLevel).onchange = (e) => void net.configRoom({ botLevel: +(e.target as HTMLSelectElement).value });
     $<HTMLInputElement>('rc-fill').onchange = (e) => void net.configRoom({ fillBots: (e.target as HTMLInputElement).checked });
@@ -969,7 +971,7 @@ function showResult(): void {
   const stat = (v: string | number, label: string): string => `<div><b>${v}</b><small>${label}</small></div>`;
   $('res-body').innerHTML = `
     <div class="res-top">
-      <div class="res-verdict ${kind}"><b>${kind === 'win' ? 'VICTORY' : kind === 'lose' ? 'DEFEAT' : 'DRAW'}</b><small>${net.room ? `${MODES[net.room.mode].name} · ${net.room.mapId.toUpperCase()}` : '매치 종료'}</small></div>
+      <div class="res-verdict ${kind}"><b>${kind === 'win' ? 'VICTORY' : kind === 'lose' ? 'DEFEAT' : 'DRAW'}</b><small>${net.room ? `${MODES[net.room.mode].name} · ${mapName(net.room.mapId)}` : '매치 종료'}</small></div>
       <div class="res-score">${scoreCell(myTeam)}<i>:</i>${scoreCell(1 - myTeam)}</div>
       <div class="res-credit"><small>획득 크레딧</small><b id="res-credits">◈ +0</b><div id="res-reward" class="mut">보상 정산 중…</div></div>
     </div>
@@ -1068,7 +1070,7 @@ function renderScoreboard(): void {
   const { allies, enemies } = net.scoreboard();
   const tbl = (list: PlayerInfo[]): string => `<table><tr><th>플레이어</th><th>티어</th><th>K</th><th>D</th><th>A</th><th>통산 K/D</th><th>HS%</th><th>승률</th></tr>${list.map((p) => { const t = tierInfo(p.tier); return `<tr class="${p.id === net.you ? 'me' : ''}"><td>${esc(p.name)}${p.bot ? ' <span class="mut">[BOT]</span>' : ''}${p.title ? ` <span class="mut">「${esc(p.title)}」</span>` : ''}</td><td>${tierTag(t, 18)}</td><td><b>${p.k}</b></td><td>${p.d}</td><td>${p.a}</td><td>${p.bot ? '-' : p.career.kd}</td><td>${p.bot ? '-' : p.career.hs + '%'}</td><td>${p.bot ? '-' : p.career.wr + '%'}</td></tr>`; }).join('')}</table>`;
   const me = net.me;
-  $('sb-body').innerHTML = `<div class="row"><h3 style="font-size:18px">${MODES[room.mode].name} · ${room.mapId.toUpperCase()} · ${room.teamSize}v${room.teamSize}</h3><span class="right" style="font-size:22px;font-weight:800"><span style="color:var(--ally)">${room.score[net.myTeam]}</span> : <span style="color:var(--enemy)">${room.score[1 - net.myTeam]}</span></span></div>
+  $('sb-body').innerHTML = `<div class="row"><h3 style="font-size:18px">${MODES[room.mode].name} · ${mapName(room.mapId)} · ${room.teamSize}v${room.teamSize}</h3><span class="right" style="font-size:22px;font-weight:800"><span style="color:var(--ally)">${room.score[net.myTeam]}</span> : <span style="color:var(--enemy)">${room.score[1 - net.myTeam]}</span></span></div>
   ${me ? `<div class="row mut" style="margin:6px 0 10px;font-size:13px">내 전적 — K/D <b style="color:#fff">${me.career.kd}</b> · HS% <b style="color:#fff">${me.career.hs}%</b> · 승률 <b style="color:#fff">${me.career.wr}%</b></div>` : ''}
   <h3 class="a">아군</h3>${tbl(allies)}<h3 class="e" style="margin-top:14px">적군</h3>${tbl(enemies)}`;
 }

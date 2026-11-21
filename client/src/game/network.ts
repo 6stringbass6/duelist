@@ -4,7 +4,7 @@
 // =====================================================================
 import * as THREE from 'three';
 import { io, type Socket } from 'socket.io-client';
-import { F, RULES, SLOT, SLOT_KEYS, WEAPONS, isGun, type GameMode, type HitZone, type Loadout, type MapId, type ThrowableId, type WeaponId } from '../config/weapons';
+import { F, RULES, SLOT, SLOT_KEYS, WEAPONS, isGun, type GameMode, type HitZone, type Loadout, type BattleMapId, type MapId, type ThrowableId, type WeaponId } from '../config/weapons';
 import { getSkin } from '../config/skins';
 import { attachSkinFx, fireWeaponFx, skinMaterials, tickSkinMaterials } from './skinFx';
 import { attachFbxModel } from './weaponModels';
@@ -401,12 +401,12 @@ export class GameClient {
   }
 
   // ── 방 / 매칭 API
-  queueJoin(mode: GameMode, teamSize = 1, map?: 'grid' | 'arena'): Promise<Ack> { return this.req('queue:join', { mode, teamSize, map }); }
-  createRoom(o: { mode: 'classic' | 'tdm'; teamSize: number; map: 'grid' | 'arena'; fillBots: boolean; botLevel: number }): Promise<Ack> { return this.req('room:create', o); }
+  queueJoin(mode: GameMode, teamSize = 1, map?: BattleMapId): Promise<Ack> { return this.req('queue:join', { mode, teamSize, map }); }
+  createRoom(o: { mode: 'classic' | 'tdm'; teamSize: number; map: BattleMapId; fillBots: boolean; botLevel: number }): Promise<Ack> { return this.req('room:create', o); }
   joinRoom(code: string): Promise<Ack> { return this.req('room:join', { code }); }
   leaveRoom(): Promise<Ack> { const p = this.req('room:leave'); this.clearRoom(); return p; }
   setTeam(team: 0 | 1): Promise<Ack> { return this.req('room:team', { team }); }
-  configRoom(o: Partial<{ mode: 'classic' | 'tdm'; map: 'grid' | 'arena'; teamSize: number; fillBots: boolean; botLevel: number }>): Promise<Ack> { return this.req('room:config', o); }
+  configRoom(o: Partial<{ mode: 'classic' | 'tdm'; map: BattleMapId; teamSize: number; fillBots: boolean; botLevel: number }>): Promise<Ack> { return this.req('room:config', o); }
   startRoom(): Promise<Ack> { return this.req('room:start'); }
   setRangeMoving(moving: boolean): void { this.socket?.emit('range:config', { moving }); }
   setLoadout(l: Loadout): Promise<Ack> { return this.req('loadout:set', l); }

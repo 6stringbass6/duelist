@@ -1,17 +1,23 @@
 // =====================================================================
-// 3D 전장 빌드 (GRID / ARENA / RANGE) + AABB 충돌 월드
+// 3D 전장 빌드 (킬 하우스 / 물류 창고 / 사격장) + AABB 충돌 월드
 // 지오메트리 원본은 서버(server.js MAPS) → 'room:joined'.map 으로 전달된 MapData 를 그대로 사용.
+// 메시 맵: 화면에는 원본 3D 모델(FBX/GLB)을, 충돌·피격은 서버가 준 복셀 박스('mesh')를 사용.
 // =====================================================================
 import * as THREE from 'three';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MOVE, type MapId } from '../config/weapons';
 
 /** [x0, y0, z0, x1, y1, z1, kind] */
 export type MapBox = [number, number, number, number, number, number, string];
 export interface SpawnPoint { x: number; y: number; z: number; yaw: number }
+/** 모델 → 월드 변환 (client/scripts/gen-map-colliders.mjs 가 충돌 박스와 같은 값으로 생성) */
+export interface MapModel { url: string; scale: number; rotY: number; offset: [number, number, number] }
 export interface MapData {
   id: MapId; name: string;
   bounds: { x0: number; x1: number; z0: number; z1: number };
   wallH: number; boxes: MapBox[]; spawns: SpawnPoint[][]; marks: { z: number; label: string }[];
+  model?: MapModel | null;
 }
 export interface Vec3Like { x: number; y: number; z: number }
 export interface RayHit { t: number; axis: 0 | 1 | 2; sign: number }
@@ -96,23 +102,15 @@ interface Theme {
   kinds: Record<string, { color: number; rough: number; metal: number; edge?: boolean; emissive?: number }>;
 }
 const THEMES: Record<MapId, Theme> = {
-  // GRID — 탁 트인 대형 오픈 아레나: 어두운 바닥 + 시안 그리드 + 네온 엣지
-  grid: {
-    sky: 0x0a1020, fog: [90, 260], floor: '#0f1626', line: '#28e0ff', subLine: '#1b3550', tile: 5, accent: 0x28e0ff, hemi: [0x9fd8ff, 0x101828, 0.9], sun: [0xffffff, 1.1],
-    kinds: {
-      block: { color: 0x26324a, rough: 0.6, metal: 0.2, edge: true }, wall: { color: 0x1d2740, rough: 0.7, metal: 0.1, edge: true },
-      cover: { color: 0x2f3d5c, rough: 0.6, metal: 0.2, edge: true }, pillar: { color: 0x182036, rough: 0.4, metal: 0.5, edge: true, emissive: 0x0a3a48 },
-      platform: { color: 0x202b44, rough: 0.5, metal: 0.3, edge: true }, tower: { color: 0x141b2e, rough: 0.4, metal: 0.5, edge: true }, step: { color: 0x2a3653, rough: 0.6, metal: 0.2, edge: true },
-    },
+  // 킬 하우스 — 야외 훈련 시설: 흐린 주간 하늘 + 흙빛 바닥
+  killhouse: {
+    sky: 0x9fb4c8, fog: [70, 220], floor: '#5b5446', line: '#6b6352', subLine: '#544d40', tile: 4, accent: 0xffb547, hemi: [0xe8f1ff, 0x5a5040, 1.25], sun: [0xfff4e0, 1.6],
+    kinds: { block: { color: 0x6b6352, rough: 0.9, metal: 0.05 }, cover: { color: 0x7a6a50, rough: 0.8, metal: 0.05 } },
   },
-  // ARENA — 소규모 대칭 결투장: 따뜻한 콘크리트 + 오렌지 포인트
-  arena: {
-    sky: 0x1b1622, fog: [50, 140], floor: '#2a2630', line: '#ff8a3d', subLine: '#3a3440', tile: 4, accent: 0xff8a3d, hemi: [0xffe2c4, 0x1a141c, 0.95], sun: [0xfff0dc, 1.15],
-    kinds: {
-      block: { color: 0x5a4f58, rough: 0.8, metal: 0.05, edge: true }, wall: { color: 0x4a4350, rough: 0.85, metal: 0.05 },
-      cover: { color: 0xc7682c, rough: 0.6, metal: 0.1 }, crate: { color: 0x8a6a3a, rough: 0.8, metal: 0.0, edge: true },
-      ledge: { color: 0x3d3743, rough: 0.7, metal: 0.1, edge: true }, step: { color: 0x4d4654, rough: 0.7, metal: 0.1 },
-    },
+  // 물류 창고 — 실내 창고: 따뜻한 조명 + 콘크리트 바닥
+  warehouse: {
+    sky: 0x2a2f38, fog: [80, 240], floor: '#3a3d42', line: '#4a4e55', subLine: '#33363b', tile: 4, accent: 0xffb547, hemi: [0xfff0dc, 0x30343c, 1.35], sun: [0xfff0dc, 1.4],
+    kinds: { block: { color: 0x5a5f68, rough: 0.85, metal: 0.1 }, cover: { color: 0x8a6a3a, rough: 0.8, metal: 0.05 } },
   },
   // RANGE — 사격장
   range: {
@@ -146,6 +144,37 @@ export function textSprite(text: string, color = '#ffffff', scale = 1, bg: strin
   return sp;
 }
 
+// ───────────────────────────── 메시 맵 모델 ─────────────────────────────
+// 파싱 결과를 URL 별로 캐시 → 같은 맵 재입장 시 재다운로드·재파싱 없이 clone(지오메트리·재질 공유)
+const modelCache = new Map<string, Promise<THREE.Object3D>>();
+function prepareModel(root: THREE.Object3D): THREE.Object3D {
+  const strip: THREE.Object3D[] = [];
+  root.traverse((o) => {
+    if ((o as THREE.Light).isLight || (o as THREE.Camera).isCamera) { strip.push(o); return; } // 원본 내장 조명/카메라 제거 → 테마 조명만 사용
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    m.receiveShadow = true;
+    for (const mat of Array.isArray(m.material) ? m.material : [m.material]) {
+      const mm = mat as THREE.MeshStandardMaterial;
+      if (mm.map) mm.map.colorSpace = THREE.SRGBColorSpace;
+      if ((mat as THREE.MeshPhongMaterial).isMeshPhongMaterial) (mat as THREE.MeshPhongMaterial).shininess = Math.min((mat as THREE.MeshPhongMaterial).shininess, 12); // FBX 기본 광택 과다 → 플라스틱 느낌 완화
+      mat.side = THREE.FrontSide;
+    }
+  });
+  for (const o of strip) o.removeFromParent();
+  return root;
+}
+function loadMapModel(url: string): Promise<THREE.Object3D> {
+  let p = modelCache.get(url);
+  if (!p) {
+    const full = (import.meta.env?.BASE_URL ?? '/') + url;
+    p = (url.endsWith('.fbx') ? new FBXLoader().loadAsync(full) : new GLTFLoader().loadAsync(full).then((g) => g.scene)).then(prepareModel);
+    p.catch(() => modelCache.delete(url)); // 실패 시 다음 입장에서 재시도
+    modelCache.set(url, p);
+  }
+  return p;
+}
+
 // ───────────────────────────── 빌드 ─────────────────────────────
 export interface ArenaBuild {
   id: MapId; map: MapData; world: World; group: THREE.Group; sun: THREE.DirectionalLight; background: THREE.Color; fog: THREE.Fog;
@@ -154,7 +183,7 @@ export interface ArenaBuild {
 }
 
 export function buildArena(map: MapData): ArenaBuild {
-  const th = THEMES[map.id] ?? THEMES.grid, group = new THREE.Group(); group.name = `arena:${map.id}`;
+  const th = THEMES[map.id] ?? THEMES.warehouse, group = new THREE.Group(); group.name = `arena:${map.id}`;
   const { x0, x1, z0, z1 } = map.bounds, sx = x1 - x0, sz = z1 - z0, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
   const disposables: { dispose(): void }[] = [];
   const track = <T extends { dispose(): void }>(o: T): T => { disposables.push(o); return o; };
@@ -162,7 +191,8 @@ export function buildArena(map: MapData): ArenaBuild {
   // 바닥
   const ftex = track(floorTexture(th)); ftex.repeat.set(sx / th.tile, sz / th.tile);
   const floor = new THREE.Mesh(track(new THREE.PlaneGeometry(sx, sz)), track(new THREE.MeshStandardMaterial({ map: ftex, roughness: 0.9, metalness: 0.05 })));
-  floor.rotation.x = -Math.PI / 2; floor.position.set(cx, 0, cz); floor.receiveShadow = true; group.add(floor);
+  // 메시 맵은 모델 자체 바닥이 y=0 → 절차적 바닥은 살짝 아래에 두어 모델 바닥의 빈틈만 메움(z-파이팅 방지)
+  floor.rotation.x = -Math.PI / 2; floor.position.set(cx, map.model ? -0.03 : 0, cz); floor.receiveShadow = true; group.add(floor);
 
   // 박스
   const unit = track(new THREE.BoxGeometry(1, 1, 1)), edges = track(new THREE.EdgesGeometry(unit));
@@ -181,6 +211,7 @@ export function buildArena(map: MapData): ArenaBuild {
   const shadowMeshes: THREE.Mesh[] = [floor];
   for (const b of map.boxes) {
     const [bx0, by0, bz0, bx1, by1, bz1, kind] = b, w = bx1 - bx0, h = by1 - by0, d = bz1 - bz0;
+    if (kind === 'mesh') continue; // 모델 충돌용 복셀 박스 — 화면에는 원본 모델을 그림
     if (kind === 'bound') {
       const m = new THREE.Mesh(unit, boundMat); m.scale.set(w, h, d); m.position.set(bx0 + w / 2, by0 + h / 2, bz0 + d / 2); group.add(m);
       continue;
@@ -226,16 +257,36 @@ export function buildArena(map: MapData): ArenaBuild {
   sun.shadow.camera.near = 1; sun.shadow.camera.far = span * 4 + 60; sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.03;
   group.add(sun, sun.target);
 
+  // 메시 맵 모델: 텍스처·머티리얼이 어둡지 않도록 보조 환경광
+  if (map.model) group.add(new THREE.AmbientLight(0xffffff, 0.35));
+
+  const modelMeshes: THREE.Mesh[] = [];
+  let shadowMode: 'off' | 'low' | 'high' = 'low', disposed = false;
   const setShadows = (mode: 'off' | 'low' | 'high'): void => {
+    shadowMode = mode;
     sun.castShadow = mode !== 'off';
     const size = 1024; // 그림자 맵 해상도 상한 1024 (high/low 동일 — 캐스터 수·필터만 차이)
     if (sun.shadow.mapSize.x !== size) { sun.shadow.mapSize.set(size, size); sun.shadow.map?.dispose(); sun.shadow.map = null; }
     for (const m of shadowMeshes) { m.castShadow = mode !== 'off' && m !== floor; m.receiveShadow = mode !== 'off'; }
+    // 고폴리 모델은 'high'에서만 그림자 투사(그림자 패스 비용), 수신은 항상
+    for (const m of modelMeshes) { m.castShadow = mode === 'high'; m.receiveShadow = mode !== 'off'; }
   };
   setShadows('low');
 
+  if (map.model) {
+    const mm = map.model;
+    loadMapModel(mm.url).then((src) => {
+      if (disposed) return;
+      const holder = new THREE.Group(); holder.name = `model:${map.id}`;
+      holder.position.fromArray(mm.offset); holder.rotation.y = mm.rotY; holder.scale.setScalar(mm.scale);
+      holder.add(src.clone());
+      holder.traverse((o) => { if ((o as THREE.Mesh).isMesh) modelMeshes.push(o as THREE.Mesh); });
+      group.add(holder); setShadows(shadowMode);
+    }).catch((e) => console.error(`[map] ${mm.url} 로드 실패`, e));
+  }
+
   return {
     id: map.id, map, world: new World(map), group, sun, background: new THREE.Color(th.sky), fog: new THREE.Fog(th.sky, th.fog[0], th.fog[1]), setShadows,
-    dispose() { group.removeFromParent(); for (const d of disposables) d.dispose(); sun.shadow.map?.dispose(); },
+    dispose() { disposed = true; group.removeFromParent(); for (const d of disposables) d.dispose(); sun.shadow.map?.dispose(); }, // 모델 지오메트리·재질은 캐시 공유 → 해제하지 않음
   };
 }

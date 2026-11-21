@@ -150,7 +150,13 @@ export const THROW = { gravity: 20, radius: 0.12, cooldownMs: 900 } as const;
 export const F = { CROUCH: 1, SLIDE: 2, ADS: 4, AIR: 8, DASH: 16, ALIVE: 32, PROT: 64, RELOAD: 128, FLASHED: 256, AMP: 512, SILENCED: 1024, SHIELD: 2048, HEAL: 4096, INVIS: 8192, CAST: 16384 } as const;
 
 export type GameMode = 'classic' | 'ranked' | 'tdm' | 'range';
-export type MapId = 'grid' | 'arena' | 'range';
+/** 대전 맵 (server.js BATTLE_MAPS 와 동기화) — 사격장은 별도 */
+export const BATTLE_MAPS = ['killhouse', 'warehouse'] as const;
+export type BattleMapId = (typeof BATTLE_MAPS)[number];
+export type MapId = BattleMapId | 'range';
+export const MAP_NAMES: Record<MapId, string> = { killhouse: '킬 하우스', warehouse: '물류 창고', range: '사격장' };
+/** 알 수 없는 ID(구 전적 기록의 grid/arena 등)는 대문자 ID로 표시 */
+export const mapName = (id: string): string => MAP_NAMES[id as MapId] ?? id.toUpperCase();
 export const MODES: Record<GameMode, { name: string; desc: string; teamSizes: number[]; badge?: string }> = {
   classic: { name: '클래식', desc: '라운드제 팀 데스매치 · 5선승 · 랭크 변동 없음 · 방 코드 내전', teamSizes: [1, 2, 3, 4, 5, 6] },
   ranked: { name: '경쟁전', desc: '최대 3v3 · 티어 포인트 변동 · 티어별 AI 봇 매칭', teamSizes: [1, 2, 3], badge: 'BETA' },
