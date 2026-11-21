@@ -977,6 +977,8 @@ async function persist(room, e, result, now) {
   const reward = { result, rp_delta: rp, credits, saved: false };
   if (supabase && e.userId && !room.isPrivate && room.mode !== 'range') {
     try {
+      const boxes = async () => Number((await supabase.from('profiles').select('lootboxes').eq('id', e.userId).maybeSingle()).data?.lootboxes ?? 0);
+      const boxesBefore = await boxes();
       const { data, error } = await supabase.rpc('apply_match_result', { p_user: e.userId, p_result: {
         mode: room.mode, map: room.mapId, team_size: room.teamSize, result, kills: s.k, deaths: s.d, assists: s.a, headshot_kills: s.hsk,
         hits_head: s.hh, hits_body: s.hb, hits_leg: s.hl, shots_fired: s.shots, damage: s.dmg, rp_delta: rp, credits,
@@ -984,7 +986,7 @@ async function persist(room, e, result, now) {
           ranked_matches: ranked ? 1 : 0, tdm_kills: room.mode === 'tdm' ? s.k : 0 },
       } });
       if (error) throw error;
-      Object.assign(reward, data, { saved: true, drop_case: result === 'left' ? 0 : 1 }); // DB 트리거(match_xp_drop)가 완주 매치당 상자 1개 적립
+      Object.assign(reward, data, { saved: true, drop_case: Math.max(0, Math.min(1, (await boxes()) - boxesBefore)) }); // 결과 화면 '+1' 은 DB 에 실제 반영된 증가분(match_xp_drop 트리거)만 표시
       if (e.sess) { e.sess.rp = data.rank_points; e.rp = data.rank_points; }
     } catch (err) { console.error('[persist]', err.message || err); }
   }
