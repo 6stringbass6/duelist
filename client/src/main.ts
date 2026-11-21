@@ -10,7 +10,7 @@ import {
   type Action, type CrosshairLines, type CrosshairPresetId, type FpsCap, type Settings,
 } from './config/settings';
 import {
-  MODES, RULES, SLOT, SLOT_KEYS, WEAPONS, WEAPONS_BY_SLOT, damageTable, isGun, tdmTargetKills, tierInfo, tierLevel, tierProgress,
+  MODES, RULES, SLOT, SLOT_KEYS, WEAPONS, WEAPONS_BY_SLOT, damageTable, isGun, tdmTargetKills, tierEmblemUrl, tierInfo, tierLevel, tierProgress,
   type GameMode, type Loadout, type SlotKey, type WeaponId,
 } from './config/weapons';
 import { preloadWeaponModels, WEAPON_MODELS } from './game/weaponModels';
@@ -40,6 +40,14 @@ const visible = (id: string): boolean => !$(id).classList.contains('hidden');
 const esc = (s: unknown): string => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const hex = (n: number): string => '#' + n.toString(16).padStart(6, '0');
 const fmt = (n: number): string => n.toLocaleString('ko-KR');
+
+// ── 티어 표시 헬퍼 — 엠블럼 이미지(object-fit: contain) + 티어별 글자색. 상위 3개 티어는 CSS 에서 글로우 ──
+type TierView = ReturnType<typeof tierInfo>;
+const tierImg = (t: TierView, h = 20): string => `<img class="tier-emb tier-m${t.major}" src="${tierEmblemUrl(t.major)}" alt="${esc(t.label)}" height="${h}" style="--tc:${t.color};height:${h}px" draggable="false" />`;
+const tierTxt = (t: TierView): string => `<span class="tier-t tier-m${t.major}" style="--tc:${t.color}">${esc(t.labelKo)}</span>`;
+const tierRp = (t: TierView, rp: number): string => `<span class="tier-rp" style="color:${t.accent}">${fmt(rp)} RP</span>`;
+/** 엠블럼 + 티어명 (+ RP) 한 덩어리 */
+const tierTag = (t: TierView, h = 18, rp?: number): string => `<span class="tier-tag">${tierImg(t, h)}${tierTxt(t)}${rp == null ? '' : ` <span class="mut">·</span> ${tierRp(t, rp)}`}</span>`;
 function toast(msg: string, kind: '' | 'good' | 'bad' = ''): void {
   const d = document.createElement('div'); d.className = 'toast ' + kind; d.textContent = msg; $('toasts').appendChild(d);
   setTimeout(() => d.remove(), 2600);
@@ -228,7 +236,7 @@ function renderTop(): void {
   $('lb-credits').textContent = fmt(p.credits);
   $('lb-ava-t').textContent = initial(p.nickname);
   $('lb-nick').textContent = p.nickname;
-  $('lb-tier').textContent = `${t.labelKo} · ${fmt(p.rank_points)} RP`;
+  $('lb-tier').innerHTML = tierTag(t, 22, p.rank_points);
   const title = bundle?.achievements.find((a) => a.achievement_id === p.equipped_title)?.title;
   $('lb-title').textContent = title ? `「${title}」` : p.isGuest ? '게스트' : '칭호 없음';
   { const inv = inventoryOf(p); $('lb-boxes').textContent = `컨테이너 ${inv.dropCases + inv.storeCases} · 열쇠 ${inv.keys}`; }
@@ -288,7 +296,7 @@ function dropCancelledJoin(): boolean {
 function htmlPlay(): string {
   const p = getProfile()!, l = p.loadout, m = MODES[play.mode];
   if (!m.teamSizes.includes(play.size)) play.size = m.teamSizes[0];
-  const modes = (Object.keys(MODES) as GameMode[]).map((k, i) => `<button type="button" class="c-mode${k === play.mode ? ' c-on' : ''}" data-mode="${k}"><span class="c-idx">0${i + 1}</span><span><span class="c-mt">${MODE_EN[k]}<span class="c-mk">${MODES[k].name}</span></span><span class="c-md">${esc(MODES[k].desc)}</span></span><span class="c-ar"></span></button>`).join('');
+  const modes = (Object.keys(MODES) as GameMode[]).map((k, i) => `<button type="button" class="c-mode${k === play.mode ? ' c-on' : ''}" data-mode="${k}"><span class="c-idx">0${i + 1}</span><span><span class="c-mt">${MODE_EN[k]}<span class="c-mk">${MODES[k].name}</span></span><span class="c-md">${esc(MODES[k].desc)}</span></span>${k === 'ranked' ? tierImg(tierInfo(tierLevel(p.rank_points)), 30) : ''}<span class="c-ar"></span></button>`).join('');
   const opts = play.mode === 'range' ? '' : `<div class="c-opts"><div class="c-srow"><span>인원</span><div class="c-pills">${m.teamSizes.map((n) => `<button type="button" class="c-pill${n === play.size ? ' c-on' : ''}" data-size="${n}">${n}v${n}</button>`).join('')}</div></div>
     <div class="c-srow"><span>맵</span><div class="c-pills">${([['', '자동'], ['grid', 'GRID'], ['arena', 'ARENA']] as const).map(([k, n]) => `<button type="button" class="c-pill${k === play.map ? ' c-on' : ''}" data-map="${k}">${n}</button>`).join('')}</div></div></div>`;
   const plus = `<button type="button" class="c-pslot" data-friends aria-label="파티원 초대"><span class="c-plus">+</span><span>초대</span></button>`;
@@ -692,7 +700,7 @@ function renderFriends(): void {
   const acc = friends.filter((f) => f.status === 'accepted').sort((a, b) => (+on(b) - +on(a)) || a.nickname.localeCompare(b.nickname, 'ko'));
   const inc = friends.filter((f) => f.status === 'pending' && !f.outgoing), out = friends.filter((f) => f.status === 'pending' && f.outgoing);
   const canInvite = view === 'lobby' || view === 'room';
-  const row = (f: FriendRow, acts: string): string => `<div class="fr-row"><span class="fr-dot${f.status === 'accepted' && on(f) ? ' on' : ''}"></span><div class="fr-ava">${esc(initial(f.nickname))}</div><div class="fr-who"><b>${esc(f.nickname)}</b><small>${esc(tierInfo(tierLevel(f.rank_points)).labelKo)} · ${fmt(f.rank_points)} RP${f.status === 'accepted' ? (on(f) ? ' · 온라인' : ' · 오프라인') : ''}</small></div><div class="fr-act">${acts}</div></div>`;
+  const row = (f: FriendRow, acts: string): string => `<div class="fr-row"><span class="fr-dot${f.status === 'accepted' && on(f) ? ' on' : ''}"></span><div class="fr-ava">${esc(initial(f.nickname))}</div><div class="fr-who"><b>${esc(f.nickname)}</b><small>${tierTag(tierInfo(tierLevel(f.rank_points)), 16, f.rank_points)}${f.status === 'accepted' ? (on(f) ? ' · 온라인' : ' · 오프라인') : ''}</small></div><div class="fr-act">${acts}</div></div>`;
   const sec = (en: string, ko: string, n: number, html: string): string => `<div class="fr-h"><span>${en}</span><small>${ko}${n ? ` · ${n}` : ''}</small></div>${html}`;
   const inv = liveInvites();
   body.innerHTML = `<div class="fr-add"><input id="fr-nick" maxlength="16" placeholder="닉네임으로 친구 추가" autocomplete="off" /><button class="pri" id="fr-send">요청 보내기</button></div><div class="err" id="fr-err"></div>
@@ -778,7 +786,7 @@ $('nick-ok').onclick = async () => {
 const play = { mode: 'classic' as GameMode, size: 1, map: '' as '' | 'grid' | 'arena', fillBots: true, botLevel: 6 };
 function renderPlay(): void {
   const m = MODES[play.mode]; if (!m.teamSizes.includes(play.size)) play.size = m.teamSizes[0];
-  const modes = (Object.keys(MODES) as GameMode[]).map((k) => `<div class="mode ${k === play.mode ? 'on' : ''}" data-mode="${k}"><b>${MODES[k].name}</b>${MODES[k].badge ? `<span class="badge">${MODES[k].badge}</span>` : ''}<small>${MODES[k].desc}</small></div>`).join('');
+  const modes = (Object.keys(MODES) as GameMode[]).map((k) => `<div class="mode ${k === play.mode ? 'on' : ''}" data-mode="${k}"><b>${MODES[k].name}</b>${MODES[k].badge ? `<span class="badge">${MODES[k].badge}</span>` : ''}${k === 'ranked' ? tierImg(tierInfo(tierLevel(getProfile()?.rank_points ?? 0)), 22) : ''}<small>${MODES[k].desc}</small></div>`).join('');
   const sizes = m.teamSizes.map((n) => `<button class="sm ${n === play.size ? 'on' : ''}" data-size="${n}">${n}v${n}${play.mode === 'tdm' ? ` · ${tdmTargetKills(n)}킬` : ''}</button>`).join('');
   const maps = ([['', '자동'], ['grid', 'GRID'], ['arena', 'ARENA']] as const).map(([k, n]) => `<button class="sm ${k === play.map ? 'on' : ''}" data-map="${k}">${n}</button>`).join('');
   const priv = play.mode === 'classic' || play.mode === 'tdm';
@@ -827,9 +835,9 @@ async function startQueue(mode: GameMode, size: number, map?: 'grid' | 'arena', 
 function renderRoom(): void {
   const room = net.room; if (!room || view !== 'room') return;
   const host = room.hostId === net.you, me = net.me;
-  const col = (t: number): string => { const list = room.players.filter((p) => p.team === t); return `<div class="card grow"><h3 style="color:${t === 0 ? 'var(--ally)' : 'var(--enemy)'}">${t === 0 ? 'A 팀' : 'B 팀'} (${list.length}/${room.teamSize})</h3>${list.map((p) => `<div class="row" style="padding:4px 0">${p.id === room.hostId ? '👑' : ''}<b>${esc(p.name)}</b><span class="mut">${tierInfo(p.tier).labelKo}</span></div>`).join('') || '<div class="mut">비어 있음</div>'}${me && me.team !== t ? `<button class="sm" style="margin-top:8px" data-team="${t}">이 팀으로</button>` : ''}</div>`; };
+  const col = (t: number): string => { const list = room.players.filter((p) => p.team === t); return `<div class="card grow"><h3 style="color:${t === 0 ? 'var(--ally)' : 'var(--enemy)'}">${t === 0 ? 'A 팀' : 'B 팀'} (${list.length}/${room.teamSize})</h3>${list.map((p) => `<div class="row" style="padding:4px 0">${p.id === room.hostId ? '👑' : ''}<b>${esc(p.name)}</b><span class="right">${tierTag(tierInfo(p.tier), 18)}</span></div>`).join('') || '<div class="mut">비어 있음</div>'}${me && me.team !== t ? `<button class="sm" style="margin-top:8px" data-team="${t}">이 팀으로</button>` : ''}</div>`; };
   $('room-body').innerHTML = `<div class="card col"><div class="row"><h3 style="font-size:20px">사설 방</h3><span class="chip" style="font-size:18px;letter-spacing:4px">코드 ${esc(room.code)}</span><button class="right" id="room-invite">친구 초대</button><button class="ghost" id="room-leave">나가기</button></div>
-    <div class="row" style="flex-wrap:wrap"><span class="chip">${MODES[room.mode].name}</span><span class="chip">${room.teamSize}v${room.teamSize}</span><span class="chip">${room.mapId.toUpperCase()}</span><span class="chip">봇 채우기 ${room.fillBots ? 'ON' : 'OFF'}</span><span class="chip">봇 난이도 ${tierInfo(room.botLevel).labelKo}</span></div>
+    <div class="row" style="flex-wrap:wrap"><span class="chip">${MODES[room.mode].name}</span><span class="chip">${room.teamSize}v${room.teamSize}</span><span class="chip">${room.mapId.toUpperCase()}</span><span class="chip">봇 채우기 ${room.fillBots ? 'ON' : 'OFF'}</span><span class="chip">봇 난이도 ${tierTxt(tierInfo(room.botLevel))}</span></div>
     ${host ? `<div class="row" style="flex-wrap:wrap"><select id="rc-mode"><option value="classic">클래식</option><option value="tdm">팀 데스매치</option></select><select id="rc-map"><option value="arena">ARENA</option><option value="grid">GRID</option></select><select id="rc-size">${[1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}">${n}v${n}</option>`).join('')}</select><select id="rc-bot">${Array.from({ length: 20 }, (_, i) => `<option value="${i}">${tierInfo(i).labelKo}</option>`).join('')}</select><label class="row"><input type="checkbox" id="rc-fill" ${room.fillBots ? 'checked' : ''}/> 봇 채우기</label></div>` : '<div class="mut">방장이 게임을 시작하기를 기다리는 중…</div>'}
     <div class="row" style="align-items:stretch">${col(0)}${col(1)}</div>${host ? '<button class="pri" id="room-start">게임 시작</button>' : ''}</div>`;
   $('room-leave').onclick = () => { void net.leaveRoom(); void enterLobby(); };
@@ -984,7 +992,9 @@ function animateCredits(target: number): void {
 }
 function fillReward(): void {
   const r = pendingReward, el = document.getElementById('res-reward'); if (!r || !el) return;
-  el.innerHTML = `${r.rp_delta ? `<b style="color:${r.rp_delta > 0 ? 'var(--ok)' : 'var(--acc)'}">${r.rp_delta > 0 ? '+' : ''}${r.rp_delta} RP</b>` : ''}${r.saved ? '' : `${r.rp_delta ? ' · ' : ''}저장되지 않는 경기`}${r.unlocked?.length ? `<br />🏆 업적 ${r.unlocked.length}개 달성!` : ''}`;
+  const nt = r.rank_points != null ? tierInfo(tierLevel(r.rank_points)) : null, ot = nt ? tierInfo(tierLevel(r.rank_points! - r.rp_delta)) : null;
+  const tierLine = nt && ot ? `<div class="tier-res">${tierTag(nt, 40, r.rank_points)}${nt.level > ot.level ? ` <b class="tier-up">▲ 승급 · ${tierTxt(ot)} → ${tierTxt(nt)}</b>` : nt.level < ot.level ? ` <b class="tier-down">▼ 강등 · ${tierTxt(ot)} → ${tierTxt(nt)}</b>` : ''}</div>` : '';
+  el.innerHTML = `${tierLine}${r.rp_delta ? `<b style="color:${r.rp_delta > 0 ? 'var(--ok)' : 'var(--acc)'}">${r.rp_delta > 0 ? '+' : ''}${r.rp_delta} RP</b>` : ''}${r.saved ? '' : `${r.rp_delta ? ' · ' : ''}저장되지 않는 경기`}${r.unlocked?.length ? `<br />🏆 업적 ${r.unlocked.length}개 달성!` : ''}`;
   const real = r.credits_earned ?? r.credits; // DB 정산값이 예상치와 다르면 그 값으로 보정
   if (matchOver && real !== (matchOver.m.players.find((p) => p.userId === matchOver!.myId)?.earnedCredits ?? 0)) animateCredits(real);
 }
@@ -1045,7 +1055,7 @@ function renderLoadout(): void {
 function renderScoreboard(): void {
   const room = net.room; if (!room) return;
   const { allies, enemies } = net.scoreboard();
-  const tbl = (list: PlayerInfo[]): string => `<table><tr><th>플레이어</th><th>티어</th><th>K</th><th>D</th><th>A</th><th>통산 K/D</th><th>HS%</th><th>승률</th></tr>${list.map((p) => { const t = tierInfo(p.tier); return `<tr class="${p.id === net.you ? 'me' : ''}"><td>${esc(p.name)}${p.bot ? ' <span class="mut">[BOT]</span>' : ''}${p.title ? ` <span class="mut">「${esc(p.title)}」</span>` : ''}</td><td style="color:${t.color}">${t.labelKo}</td><td><b>${p.k}</b></td><td>${p.d}</td><td>${p.a}</td><td>${p.bot ? '-' : p.career.kd}</td><td>${p.bot ? '-' : p.career.hs + '%'}</td><td>${p.bot ? '-' : p.career.wr + '%'}</td></tr>`; }).join('')}</table>`;
+  const tbl = (list: PlayerInfo[]): string => `<table><tr><th>플레이어</th><th>티어</th><th>K</th><th>D</th><th>A</th><th>통산 K/D</th><th>HS%</th><th>승률</th></tr>${list.map((p) => { const t = tierInfo(p.tier); return `<tr class="${p.id === net.you ? 'me' : ''}"><td>${esc(p.name)}${p.bot ? ' <span class="mut">[BOT]</span>' : ''}${p.title ? ` <span class="mut">「${esc(p.title)}」</span>` : ''}</td><td>${tierTag(t, 18)}</td><td><b>${p.k}</b></td><td>${p.d}</td><td>${p.a}</td><td>${p.bot ? '-' : p.career.kd}</td><td>${p.bot ? '-' : p.career.hs + '%'}</td><td>${p.bot ? '-' : p.career.wr + '%'}</td></tr>`; }).join('')}</table>`;
   const me = net.me;
   $('sb-body').innerHTML = `<div class="row"><h3 style="font-size:18px">${MODES[room.mode].name} · ${room.mapId.toUpperCase()} · ${room.teamSize}v${room.teamSize}</h3><span class="right" style="font-size:22px;font-weight:800"><span style="color:var(--ally)">${room.score[net.myTeam]}</span> : <span style="color:var(--enemy)">${room.score[1 - net.myTeam]}</span></span></div>
   ${me ? `<div class="row mut" style="margin:6px 0 10px;font-size:13px">내 전적 — K/D <b style="color:#fff">${me.career.kd}</b> · HS% <b style="color:#fff">${me.career.hs}%</b> · 승률 <b style="color:#fff">${me.career.wr}%</b></div>` : ''}

@@ -54,6 +54,22 @@ h2{margin:18px 0 10px;font-size:17px}h3{margin:0 0 6px;font-size:15px}
 .skin.t-covert::before{animation-duration:5s;opacity:.6}@keyframes tierSheen{0%{background-position:120% 0}100%{background-position:-130% 0}}
 .badge{position:absolute;left:6px;top:6px;z-index:2;display:inline-flex;align-items:center;gap:5px;padding:3px 8px 3px 5px;border-radius:99px;font-size:11px;font-weight:800;letter-spacing:.5px;color:#fff;background:rgba(8,11,18,.78);border:1px solid color-mix(in srgb,var(--tc,#fff) 70%,transparent);backdrop-filter:blur(3px)}
 .emb{flex:none;filter:drop-shadow(0 0 3px color-mix(in srgb,currentColor 0%,rgba(0,0,0,.6)))}
+/* ── 티어 엠블럼 · 티어별 글자색 (--tc 는 요소별 인라인 지정) ── */
+.tier-tag{display:inline-flex;align-items:center;gap:6px;vertical-align:middle;white-space:nowrap}
+.tier-emb{width:auto;max-width:none;object-fit:contain;flex:none;display:inline-block;vertical-align:middle;user-select:none}
+.tier-t{color:var(--tc);font-weight:600;letter-spacing:.02em}
+.tier-rp{font-variant-numeric:tabular-nums}
+.tier-m5.tier-emb{filter:drop-shadow(0 0 5px color-mix(in srgb,var(--tc) 55%,transparent))}
+.tier-m6.tier-emb{filter:drop-shadow(0 0 6px color-mix(in srgb,var(--tc) 60%,transparent))}
+.tier-m7.tier-emb{filter:drop-shadow(0 0 7px color-mix(in srgb,var(--tc) 70%,transparent))}
+.tier-m5.tier-t{text-shadow:0 0 8px color-mix(in srgb,var(--tc) 40%,transparent)}
+.tier-m6.tier-t{text-shadow:0 0 9px color-mix(in srgb,var(--tc) 45%,transparent)}
+.tier-m7.tier-t{text-shadow:0 0 10px color-mix(in srgb,var(--tc) 60%,transparent),0 0 2px color-mix(in srgb,var(--tc) 50%,transparent)}
+#lobby #lb-tier{display:flex;align-items:center;font-size:11px;margin-top:2px}
+#lobby .c-mode .tier-emb{margin-left:auto;margin-right:12px}
+.tier-res{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+.tier-up{color:var(--ok)}.tier-down{color:var(--acc)}
+.fr-who small{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
 .tierrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.tierchip{display:inline-flex;align-items:center;gap:6px;padding:5px 12px 5px 8px;border-radius:99px;font-size:12px;color:var(--mut);background:linear-gradient(90deg,color-mix(in srgb,var(--tc) 18%,var(--panel2)),var(--panel2));border:1px solid color-mix(in srgb,var(--tc) 60%,transparent)}.tierchip b{color:var(--tc)}
 .odds{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px}.odds .jp{width:100%;justify-content:center;padding:5px 10px;border-radius:8px;font-weight:900;font-size:13px;color:#1a1400;background:linear-gradient(100deg,#ffd23f,#fff3c0 45%,#7fc0ff);box-shadow:0 0 14px rgba(255,210,63,.55);animation:jpGlow 1.8s ease-in-out infinite}@keyframes jpGlow{50%{box-shadow:0 0 24px rgba(127,192,255,.8)}}.card.jpbox{border-color:#ffd23f;background:linear-gradient(160deg,rgba(255,210,63,.1),rgba(59,140,255,.1))}#gacha-result.jackpot{text-shadow:0 0 18px rgba(255,210,63,.8)}.odds span{display:inline-flex;align-items:center;gap:4px}
 #gacha-strip>div{position:relative}#gacha-strip .badge{padding:3px;left:4px;top:4px}
@@ -729,7 +745,7 @@ th{font-family:var(--c-en);font-weight:500;font-size:11px;letter-spacing:.2em;te
 .fr-act{display:flex;gap:6px}
 .fr-empty{padding:22px 0;color:var(--c-mut);font-size:13px}
 </style>
-  <script type="module" crossorigin src="/assets/index-BxeMab8h.js"></script>
+  <script type="module" crossorigin src="/assets/index-Ccc9ipa1.js"></script>
 </head>
 <body>
 <div id="app">

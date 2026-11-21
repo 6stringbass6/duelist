@@ -163,7 +163,12 @@ export const RANGE_MARKS = [5, 10, 20, 30, 50, 70, 100, 150] as const;
 // ───────────────────────────── 티어 (level 0..17 = Bronze I..Onyx III, 18 Nemesis, 19 Archnemesis) ─────────────────────────────
 export const TIER_NAMES = ['Bronze', 'Silver', 'Gold', 'Platinum', 'Diamond', 'Onyx'] as const;
 export const TIER_NAMES_KO = ['브론즈', '실버', '골드', '플래티넘', '다이아몬드', '오닉스'] as const;
-export const TIER_COLORS = ['#b0733c', '#b9c4cf', '#f0c040', '#3fd0c0', '#7fb2ff', '#8a5cff', '#ff3d5e', '#ffffff'] as const;
+/** 티어명 글자색 (엠블럼 핵심색 기준, 어두운 UI 배경에서 가독성 확보) */
+export const TIER_COLORS = ['#CD7F32', '#C0C8D0', '#FFD147', '#3CE8D5', '#4DA6FF', '#FFB833', '#D966FF', '#00F0FF'] as const;
+/** 보조 글자색 — RP/MMR 수치 등 부차 텍스트 */
+export const TIER_ACCENTS = ['#D98A4E', '#D6DEE6', '#F5B82E', '#2ED1BF', '#66B8FF', '#C084FC', '#E07AFF', '#38F6FF'] as const;
+/** 티어 엠블럼 이미지 (client/public/tiers/tier_1..8.webp, major 0..7) */
+export const tierEmblemUrl = (major: number): string => `${import.meta.env.BASE_URL}tiers/tier_${Math.min(7, Math.max(0, major)) + 1}.webp`;
 export const NEMESIS_RP = 3600;
 export const ARCHNEMESIS_TOP = 200;
 
@@ -171,11 +176,11 @@ export function tierLevel(rp: number, leaderboardPos?: number | null): number {
   if (rp >= NEMESIS_RP) return leaderboardPos && leaderboardPos <= ARCHNEMESIS_TOP ? 19 : 18;
   return Math.floor(Math.max(0, rp) / 200);
 }
-export function tierInfo(level: number): { level: number; label: string; labelKo: string; color: string; major: number; division: number } {
-  if (level >= 19) return { level, label: 'Archnemesis', labelKo: '아크네메시스', color: TIER_COLORS[7], major: 7, division: 0 };
-  if (level === 18) return { level, label: 'Nemesis', labelKo: '네메시스', color: TIER_COLORS[6], major: 6, division: 0 };
+export function tierInfo(level: number): { level: number; label: string; labelKo: string; color: string; accent: string; major: number; division: number } {
+  if (level >= 19) return { level, label: 'Archnemesis', labelKo: '아크네메시스', color: TIER_COLORS[7], accent: TIER_ACCENTS[7], major: 7, division: 0 };
+  if (level === 18) return { level, label: 'Nemesis', labelKo: '네메시스', color: TIER_COLORS[6], accent: TIER_ACCENTS[6], major: 6, division: 0 };
   const major = Math.floor(level / 3), division = (level % 3) + 1, roman = 'I'.repeat(division);
-  return { level, label: `${TIER_NAMES[major]} ${roman}`, labelKo: `${TIER_NAMES_KO[major]} ${roman}`, color: TIER_COLORS[major], major, division };
+  return { level, label: `${TIER_NAMES[major]} ${roman}`, labelKo: `${TIER_NAMES_KO[major]} ${roman}`, color: TIER_COLORS[major], accent: TIER_ACCENTS[major], major, division };
 }
 /** 현재 디비전 내 진행도 0..1 과 다음 승급까지 남은 RP */
 export function tierProgress(rp: number): { progress: number; toNext: number } {
