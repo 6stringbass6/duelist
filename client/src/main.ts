@@ -489,7 +489,7 @@ function htmlShop(): string {
   <div class="c-grid c-grid3 c-cgrid">
     ${storeCard('store_case', 'store', CASES.store.name, `${CASES.store.desc}. 군용·제한된·비밀의 무기만 나옵니다.`, SHOP_PRICES.storeCase, inv.storeCases)}
     ${storeCard('key', 'key', '무기 상자 열쇠', `${CASES.drop.name} 1개를 여는 데 1개가 쓰입니다.`, SHOP_PRICES.key, inv.keys)}
-    <div class="c-card c-ccard" style="--cs:${CASE_TINT.drop}"><div class="c-vis">${caseVis('drop')}<span class="c-xn">x${inv.dropCases}</span></div><div class="c-body"><span class="c-cn2">${CASES.drop.name}</span><span class="c-cw">판매하지 않습니다. 매치를 플레이해 레벨이 오르면 매주 1개 지급됩니다 · 현재 Lv.${levelOf(inv.xp)} (${fmt(inv.xp % XP_PER_LEVEL)} / ${fmt(XP_PER_LEVEL)} XP)</span>${oddsHtml('drop')}<div class="c-row"><button type="button" class="c-btn c-ghostb" data-gocases>보관함에서 열기</button></div></div></div>
+    <div class="c-card c-ccard" style="--cs:${CASE_TINT.drop}"><div class="c-vis">${caseVis('drop')}<span class="c-xn">x${inv.dropCases}</span></div><div class="c-body"><span class="c-cn2">${CASES.drop.name}</span><span class="c-cw">판매하지 않습니다. 사격장을 제외한 모든 매치를 끝까지 완주하면 매치당 1개 지급됩니다 · 현재 Lv.${levelOf(inv.xp)} (${fmt(inv.xp % XP_PER_LEVEL)} / ${fmt(XP_PER_LEVEL)} XP)</span>${oddsHtml('drop')}<div class="c-row"><button type="button" class="c-btn c-ghostb" data-gocases>보관함에서 열기</button></div></div></div>
   </div>
   <div class="c-ph c-ph2"><span class="c-h1">Today</span><span class="c-h2">오늘의 상점 · ${untilReset()} · 최대 비밀의 무기</span></div>
   ${dailyCards ? `<div class="c-grid">${dailyCards}</div>` : '<div class="c-empty">오늘의 상점을 불러오지 못했습니다. 탭을 다시 열어 주세요.</div>'}
@@ -889,13 +889,13 @@ net.on('phase', (p) => {
 });
 // ───────────────────────────── 매치 종료: 승패 시네마틱 → 결과 화면 ─────────────────────────────
 const RESULT_DELAY_MS = 2000;
-let resultTimer = 0, mfxRaf = 0, creditRaf = 0, creditShown = 0;
+let resultTimer = 0, mfxRaf = 0, creditRaf = 0, creditShown = 0, guestDrop = false;
 net.on('matchEnd', (m) => playMatchEnd(m));
-net.on('reward', (r) => { pendingReward = r; if (visible('m-result')) fillReward(); });
+net.on('reward', (r) => { pendingReward = r; if (r.drop_case) void refreshProfile(); if (visible('m-result')) fillReward(); });
 /** 연출/결과 화면 상태 초기화 (재입장·로비 복귀 시) */
 function resetMatchEnd(): void {
   clearTimeout(resultTimer); cancelAnimationFrame(mfxRaf); cancelAnimationFrame(creditRaf); resultTimer = mfxRaf = creditRaf = 0;
-  matchOver = null; pendingReward = null; creditShown = 0;
+  matchOver = null; pendingReward = null; creditShown = 0; guestDrop = false;
   $('match-fx').className = 'hidden'; show('m-result', false); document.body.classList.remove('mfx-lose');
 }
 function playMatchEnd(m: MatchEnd): void {
@@ -905,7 +905,8 @@ function playMatchEnd(m: MatchEnd): void {
   const myTeam = net.myTeam, kind = m.winner < 0 ? 'draw' : m.winner === myTeam ? 'win' : 'lose';
   matchOver = { m, myId: net.you, myTeam, kind };
   { const me = m.players.find((x) => x.userId === net.you); // 게스트 XP(계정은 DB match_history 트리거)
-    if (awardGuestMatchXp(kind === 'win' ? 'win' : kind === 'lose' ? 'loss' : 'draw', me?.kills ?? 0)) setTimeout(() => toast('주간 보상: 드롭 무기 상자 획득!', 'good'), 2500); }
+    const eligible = net.mode !== 'range' && !net.room?.isPrivate; // 사격장·비공개 방 제외 (서버 persist 조건과 동일)
+    if (eligible && awardGuestMatchXp(kind === 'win' ? 'win' : kind === 'lose' ? 'loss' : 'draw', me?.kills ?? 0)) guestDrop = true; }
   const title = $('mfx-title'), text = kind === 'win' ? 'VICTORY' : kind === 'lose' ? 'DEFEAT' : 'DRAW';
   title.textContent = text; title.dataset.text = text;
   $('mfx-sub').textContent = `${m.score[myTeam]} : ${m.score[1 - myTeam]}`;
@@ -972,6 +973,7 @@ function showResult(): void {
       <div class="res-score">${scoreCell(myTeam)}<i>:</i>${scoreCell(1 - myTeam)}</div>
       <div class="res-credit"><small>획득 크레딧</small><b id="res-credits">◈ +0</b><div id="res-reward" class="mut">보상 정산 중…</div></div>
     </div>
+    <div id="res-drop" class="res-drop hidden"></div>
     ${mvp ? `<div class="mvp-card"><div class="mvp-crown">👑</div><div><div class="mvp-tag">MATCH MVP</div><div class="mvp-name">${esc(mvp.nickname)}${mvp.userId === myId ? ' <span class="bdg w">YOU</span>' : ''}</div><div class="mut" style="font-size:12px">${mvp.team === myTeam ? '우리 팀' : '상대 팀'} · 전투 점수 ${fmt(mvp.combatScore)}</div></div>
       <div class="mvp-stats">${stat(`${mvp.kills} / ${mvp.deaths} / ${mvp.assists}`, 'K / D / A')}${stat(fmt(mvp.damageDealt), '총 피해량')}${stat(mvp.headshots, '헤드샷')}</div></div>` : ''}
     <div class="res-teams">${team(myTeam)}${team(1 - myTeam)}</div>`;
@@ -990,11 +992,20 @@ function animateCredits(target: number): void {
   };
   creditRaf = requestAnimationFrame(step);
 }
+/** 결과 화면 '드롭 무기 상자 +1' 카드 (계정: 서버 정산 확정 후 / 게스트: 로컬 지급 후) */
+function fillDropCase(server: boolean): void {
+  const el = document.getElementById('res-drop'); if (!el) return;
+  const got = server || guestDrop;
+  el.classList.toggle('hidden', !got); if (!got) return;
+  el.innerHTML = `<span class="rd-ic">🎁</span><div><b>드롭 무기 상자 +1</b><small>보관함 · 컨테이너에 지급됨 (개봉에는 무기 상자 열쇠 1개 필요)</small></div><button type="button" class="c-btn c-ghostb" id="res-drop-go">보관함에서 확인</button>`;
+  $('res-drop-go').onclick = () => { resetMatchEnd(); void leaveGame().then(() => { ldSlot = 'cases'; goTab('loadout'); }); };
+}
 function fillReward(): void {
   const r = pendingReward, el = document.getElementById('res-reward'); if (!r || !el) return;
   const nt = r.rank_points != null ? tierInfo(tierLevel(r.rank_points)) : null, ot = nt ? tierInfo(tierLevel(r.rank_points! - r.rp_delta)) : null;
   const tierLine = nt && ot ? `<div class="tier-res">${tierTag(nt, 40, r.rank_points)}${nt.level > ot.level ? ` <b class="tier-up">▲ 승급 · ${tierTxt(ot)} → ${tierTxt(nt)}</b>` : nt.level < ot.level ? ` <b class="tier-down">▼ 강등 · ${tierTxt(ot)} → ${tierTxt(nt)}</b>` : ''}</div>` : '';
   el.innerHTML = `${tierLine}${r.rp_delta ? `<b style="color:${r.rp_delta > 0 ? 'var(--ok)' : 'var(--acc)'}">${r.rp_delta > 0 ? '+' : ''}${r.rp_delta} RP</b>` : ''}${r.saved ? '' : `${r.rp_delta ? ' · ' : ''}저장되지 않는 경기`}${r.unlocked?.length ? `<br />🏆 업적 ${r.unlocked.length}개 달성!` : ''}`;
+  fillDropCase(!!r.drop_case);
   const real = r.credits_earned ?? r.credits; // DB 정산값이 예상치와 다르면 그 값으로 보정
   if (matchOver && real !== (matchOver.m.players.find((p) => p.userId === matchOver!.myId)?.earnedCredits ?? 0)) animateCredits(real);
 }

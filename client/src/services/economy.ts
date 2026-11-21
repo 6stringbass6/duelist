@@ -114,12 +114,11 @@ export async function openCases(kind: CaseKind, count: number): Promise<CaseResu
 export function equipGuestSkin(weaponId: string, skinId: string | null): void {
   writeSkins(readSkins().map((o) => (o.weapon_id === weaponId ? { ...o, equipped: o.skin_id === skinId } : o)));
 }
-/** 게스트 매치 XP 적립 — 이번 주 첫 레벨업이면 드롭 무기 상자 1개 (계정은 DB 트리거가 처리). 지급 여부 반환 */
+/** 게스트 매치 XP 적립 + 완주 매치당 드롭 무기 상자 1개 (계정은 DB 트리거가 처리). 지급 여부 반환 */
 export function awardGuestMatchXp(result: 'win' | 'loss' | 'draw' | 'left', kills: number): boolean {
   const p = getProfile(); if (!p?.isGuest) return false;
-  const old = p.xp ?? 0, xp = old + matchXp(result, kills), up = levelOf(xp) > levelOf(old), week = kstIsoWeek();
-  const drop = up && p.last_drop_week !== week;
-  patchProfile({ xp, ...(up ? { last_drop_week: week } : {}), ...(drop ? { lootboxes: p.lootboxes + 1 } : {}) });
+  const drop = result !== 'left';
+  patchProfile({ xp: (p.xp ?? 0) + matchXp(result, kills), ...(drop ? { lootboxes: (p.lootboxes ?? 0) + 1 } : {}) });
   return drop;
 }
 export const CASE_LIST = Object.values(CASES);

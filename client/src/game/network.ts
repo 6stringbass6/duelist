@@ -41,7 +41,7 @@ export interface MatchEnd {
   /** combatScore 내림차순 정렬 */
   players: MatchPlayerResult[]; matchMvpId: number; teamMvpId: [number, number];
 }
-export interface MatchReward { result: 'win' | 'loss' | 'draw' | 'left'; rp_delta: number; credits: number; saved: boolean; rank_points?: number; credits_earned?: number; unlocked?: string[] }
+export interface MatchReward { result: 'win' | 'loss' | 'draw' | 'left'; rp_delta: number; credits: number; saved: boolean; rank_points?: number; credits_earned?: number; unlocked?: string[]; drop_case?: number }
 export interface HelloInfo { serverTime: number; guest: boolean; name: string; rp: number; tier: number; tierLabel: string; loadout: Loadout }
 interface Snap { t: number; x: number; y: number; z: number; yaw: number; pitch: number; f: number; hp: number; slot: number }
 

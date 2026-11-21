@@ -984,7 +984,7 @@ async function persist(room, e, result, now) {
           ranked_matches: ranked ? 1 : 0, tdm_kills: room.mode === 'tdm' ? s.k : 0 },
       } });
       if (error) throw error;
-      Object.assign(reward, data, { saved: true });
+      Object.assign(reward, data, { saved: true, drop_case: result === 'left' ? 0 : 1 }); // DB 트리거(match_xp_drop)가 완주 매치당 상자 1개 적립
       if (e.sess) { e.sess.rp = data.rank_points; e.rp = data.rank_points; }
     } catch (err) { console.error('[persist]', err.message || err); }
   }

@@ -251,7 +251,7 @@ export type CaseKind = 'drop' | 'store';
 export interface CaseDef { id: CaseKind; name: string; en: string; needsKey: boolean; rates: Partial<Record<Tier, number>>; desc: string }
 /** CS2 공식 확률. drop = 매치 XP 레벨업 주간 보상(열쇠 필요) / store = 상점 판매(열쇠 동봉) */
 export const CASES: Record<CaseKind, CaseDef> = {
-  drop: { id: 'drop', name: '드롭 무기 상자', en: 'Weapon Case', needsKey: true, rates: { milspec: 79.92, restricted: 15.98, classified: 3.2, covert: 0.64, exrare: 0.26 }, desc: '매주 첫 레벨업 보상 · 무기 상자 열쇠 1개로 개봉' },
+  drop: { id: 'drop', name: '드롭 무기 상자', en: 'Weapon Case', needsKey: true, rates: { milspec: 79.92, restricted: 15.98, classified: 3.2, covert: 0.64, exrare: 0.26 }, desc: '매치 완주 보상(사격장 제외) · 무기 상자 열쇠 1개로 개봉' },
   store: { id: 'store', name: '상점 전용 컨테이너', en: 'Store Container', needsKey: false, rates: { milspec: 75, restricted: 20, classified: 5 }, desc: '열쇠 동봉 · 구매 즉시 개봉 가능' },
 };
 export const SHOP_PRICES = {
