@@ -229,6 +229,44 @@ function mountPreview(): void {
   slot.appendChild(preview.el); preview.show(pvTarget.weapon, pvTarget.skin);
 }
 
+// ── 3D 조사(Inspect) 뷰어: 보관함 카드 클릭 → 드래그 회전 · 휠 줌 · 더블클릭 초기화 · 장착/ESC 닫기
+const inspector = new SkinPreview(); inspector.setInspect(true);
+let inspTarget: { w: string; s: string | null } | null = null;
+async function equipFlow(w: string, id: string | null): Promise<void> {
+  const k = ldSlot as SlotKey, cur = getProfile()!.loadout[k];
+  try {
+    if (getProfile()?.isGuest) equipGuestSkin(w, id); else await equipSkin(w, id);
+    bundle?.skins.forEach((o) => { if (o.weapon_id === w) o.equipped = o.skin_id === id; });
+    if (w !== cur) await saveLoadout({ ...getProfile()!.loadout, [k]: w } as Loadout); // 다른 근접 섹션의 스킨 장착 → 그 무기로 전환
+    net.refreshProfile(); needReconnect = true; renderLobby();
+  } catch (e) { toast(errMsg(e), 'bad'); }
+}
+function openInspect(w: string, skinId: string | null): void {
+  const def = skinId ? getSkin(skinId) : null; inspTarget = { w, s: def?.id ?? null };
+  const own = def ? ownedFor(w).get(def.id) : undefined, isThrow = WEAPONS_BY_SLOT.throwable.includes(w as WeaponId);
+  $('insp-wn').textContent = wName(w);
+  $('insp-sn').textContent = def ? def.name : isThrow ? '기본 외형' : '기본 외형';
+  $('insp-badge').innerHTML = tierBadge(def?.tier ?? null, def ? `${TIERS[def.tier].en} · ${TIERS[def.tier].name}` : undefined);
+  $('insp-seed').textContent = def?.patternSeed ? `패턴 #${def.patternSeed}` : '';
+  const eqBtn = $<HTMLButtonElement>('insp-equip'), isEq = def ? !!own?.equipped : !([...ownedFor(w).values()].some((x) => x.equipped));
+  const curW = getProfile()!.loadout[ldSlot as SlotKey];
+  eqBtn.classList.toggle('hidden', isThrow ? curW === w : false);
+  eqBtn.disabled = (!!def && !own) || (isEq && curW === w);
+  eqBtn.textContent = def && !own ? '미보유' : isEq && curW === w ? '장착 중' : '장착하기';
+  show('m-inspect'); $('insp-stage').appendChild(inspector.el); inspector.show(w as WeaponId, def?.id ?? null);
+}
+function closeInspect(): void { show('m-inspect', false); inspTarget = null; }
+$('insp-close').onclick = closeInspect;
+$('m-inspect').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeInspect(); });
+$('insp-reset').onclick = () => inspector.resetView();
+$('insp-equip').onclick = () => {
+  if (!inspTarget) return; const { w, s } = inspTarget, raw = s ? ownedFor(w).get(s)?.raw ?? null : null;
+  closeInspect();
+  if (WEAPONS_BY_SLOT.throwable.includes(w as WeaponId)) { needReconnect = true; void saveLoadout({ ...getProfile()!.loadout, throwable: w } as Loadout).then(() => renderLobby()); return; }
+  void equipFlow(w, raw);
+};
+addEventListener('keydown', (e) => { if (e.code === 'Escape' && visible('m-inspect')) { e.stopImmediatePropagation(); closeInspect(); } }, true);
+
 // ───────────────────────────── 상단 바 ─────────────────────────────
 function renderTop(): void {
   const p = getProfile(); if (!p) return;
@@ -381,11 +419,11 @@ function skinCards(w: string, pool: SkinDef[], withStd: boolean, active = true):
   const sorted = [...pool].sort((a, b) => (+own.has(b.id) - +own.has(a.id)) || TIERS[b.tier].order - TIERS[a.tier].order || a.sort - b.sort);
   const tag = (eq: boolean): string => (eq && active ? '<span class="c-eqtag">EQUIPPED</span>' : '');
   const eqLabel = active ? '장착 중' : '장착됨 · 무기 선택 시 적용';
-  const std = `<div class="c-card${anyEq || !active ? '' : ' c-eq'}"><div class="c-vis">${skinVis(w, null)}</div>${tag(!anyEq)}<div class="c-body">${tierBadge(null)}<span class="c-cn2">${esc(wName(w))} 기본 외형</span><span class="c-cw">${esc(wName(w))} · 기본</span><div class="c-row">${anyEq || !active ? `<button type="button" class="c-btn" data-equip="" data-ew="${w}">장착</button>` : '<span class="c-own">장착 중</span>'}</div></div></div>`;
+  const std = `<div class="c-card c-insp${anyEq || !active ? '' : ' c-eq'}" data-insp-w="${w}" title="클릭: 3D로 살펴보기"><div class="c-vis">${skinVis(w, null)}</div>${tag(!anyEq)}<div class="c-body">${tierBadge(null)}<span class="c-cn2">${esc(wName(w))} 기본 외형</span><span class="c-cw">${esc(wName(w))} · 기본</span><div class="c-row">${anyEq || !active ? `<button type="button" class="c-btn" data-equip="" data-ew="${w}">장착</button>` : '<span class="c-own">장착 중</span>'}</div></div></div>`;
   const cards = sorted.filter(byRarity).map((s) => {
     const o = own.get(s.id), eq = !!o?.equipped;
     const act = !o ? '<span class="c-lock">미보유 · 컨테이너·상점에서 획득</span>' : eq && active ? `<span class="c-own">${eqLabel}</span>` : `<button type="button" class="c-btn" data-equip="${esc(o.raw)}" data-ew="${w}">장착</button>`;
-    return `<div class="c-card${eq && active ? ' c-eq' : ''}"><div class="c-vis">${skinVis(w, s)}</div>${tag(eq)}<div class="c-body">${tierBadge(s.tier)}<span class="c-cn2">${esc(s.name)}</span><span class="c-cw">${esc(wName(w))} · ${TIERS[s.tier].name}${s.patternSeed ? ` · 패턴 #${s.patternSeed}` : ''}</span><div class="c-row">${act}</div></div></div>`;
+    return `<div class="c-card c-insp${eq && active ? ' c-eq' : ''}" data-insp-w="${w}" data-insp-s="${esc(s.id)}" title="클릭: 3D로 살펴보기"><div class="c-vis">${skinVis(w, s)}</div>${tag(eq)}<div class="c-body">${tierBadge(s.tier)}<span class="c-cn2">${esc(s.name)}</span><span class="c-cw">${esc(wName(w))} · ${TIERS[s.tier].name}${s.patternSeed ? ` · 패턴 #${s.patternSeed}` : ''}</span><div class="c-row">${act}</div></div></div>`;
   });
   return { cards: (withStd && rarity === 'all' ? [std] : []).concat(cards), own };
 }
@@ -423,7 +461,7 @@ function htmlFists(cur: string): string {
 function htmlSkinGrid(k: SlotKey): string {
   const w = getProfile()!.loadout[k];
   const wchips = `<div class="c-chips c-wchips" role="group" aria-label="무기 선택">${WEAPONS_BY_SLOT[k].map((id) => `<button type="button" class="c-chip${id === w ? ' c-on' : ''}" data-ldw="${id}">${esc(wName(id))}</button>`).join('')}</div>`;
-  if (k === 'throwable') return `${wchips}<div class="c-empty">투척류에는 스킨이 없습니다.</div>`;
+  if (k === 'throwable') return `${wchips}<div class="c-grid">${WEAPONS_BY_SLOT.throwable.map((id) => `<div class="c-card c-insp${id === w ? ' c-eq' : ''}" data-insp-w="${id}" title="클릭: 3D로 살펴보기"><div class="c-vis">${skinVis(id, null)}</div>${id === w ? '<span class="c-eqtag">EQUIPPED</span>' : ''}<div class="c-body">${tierBadge(null)}<span class="c-cn2">${esc(wName(id))}</span><span class="c-cw">투척 · 스킨 없음</span><div class="c-row"><button type="button" class="c-btn" data-insp-open="${id}">3D 보기</button></div></div></div>`).join('')}</div>`;
   if (k === 'melee') {
     if (meleeView !== 'all' && meleeView !== 'fists' && !MELEE_SECTS.some((m) => m.key === meleeView)) meleeView = 'all';
     if (meleeView === 'fists') return `${htmlMeleeChips(w)}${htmlFists(w)}`;
@@ -622,15 +660,9 @@ function bindLobbyBody(): void {
     else { const other = k === 'q' ? 'e' : 'q'; if (l[other] === id) l[other] = l[k]; l[k] = id as SkillId; }
     needReconnect = true; void saveLoadout(l).then(() => renderLobby());
   }));
-  each('[data-equip]', (b) => (b.onclick = async () => {
-    const id = b.dataset.equip || null, k = ldSlot as SlotKey, cur = getProfile()!.loadout[k], w = b.dataset.ew || cur;
-    try {
-      if (getProfile()?.isGuest) equipGuestSkin(w, id); else await equipSkin(w, id);
-      bundle?.skins.forEach((s) => { if (s.weapon_id === w) s.equipped = s.skin_id === id; });
-      if (w !== cur) await saveLoadout({ ...getProfile()!.loadout, [k]: w } as Loadout); // 다른 근접 섹션의 스킨 장착 → 그 무기로 전환
-      net.refreshProfile(); needReconnect = true; renderLobby();
-    } catch (e) { toast(errMsg(e), 'bad'); }
-  }));
+  each('[data-equip]', (b) => (b.onclick = () => void equipFlow(b.dataset.ew || getProfile()!.loadout[ldSlot as SlotKey], b.dataset.equip || null)));
+  each('[data-insp-w]', (c) => (c.onclick = (e) => { if ((e.target as HTMLElement).closest('button')) return; openInspect(c.dataset.inspW!, c.dataset.inspS || null); }));
+  each('[data-insp-open]', (b) => (b.onclick = () => openInspect(b.dataset.inspOpen!, b.dataset.inspS || null)));
   each('[data-claim]', (b) => (b.onclick = async () => { const r = await guard(() => claimMission(+b.dataset.claim!)); if (r) { toast(r.reward_type === 'credits' ? `◈ ${r.reward_amount} 획득` : '드롭 무기 상자 획득', 'good'); await loadBundle(); } }));
   each('[data-title]', (b) => (b.onclick = async () => { try { await equipTitle(b.dataset.title || null); needReconnect = true; renderLobby(); } catch (e) { toast(errMsg(e), 'bad'); } }));
 }

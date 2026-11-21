@@ -41,7 +41,7 @@ export class SkinPreview {
   private readonly under = new THREE.PointLight(0xffffff, 0, 4, 1.8);
   private model: THREE.Group | null = null;
   private shown = ''; private rig: Rig = RIGS.none; private raf = 0; private frames = 0; private failed = false;
-  private yaw = 0.5; private pitch = 0.12; private dragging = false; private idleSince = 0; private w = 0; private h = 0;
+  private yaw = 0.5; private pitch = 0.12; private zoom = 1; private fitDist = 1; private pitchLim = 0.7; private dragging = false; private idleSince = 0; private w = 0; private h = 0;
 
   constructor() {
     this.el = document.createElement('div'); this.el.className = 'pv-stage';
@@ -51,11 +51,20 @@ export class SkinPreview {
     this.el.addEventListener('pointerdown', (e) => { this.dragging = true; px = e.clientX; py = e.clientY; this.el.setPointerCapture(e.pointerId); });
     this.el.addEventListener('pointermove', (e) => {
       if (!this.dragging) return;
-      this.yaw += (e.clientX - px) * 0.011; this.pitch = Math.max(-0.7, Math.min(0.7, this.pitch + (e.clientY - py) * 0.008)); px = e.clientX; py = e.clientY;
+      this.yaw += (e.clientX - px) * 0.011; this.pitch = Math.max(-this.pitchLim, Math.min(this.pitchLim, this.pitch + (e.clientY - py) * 0.008)); px = e.clientX; py = e.clientY;
     });
+    this.el.addEventListener('dblclick', () => this.resetView());
+    this.el.addEventListener('wheel', (e) => { if (!this.zoomable) return; e.preventDefault(); this.zoom = Math.max(0.35, Math.min(2.5, this.zoom * Math.exp(e.deltaY * 0.001))); this.applyZoom(); }, { passive: false });
     const up = (): void => { this.dragging = false; this.idleSince = performance.now(); };
     this.el.addEventListener('pointerup', up); this.el.addEventListener('pointercancel', up);
   }
+
+  /** 조사 뷰어용: 휠 줌 허용 + 상하 회전 범위 확장(true). 기본(로비 무대)은 줌 없음 */
+  zoomable = false;
+  setInspect(on: boolean): void { this.zoomable = on; this.pitchLim = on ? 1.45 : 0.7; }
+  /** 정면 기본 각도 + 기본 줌으로 복귀 */
+  resetView(): void { this.yaw = 0.5; this.pitch = 0.12; this.zoom = 1; this.idleSince = performance.now(); this.applyZoom(); }
+  private applyZoom(): void { this.camera.position.z = this.fitDist * this.zoom; }
 
   private ensureRenderer(): boolean {
     if (this.renderer) return true; if (this.failed) return false;
@@ -73,7 +82,7 @@ export class SkinPreview {
     if (id !== this.shown) {
       this.shown = id; this.model?.removeFromParent();
       this.model = createWeaponMesh(weaponId, def?.id ?? null); this.model.traverse((o) => { o.castShadow = false; });
-      this.pivot.add(this.model); this.frames = 0;
+      this.pivot.add(this.model); this.frames = 0; if (this.zoomable) this.resetView();
       this.rig = RIGS[def?.tier ?? 'none'];
       const col = new THREE.Color(def ? TIERS[def.tier].color : '#8b97ab'), glow = def && def.emissive.mode !== 'none' ? new THREE.Color(def.emissive.color) : col;
       this.rimA.color.copy(col); this.rimB.color.copy(glow); this.under.color.copy(glow); this.sweep.color.copy(col).lerp(new THREE.Color(0xffffff), 0.6);
@@ -97,7 +106,8 @@ export class SkinPreview {
     const size = box.getSize(new THREE.Vector3()), ctr = box.getCenter(new THREE.Vector3());
     m.position.copy(ctr).multiplyScalar(-1); this.pivot.updateMatrixWorld(true);
     const len = Math.max(size.z, size.x), halfV = Math.tan((this.camera.fov * Math.PI) / 360), aspect = this.camera.aspect;
-    this.camera.position.set(0, 0, Math.max((len * 0.57) / (halfV * aspect), (size.y * 0.8) / halfV, 0.3) + 0.04);
+    this.fitDist = Math.max((len * 0.57) / (halfV * aspect), (size.y * 0.8) / halfV, 0.3) + 0.04;
+    this.camera.position.set(0, 0, this.fitDist * this.zoom);
     this.camera.lookAt(0, 0, 0);
   }
 

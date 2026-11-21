@@ -745,8 +745,14 @@ th{font-family:var(--c-en);font-weight:500;font-size:11px;letter-spacing:.2em;te
 .fr-who b{display:block;font-weight:500;font-size:14px}.fr-who small{font-size:11px;color:var(--c-mut)}
 .fr-act{display:flex;gap:6px}
 .fr-empty{padding:22px 0;color:var(--c-mut);font-size:13px}
+.c-insp{cursor:pointer}
+#m-inspect{z-index:60}#m-inspect>.card.insp{width:min(980px,96vw);height:min(720px,92vh);max-height:92vh;display:flex;flex-direction:column;padding:0;overflow:hidden;background:radial-gradient(ellipse at 50% 40%,#17150f 0%,#0a0a09 75%)}
+.insp-top{display:flex;align-items:flex-start;padding:18px 24px 0}.insp-meta{display:flex;flex-direction:column;gap:4px}.insp-wn{font-family:var(--c-en);font-size:12px;letter-spacing:.28em;text-transform:uppercase;color:var(--c-mut)}.insp-sn{font-size:26px;font-weight:600;color:var(--c-txt)}.insp-seed{font-family:var(--c-mono);font-size:13px;color:var(--c-gold)}.insp-top .x{margin-left:auto;border:none!important;background:none!important;font-size:20px}
+.insp-stage{position:relative;flex:1;min-height:200px}.insp-hint{text-align:center;font-size:11px;letter-spacing:.14em;color:var(--c-mut);padding:6px}
+.insp-bar{display:flex;align-items:center;gap:10px;padding:12px 24px 18px;border-top:1px solid var(--c-line)}.insp-sp{flex:1}
+@media(max-width:560px){.insp-sn{font-size:20px}.insp-bar{padding:10px 14px 14px;flex-wrap:wrap}}
 </style>
-  <script type="module" crossorigin src="/assets/index-B6pWffHW.js"></script>
+  <script type="module" crossorigin src="/assets/index-DkjzqRi5.js"></script>
 </head>
 <body>
 <div id="app">
@@ -839,6 +845,7 @@ th{font-family:var(--c-en);font-weight:500;font-size:11px;letter-spacing:.2em;te
   <div class="modal hidden" id="m-play"><div class="card"><div class="mh"><h3>게임 모드 선택</h3><button class="x" data-close>✕</button></div><div id="play-body"></div></div></div>
   <div class="modal hidden" id="m-friends"><div class="card"><div class="mh"><h3>친구</h3><button class="x" data-close>✕</button></div><div id="fr-body"></div></div></div>
   <div class="modal hidden" id="m-settings"><div class="card"><div class="mh"><h3>설정</h3><button class="x" data-close>✕</button></div><div class="tabs" id="set-tabs"></div><div id="set-body" style="margin-top:12px"></div></div></div>
+  <div class="modal hidden" id="m-inspect" role="dialog" aria-label="3D 스킨 조사"><div class="card insp"><div class="insp-top"><div class="insp-meta"><span id="insp-badge"></span><span class="insp-wn" id="insp-wn"></span><span class="insp-sn" id="insp-sn"></span><span class="insp-seed" id="insp-seed"></span></div><button class="x" id="insp-close" aria-label="닫기 (ESC)">✕</button></div><div class="insp-stage" id="insp-stage"></div><div class="insp-hint">드래그 회전 · 휠 확대/축소 · 더블클릭 시점 초기화</div><div class="insp-bar"><button id="insp-reset" class="ghost">시점 초기화</button><span class="insp-sp"></span><button id="insp-close2" onclick="document.getElementById('insp-close').click()">닫기 (ESC)</button><button class="pri" id="insp-equip">장착하기</button></div></div></div>
   <div class="modal hidden" id="m-nick"><div class="card sm col"><div class="mh"><h3>닉네임 변경</h3><button class="x" data-close>✕</button></div><div class="mut" id="nick-cost"></div><input id="nick-input" maxlength="16" placeholder="새 닉네임" /><div class="err" id="nick-err"></div><button class="pri" id="nick-ok">변경</button></div></div>
   <div class="modal hidden" id="m-gacha"><div class="card"><div class="mh"><h3 id="gacha-title">랜덤 박스</h3><button class="x" data-close>✕</button></div><div id="gacha-win"><div id="gacha-strip"></div></div><div id="gacha-result"></div></div></div>
   <div class="modal hidden" id="m-support"><div class="card"><div class="mh"><h3 id="sup-title">고객센터</h3><button class="x" data-close>✕</button></div><div id="sup-body"></div><div id="sup-foot"><input id="sup-input" maxlength="500" placeholder="불편 사항이나 건의 내용을 입력하세요" autocomplete="off" /><button class="pri" id="sup-send">전송</button></div></div></div>
