@@ -75,29 +75,32 @@ const FILE_PARTS: Record<string, Record<string, PartDef>> = {
  *  comps = 모델의 실제 위상(위치 용접 후 삼각형 연결 컴포넌트, 삼각형 수 내림차순 순위) 기준 칼날/금속 컴포넌트 → 파츠 경계가 모델링 그대로 떨어진다(우선 사용)
  *  from = (comps 없는 모델용) 길이축 위치 절단(0=손잡이 끝 ~ 1=날끝), handleOnly = 통째로 손잡이인 메시(예: 파라코드),
  *  blade/handle/metal/wrap = 기본(스킨 미적용) 재질 — 생략 시 모델 내장 재질 유지. 스킨 적용 시 칼날에만 스킨 재질, 금속 파츠·손잡이는 기본 유지.
- *  mats = 칼날 외 부위에서 원본 재질 이름별 기본 재질(handle/wrap 보다 우선) */
-interface BladeMask { from?: number; comps?: { blade: number[]; metal?: number[] }; handleOnly?: RegExp; blade?: PartDef; handle?: PartDef; metal?: PartDef; wrap?: PartDef; mats?: Record<string, PartDef> }
-/** 카람빗 재질. 손잡이 몸체 = 모든 스킨 공통 매트 차콜 폴리머, 기본(바닐라) 칼날·핑거 링 = 건메탈 탄소강 */
-const KARAMBIT_POLYMER: PartDef = { role: 'dark', color: 0x181a1e, metalness: 0.15, roughness: 0.82 };
+ *  mats = 칼날 외 부위에서 원본 재질 이름별 기본 재질(handle/wrap 보다 우선),
+ *  nativeHandle = 칼날 외 부위는 GLB 원본 재질을 값 보정 없이 그대로(map/normal/roughness/metalness/color 무손실, 환경맵만 연결) */
+interface BladeMask { from?: number; comps?: { blade: number[]; metal?: number[] }; handleOnly?: RegExp; blade?: PartDef; handle?: PartDef; metal?: PartDef; wrap?: PartDef; mats?: Record<string, PartDef>; nativeHandle?: boolean }
+/** 카람빗 기본(바닐라) 칼날·핑거 링 = 건메탈 탄소강 (원본 다마스커스 줄무늬 map 제거) */
 const KARAMBIT_VANILLA_BLADE: PartDef = { role: 'base', color: 0x2d323a, metalness: 0.84, roughness: 0.34 };
+/** 골드 룬 표면 마감 — karambit_csgo_gold_runes.glb 의 Material__35 실측값(metallicFactor 1 · roughnessFactor 0 · KHR_materials_specular 1/흰색 = 기본값 · doubleSided).
+ *  ⚠ 이 GLB 에는 roughness/metalness/normal 맵이 없다(baseColor 룬 텍스처 1장뿐) → 영롱한 반짝임은 이 계수 + 환경맵 증폭(glbNative 와 동일 공식)에서 나온다. 룬 색상 map 은 가져오지 않음 */
+const GOLD_RUNES_FINISH = { metalness: 1, roughness: 0 } as const;
+const doppler = (offsetU: number, color: number, emissive: number): PartDef => ({
+  role: 'base', color, ...GOLD_RUNES_FINISH, finish: true, emissive, emissiveIntensity: 0.55,
+  sheet: { url: 'textures/doppler.jpeg', rotation: 0, repeat: [0.24, 0.55], offset: [offsetU, 0.225] },
+});
 /** 스킨별 칼날 재질(GlbSpec.variant). 표면 경화 #387 블루젬: 시트의 큰 코발트 블루 덩어리를 칼날 측면 전체에 1:1 비율로 배치 (평면 UV: u = 길이축 0~1, v = 높이/길이) */
 const BLADE_VARIANTS: Record<string, PartDef> = {
-  case_hardened_387: { role: 'base', color: 0xa8bce6, metalness: 0.76, roughness: 0.26, envMapIntensity: 0.8, sheet: { url: 'textures/case_hardened.png', rotation: 0, repeat: [0.5, 0.5], offset: [-0.37, 0.41] } },
-  // 도플러 루비: doppler.jpeg 시트의 왼쪽 붉은 연기 구역(U≈0.17~0.41)만 칼날+핑거 링에 매핑 (three offset 은 중심 기준: u' = r·(u-0.5)+0.5+off)
-  doppler_ruby: { role: 'base', color: 0xffc4c4, metalness: 0.78, roughness: 0.2, envMapIntensity: 0.85, sheet: { url: 'textures/doppler.jpeg', rotation: 0, repeat: [0.24, 0.55], offset: [-0.21, 0.225] } },
-  // 도플러 사파이어: 시트 오른쪽 블루 연기 구역(U≈0.72~0.96, 중심 0.84 → offset 0.34)
-  doppler_sapphire: { role: 'base', color: 0xc4d8ff, metalness: 0.78, roughness: 0.2, envMapIntensity: 0.85, sheet: { url: 'textures/doppler.jpeg', rotation: 0, repeat: [0.24, 0.55], offset: [0.34, 0.225] } },
-  // 감마 도플러 에메랄드: 시트 가운데 그린 연기 구역(U≈0.43~0.68, 중심 0.555 → offset 0.055)
-  doppler_emerald: { role: 'base', color: 0xc4ffd4, metalness: 0.78, roughness: 0.2, envMapIntensity: 0.85, sheet: { url: 'textures/doppler.jpeg', rotation: 0, repeat: [0.24, 0.55], offset: [0.055, 0.225] } },
+  case_hardened_387: { role: 'base', color: 0xd4e0ff, ...GOLD_RUNES_FINISH, finish: true, sheet: { url: 'textures/case_hardened.png', rotation: 0, repeat: [0.5, 0.5], offset: [-0.37, 0.41] } },
+  // 도플러 3종: doppler.jpeg 시트의 보석색 연기 구역만 칼날+핑거 링에 매핑 (three offset 은 중심 기준: u' = r·(u-0.5)+0.5+off).
+  // 검은 연기 배경에 칼날이 묻히지 않도록 같은 시트를 emissiveMap 으로도 연결 → 보석 색 틴트 + 자체 발색
+  doppler_ruby: doppler(-0.21, 0xff7585, 0xd91636), // 왼쪽 붉은 연기 구역(U≈0.17~0.41)
+  doppler_sapphire: doppler(0.34, 0x75adff, 0x1254e8), // 오른쪽 블루 연기 구역(U≈0.72~0.96)
+  doppler_emerald: doppler(0.055, 0x66ffa3, 0x0ec95c), // 가운데 그린 연기 구역(U≈0.43~0.68)
 };
-const DAMASCUS_FILE = 'damascus_karambit.glb';
+const KARAMBIT_FILE = 'damascus-karambit.glb';
 const BLADE_MASKS: Record<string, BladeMask> = {
-  // CS2 카람빗(damascus_karambit.glb): 단일 메시·연결 컴포넌트 3개(실측) — #0 손잡이 몸체(4730 tri), #1 핑거 링(948), #2 칼날(858)
-  // → 칼날 + 핑거 링 금속 테두리 = 같은 블레이드 그룹(바닐라 건메탈, 스킨 variant/skin.base 가 둘 다 덮어씀), 손잡이 몸체만 매트 차콜 폴리머. 내장 다마스커스 PBR 텍스처는 원본 root 재질에 그대로 보존(embeddedMaterials)
-  [DAMASCUS_FILE]: {
-    comps: { blade: [1, 2] },
-    blade: KARAMBIT_VANILLA_BLADE, handle: KARAMBIT_POLYMER,
-  },
+  // CS2 카람빗(damascus-karambit.glb, KarambitFinal.obj + 2K PBR 텍스처 변환본): 단일 메시·연결 컴포넌트 3개(실측) — #0 손잡이(4730 tri, 탱·그립 스케일), #1 핑거 링(948), #2 칼날(858)
+  // → 칼날 + 핑거 링 = 블레이드 그룹(바닐라 건메탈 또는 스킨 variant), 손잡이는 모델 내장 원본 PBR 재질 그대로(nativeHandle)
+  [KARAMBIT_FILE]: { comps: { blade: [1, 2] }, blade: KARAMBIT_VANILLA_BLADE, nativeHandle: true },
   // CS2 바닐라 스켈레톤: 내장 Fade 텍스처를 덮어쓰는 무광 다크 스틸 날 + 차콜 그레이 프레임/링, 파라코드(Plane001)는 통째로 손잡이
   'skeleton_knife.glb': {
     from: 0.42, handleOnly: /^Plane001$/,
@@ -127,8 +130,9 @@ const BLADE_MASKS: Record<string, BladeMask> = {
  *  parts = 메시 이름별 기본 재질 + 스킨 역할(재질이 하나뿐인 모델용, 부모 메시 이름이 아닌 메시 자신의 이름 기준) */
 type ModelDef = { file: string; length: number; grip?: number; roll?: number; own?: boolean; rot?: [number, number, number]; hide?: RegExp; parts?: Record<string, PartDef>; variant?: string; native?: boolean };
 type Role = 'base' | 'accent' | 'dark' | 'glass';
-/** split = 단일 메시 안의 2차 영역(rot 적용 후 모델 좌표 x/y 로 판정) → 기본 외형에서만 part 재질, 스킨 장착 시엔 메시 전체가 기존처럼 role 스킨. grain = 나뭇결 텍스처 */
-interface PartDef { role: Role; color: number; metalness: number; roughness: number; envMapIntensity?: number; grain?: boolean; sheet?: SheetMap; split?: { test: (x: number, y: number) => boolean; part: PartDef } }
+/** split = 단일 메시 안의 2차 영역(rot 적용 후 모델 좌표 x/y 로 판정) → 기본 외형에서만 part 재질, 스킨 장착 시엔 메시 전체가 기존처럼 role 스킨. grain = 나뭇결 텍스처,
+ *  emissive = 시트(sheet)를 emissiveMap 으로도 연결해 이 색으로 자체 발색, finish = 골드 룬 마감(인스턴스별 환경맵 직접 연결 + 증폭, 양면) */
+interface PartDef { role: Role; color: number; metalness: number; roughness: number; grain?: boolean; sheet?: SheetMap; emissive?: number; emissiveIntensity?: number; finish?: boolean; split?: { test: (x: number, y: number) => boolean; part: PartDef } }
 /** 원본 시트 이미지(public/textures)를 평면 UV 로 매핑하는 변환 — THREE.Texture 의 center/rotation/repeat/offset 그대로 */
 interface SheetMap { url: string; rotation: number; repeat: [number, number]; offset: [number, number] }
 interface Source { glb: boolean; root: THREE.Object3D; roles: Map<string, Role>; scale: number; offset: THREE.Vector3; muzzle: THREE.Vector3; parts?: Record<string, PartDef>; mask?: BladeMask; axis: { y: Float32Array; x0: number; len: number } }
@@ -263,7 +267,7 @@ const modelFor = (id: WeaponId, skinId?: string | null): ModelDef | undefined =>
 
 /** 칼날 재질: 스킨 variant 가 있으면 그것, 없으면 마스크 기본(바닐라) */
 const bladeOf = (def: ModelDef): PartDef | undefined => (def.variant ? BLADE_VARIANTS[def.variant] : undefined) ?? BLADE_MASKS[def.file]?.blade;
-/** 모델에 내장된 원본 재질(예: damascus_karambit.glb 의 다마스커스 PBR 텍스처) — 로드 후 향후 다마스커스 스틸 스킨이 그대로 재사용할 수 있게 보존 */
+/** 모델에 내장된 원본 재질(예: damascus-karambit.glb 의 다마스커스 PBR 텍스처) — 로드 후 향후 다마스커스 스틸 스킨이 그대로 재사용할 수 있게 보존 */
 export const embeddedMaterials = (file: string): THREE.Material[] => {
   const out = new Set<THREE.Material>(); ready.get(file)?.root.traverse((o) => { if ((o as THREE.Mesh).isMesh) matsOf(o as THREE.Mesh).forEach((m) => out.add(m)); });
   return [...out];
@@ -322,15 +326,18 @@ function sheetTex(s: SheetMap): THREE.Texture {
 }
 const partMat = (p: PartDef): THREE.MeshStandardMaterial => {
   let r = partCache.get(p);
-  if (!r) { r = new THREE.MeshStandardMaterial({ color: p.color, metalness: p.metalness, roughness: p.roughness, envMapIntensity: p.envMapIntensity ?? (p.metalness > 0.5 ? 1.6 : 1), map: p.sheet ? sheetTex(p.sheet) : p.grain ? woodGrain() : null }); partCache.set(p, r); }
+  if (!r) {
+    const map = p.sheet ? sheetTex(p.sheet) : p.grain ? woodGrain() : null;
+    r = new THREE.MeshStandardMaterial({ color: p.color, metalness: p.metalness, roughness: p.roughness, map, side: p.finish ? THREE.DoubleSide : THREE.FrontSide });
+    if (p.emissive !== undefined) { r.emissive.setHex(p.emissive); r.emissiveMap = map; r.emissiveIntensity = p.emissiveIntensity ?? 1; }
+    partCache.set(p, r);
+  }
   return r;
 };
 
-/** GLB 내장 PBR 재질: 인스턴스별 복제 + 렌더 직전 장면 환경맵을 직접 물려 금속 반사를 강하게(씬 IBL 이 약해도 어둡지 않게) */
-function glbNative(mesh: THREE.Mesh, m: THREE.Material, raw = false): THREE.Material {
-  const c = m.clone() as THREE.MeshStandardMaterial;
-  if (!raw && c.metalness > 0.5) { c.metalness = 1; c.roughness = Math.max(0.16, c.roughness * 0.8); } // raw(def.native) = 원본 metalness/roughness/맵 값을 건드리지 않음
-  c.envMapIntensity = 1;
+/** 렌더 직전 장면 환경맵을 재질에 직접 물려 금속 반사를 강하게(씬 IBL 이 약해도 어둡지 않게) — 재질은 인스턴스별 복제본이어야 한다.
+ *  (envMap 이 비어 있으면 three 가 material.envMapIntensity 대신 scene.environmentIntensity 를 쓰므로 직접 연결해야 증폭이 먹는다) */
+function withEnv(mesh: THREE.Mesh, c: THREE.MeshStandardMaterial): THREE.MeshStandardMaterial {
   let last: THREE.Texture | null = null, lastI = -1;
   const prev = mesh.onBeforeRender;
   mesh.onBeforeRender = function (this: THREE.Mesh, ...a: Parameters<typeof prev>) {
@@ -341,6 +348,13 @@ function glbNative(mesh: THREE.Mesh, m: THREE.Material, raw = false): THREE.Mate
     prev.apply(this, a);
   };
   return c;
+}
+
+/** GLB 내장 PBR 재질: 인스턴스별 복제 + 환경맵 증폭. raw = 원본 metalness/roughness/맵 값을 건드리지 않음 */
+function glbNative(mesh: THREE.Mesh, m: THREE.Material, raw = false): THREE.Material {
+  const c = m.clone() as THREE.MeshStandardMaterial;
+  if (!raw && c.metalness > 0.5) { c.metalness = 1; c.roughness = Math.max(0.16, c.roughness * 0.8); }
+  return withEnv(mesh, c);
 }
 
 function build(src: Source, skin: SkinSet, roll = 0, blade?: PartDef, raw = false): THREE.Group {
@@ -358,7 +372,8 @@ function build(src: Source, skin: SkinSet, roll = 0, blade?: PartDef, raw = fals
   };
   // 칼날 마스크: 손잡이(0)·금속 파츠(2, 예: 핑거 링)는 항상 기본 재질, 스킨은 칼날 그룹(1)에만
   const mask = src.mask;
-  const own = (m: THREE.Material, def?: PartDef): THREE.Material => (def ? partMat(def) : src.glb && curMesh ? glbNative(curMesh, m) : native(m));
+  const own = (m: THREE.Material, def?: PartDef): THREE.Material =>
+    def ? (def.finish && curMesh ? withEnv(curMesh, partMat(def).clone()) : partMat(def)) : src.glb && curMesh ? glbNative(curMesh, m, mask?.nativeHandle) : native(m);
   const pickMasked = (m: THREE.Material, group: number): THREE.Material =>
     group === 1 ? (skin.skinned ? skin.base : own(m, blade ?? mask!.blade))
       : group === 2 ? own(m, mask!.mats?.[m.name] ?? mask!.metal ?? mask!.blade)

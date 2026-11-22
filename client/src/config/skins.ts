@@ -147,26 +147,26 @@ export const BUTTERFLY_SKIN_ID = 'butterfly_dagger';
 export const SKELETON_SKIN_ID = 'skeleton_dagger';
 export const BOWIE_SKIN_ID = 'bowie_dagger';
 export const EXTRA_SKINS: SkinDef[] = [
-  // 카람빗 스페셜 박스 전용(0.1%) — 상점/일일/일반 박스에는 나오지 않는다. 단검(근접 3번 슬롯) 전용, damascus_karambit.glb(내장 다마스커스 텍스처는 보존만 하고 BLADE_MASKS/BLADE_VARIANTS 재질로 덮어씀) 사용
+  // 카람빗 스페셜 박스 전용(0.1%) — 상점/일일/일반 박스에는 나오지 않는다. 단검(근접 3번 슬롯) 전용, damascus-karambit.glb(손잡이는 내장 원본 PBR 그대로, 칼날·핑거 링만 BLADE_VARIANTS 재질) 사용
   { id: KARAMBIT_SKIN_ID, collection: 'karambit', weaponId: 'dagger', name: '★ 카람빗 | 표면 경화', patternSeed: 387, tier: 'exrare', price: 4500, featured: false, inDaily: false, inBox: false, sort: 14,
     blurb: '표면 경화 열처리로 칼날 전면이 코발트 블루로 물든 블루젬 카람빗 (패턴 #387). 카람빗 스페셜 박스 0.1% 한정.',
     model: 'default', material: { style: 'solid', baseColor: 0x1d4fb8, accentColor: 0xe0b440, patternColor: 0x9fd0ff, metalness: 0.95, roughness: 0.25 },
-    emissive: NO_GLOW, vfx: { tracerColor: 0x9fd0ff }, glb: { file: 'damascus_karambit.glb', length: 0.27, grip: 0.3, roll: 0, rot: [0, 0, Math.PI], variant: 'case_hardened_387' } },
+    emissive: NO_GLOW, vfx: { tracerColor: 0x9fd0ff }, glb: { file: 'damascus-karambit.glb', length: 0.27, grip: 0.3, roll: 0, rot: [0, 0, Math.PI], variant: 'case_hardened_387' } },
   // 카람빗 도플러(루비) — 표면 경화와 동일 등급 체계, doppler.jpeg 원본 시트의 붉은 연기 구역을 칼날·핑거 링에 매핑
   { id: 'karambit_doppler', collection: 'karambit', weaponId: 'dagger', name: '★ 카람빗 | 도플러', patternSeed: 417, tier: 'exrare', price: 4500, featured: false, inDaily: false, inBox: false, sort: 14.5,
     blurb: '칼날 전체에 루비 레드 연기가 소용돌이치는 도플러 카람빗 (Ruby). 카람빗 스페셜 박스 한정.',
     model: 'default', material: { style: 'solid', baseColor: 0xb3122a, accentColor: 0x5a0a14, patternColor: 0xff4d5e, metalness: 0.78, roughness: 0.2 },
-    emissive: NO_GLOW, vfx: { tracerColor: 0xff4d5e }, glb: { file: 'damascus_karambit.glb', length: 0.27, grip: 0.3, roll: 0, rot: [0, 0, Math.PI], variant: 'doppler_ruby' } },
+    emissive: NO_GLOW, vfx: { tracerColor: 0xff4d5e }, glb: { file: 'damascus-karambit.glb', length: 0.27, grip: 0.3, roll: 0, rot: [0, 0, Math.PI], variant: 'doppler_ruby' } },
   // 카람빗 도플러(사파이어) — doppler.jpeg 오른쪽 블루 연기 구역
   { id: 'karambit_doppler_sapphire', collection: 'karambit', weaponId: 'dagger', name: '★ 카람빗 | 사파이어', patternSeed: 418, tier: 'exrare', price: 4500, featured: false, inDaily: false, inBox: false, sort: 14.6,
     blurb: '칼날 전체에 코발트 블루 연기가 감도는 도플러 카람빗 (Sapphire). 카람빗 스페셜 박스 한정.',
     model: 'default', material: { style: 'solid', baseColor: 0x1d4fb8, accentColor: 0x0a1a5a, patternColor: 0x4d8dff, metalness: 0.78, roughness: 0.2 },
-    emissive: NO_GLOW, vfx: { tracerColor: 0x4d8dff }, glb: { file: 'damascus_karambit.glb', length: 0.27, grip: 0.3, roll: 0, rot: [0, 0, Math.PI], variant: 'doppler_sapphire' } },
+    emissive: NO_GLOW, vfx: { tracerColor: 0x4d8dff }, glb: { file: 'damascus-karambit.glb', length: 0.27, grip: 0.3, roll: 0, rot: [0, 0, Math.PI], variant: 'doppler_sapphire' } },
   // 카람빗 감마 도플러(에메랄드) — doppler.jpeg 가운데 그린 연기 구역
   { id: 'karambit_gamma_doppler', collection: 'karambit', weaponId: 'dagger', name: '★ 카람빗 | 에메랄드', patternSeed: 419, tier: 'exrare', price: 4500, featured: false, inDaily: false, inBox: false, sort: 14.7,
     blurb: '칼날 전체에 에메랄드 그린 연기가 피어오르는 감마 도플러 카람빗 (Emerald). 카람빗 스페셜 박스 한정.',
     model: 'default', material: { style: 'solid', baseColor: 0x0f8f4a, accentColor: 0x06361c, patternColor: 0x4dff9a, metalness: 0.78, roughness: 0.2 },
-    emissive: NO_GLOW, vfx: { tracerColor: 0x4dff9a }, glb: { file: 'damascus_karambit.glb', length: 0.27, grip: 0.3, roll: 0, rot: [0, 0, Math.PI], variant: 'doppler_emerald' } },
+    emissive: NO_GLOW, vfx: { tracerColor: 0x4dff9a }, glb: { file: 'damascus-karambit.glb', length: 0.27, grip: 0.3, roll: 0, rot: [0, 0, Math.PI], variant: 'doppler_emerald' } },
   // 카람빗 골드 룬 — karambit_csgo_gold_runes.glb 의 원본 머티리얼·텍스처를 그대로 렌더(native: 재질/역할 오버라이드 전면 우회). rot = 원본 축(두께 X · 길이 Y · 높이 Z) → 기본 카람빗 축(길이 X · 높이 Y · 두께 Z)
   { id: 'karambit_gold_runes', collection: 'karambit', weaponId: 'dagger', name: '★ 카람빗 | 골드 룬', patternSeed: 420, tier: 'exrare', price: 4500, featured: false, inDaily: false, inBox: false, sort: 14.8,
     blurb: '금빛 룬 문양이 새겨진 카람빗 (Gold Runes). 카람빗 스페셜 박스 한정.',
