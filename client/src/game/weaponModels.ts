@@ -80,21 +80,21 @@ const FILE_PARTS: Record<string, Record<string, PartDef>> = {
 interface BladeMask { from?: number; comps?: { blade: number[]; metal?: number[] }; handleOnly?: RegExp; blade?: PartDef; handle?: PartDef; metal?: PartDef; wrap?: PartDef; mats?: Record<string, PartDef>; nativeHandle?: boolean }
 /** 카람빗 기본(바닐라) 칼날·핑거 링 = 건메탈 탄소강 (원본 다마스커스 줄무늬 map 제거) */
 const KARAMBIT_VANILLA_BLADE: PartDef = { role: 'base', color: 0x2d323a, metalness: 0.84, roughness: 0.34 };
-/** 골드 룬 표면 마감 — karambit_csgo_gold_runes.glb 의 Material__35 실측값(metallicFactor 1 · roughnessFactor 0 · KHR_materials_specular 1/흰색 = 기본값 · doubleSided).
- *  ⚠ 이 GLB 에는 roughness/metalness/normal 맵이 없다(baseColor 룬 텍스처 1장뿐) → 영롱한 반짝임은 이 계수 + 환경맵 증폭(glbNative 와 동일 공식)에서 나온다. 룬 색상 map 은 가져오지 않음 */
-const GOLD_RUNES_FINISH = { metalness: 1, roughness: 0 } as const;
+/** 카람빗 스킨 칼날·핑거 링 마감 — damascus-karambit.glb 원본 ORM(roughness/metalness)·normal 맵을 그대로 사용(계수 1 = 맵 값 그대로, 골드 룬 상수 오버라이드 철회).
+ *  원본 맵이 칼날·링 금속 광택 / 손잡이 매트 그립을 UV별로 이미 분리. 스킨 시트(map)만 uv1(평면 UV)로 매핑 */
+const NATIVE_PBR = { metalness: 1, roughness: 1, nativeMaps: true } as const;
 const doppler = (offsetU: number, color: number, emissive: number, repeat: [number, number] = [0.24, 0.55], offsetV = 0.225): PartDef => ({
-  role: 'base', color, ...GOLD_RUNES_FINISH, finish: true, emissive, emissiveIntensity: 1.1,
+  role: 'base', color, ...NATIVE_PBR, finish: true, emissive, emissiveIntensity: 1.15,
   sheet: { url: 'textures/doppler.jpeg', rotation: 0, repeat, offset: [offsetU, offsetV] },
 });
 /** 스킨별 칼날 재질(GlbSpec.variant). 표면 경화 #387 블루젬: 시트의 큰 코발트 블루 덩어리를 칼날 측면 전체에 1:1 비율로 배치 (평면 UV: u = 길이축 0~1, v = 높이/길이) */
 const BLADE_VARIANTS: Record<string, PartDef> = {
-  case_hardened_387: { role: 'base', color: 0xd4e0ff, ...GOLD_RUNES_FINISH, finish: true, sheet: { url: 'textures/case_hardened.png', rotation: 0, repeat: [0.5, 0.5], offset: [-0.37, 0.41] } },
+  case_hardened_387: { role: 'base', color: 0xd4e0ff, ...NATIVE_PBR, finish: true, sheet: { url: 'textures/case_hardened.png', rotation: 0, repeat: [0.5, 0.5], offset: [-0.37, 0.41] } },
   // 도플러 3종: doppler.jpeg 시트의 보석색 연기 구역만 칼날+핑거 링에 매핑 (three offset 은 중심 기준: u' = r·(u-0.5)+0.5+off).
   // 검은 연기 배경에 칼날이 묻히지 않도록 같은 시트를 emissiveMap 으로도 연결 → 보석 색 틴트 + 자체 발색
   doppler_ruby: doppler(-0.21, 0xff7585, 0xd91636), // 왼쪽 붉은 연기 구역(U≈0.17~0.41)
-  // 사파이어: 블루 연기 밝은 중심 구역(U≈0.84~0.92 · V≈0.75~0.9, 실측 B채널 — U<0.84 와 V 0.45~0.67 은 암부) → 창 시작점에 놓인 핑거 링까지 푸르게
-  doppler_sapphire: doppler(0.38, 0x75adff, 0x1254e8, [0.08, 0.3], 0.4),
+  // 사파이어: 블루 연기 밝은 중심 구역(U≈0.84~0.92 · V≈0.75~0.9, 실측 B채널 — U<0.74 와 V 0.45~0.67 은 암부) → 창을 U 0.80~0.92 로 이동·확장해 창 시작점의 핑거 링까지 푸르게
+  doppler_sapphire: doppler(0.36, 0x75adff, 0x1254e8, [0.12, 0.3], 0.4),
   doppler_emerald: doppler(0.055, 0x66ffa3, 0x0ec95c), // 가운데 그린 연기 구역(U≈0.43~0.68)
 };
 const KARAMBIT_FILE = 'damascus-karambit.glb';
@@ -133,7 +133,7 @@ type ModelDef = { file: string; length: number; grip?: number; roll?: number; ow
 type Role = 'base' | 'accent' | 'dark' | 'glass';
 /** split = 단일 메시 안의 2차 영역(rot 적용 후 모델 좌표 x/y 로 판정) → 기본 외형에서만 part 재질, 스킨 장착 시엔 메시 전체가 기존처럼 role 스킨. grain = 나뭇결 텍스처,
  *  emissive = 시트(sheet)를 emissiveMap 으로도 연결해 이 색으로 자체 발색, finish = 골드 룬 마감(인스턴스별 환경맵 직접 연결 + 증폭, 양면) */
-interface PartDef { role: Role; color: number; metalness: number; roughness: number; grain?: boolean; sheet?: SheetMap; emissive?: number; emissiveIntensity?: number; finish?: boolean; split?: { test: (x: number, y: number) => boolean; part: PartDef } }
+interface PartDef { role: Role; color: number; metalness: number; roughness: number; grain?: boolean; sheet?: SheetMap; emissive?: number; emissiveIntensity?: number; finish?: boolean; nativeMaps?: boolean; split?: { test: (x: number, y: number) => boolean; part: PartDef } }
 /** 원본 시트 이미지(public/textures)를 평면 UV 로 매핑하는 변환 — THREE.Texture 의 center/rotation/repeat/offset 그대로 */
 interface SheetMap { url: string; rotation: number; repeat: [number, number]; offset: [number, number] }
 interface Source { glb: boolean; root: THREE.Object3D; roles: Map<string, Role>; scale: number; offset: THREE.Vector3; muzzle: THREE.Vector3; parts?: Record<string, PartDef>; mask?: BladeMask; axis: { y: Float32Array; x0: number; len: number } }
@@ -329,6 +329,7 @@ const partMat = (p: PartDef): THREE.MeshStandardMaterial => {
   let r = partCache.get(p);
   if (!r) {
     const map = p.sheet ? sheetTex(p.sheet) : p.grain ? woodGrain() : null;
+    if (p.nativeMaps && map) map.channel = 1; // 평면 UV 는 uv1, 원본 UV(uv)는 ORM/normal 맵용
     r = new THREE.MeshStandardMaterial({ color: p.color, metalness: p.metalness, roughness: p.roughness, map, side: p.finish ? THREE.DoubleSide : THREE.FrontSide });
     if (p.emissive !== undefined) { r.emissive.setHex(p.emissive); r.emissiveMap = map; r.emissiveIntensity = p.emissiveIntensity ?? 1; }
     partCache.set(p, r);
@@ -338,13 +339,13 @@ const partMat = (p: PartDef): THREE.MeshStandardMaterial => {
 
 /** 렌더 직전 장면 환경맵을 재질에 직접 물려 금속 반사를 강하게(씬 IBL 이 약해도 어둡지 않게) — 재질은 인스턴스별 복제본이어야 한다.
  *  (envMap 이 비어 있으면 three 가 material.envMapIntensity 대신 scene.environmentIntensity 를 쓰므로 직접 연결해야 증폭이 먹는다) */
-function withEnv(mesh: THREE.Mesh, c: THREE.MeshStandardMaterial): THREE.MeshStandardMaterial {
+function withEnv(mesh: THREE.Mesh, c: THREE.MeshStandardMaterial, flat = false): THREE.MeshStandardMaterial {
   let last: THREE.Texture | null = null, lastI = -1;
   const prev = mesh.onBeforeRender;
   mesh.onBeforeRender = function (this: THREE.Mesh, ...a: Parameters<typeof prev>) {
     const scene = a[1] as THREE.Scene, env = scene.environment;
     if (env !== last) { last = env; c.envMap = env; c.needsUpdate = true; }
-    const k = c.metalness > 0.5 ? 2.6 : 1.2, i = (scene.environmentIntensity ?? 1) * k + 0.25;
+    const k = flat ? 0.6 : c.metalness > 0.5 ? 2.6 : 1.2, i = (scene.environmentIntensity ?? 1) * k + 0.25;
     if (i !== lastI) { lastI = i; c.envMapIntensity = i; }
     prev.apply(this, a);
   };
@@ -352,10 +353,18 @@ function withEnv(mesh: THREE.Mesh, c: THREE.MeshStandardMaterial): THREE.MeshSta
 }
 
 /** GLB 내장 PBR 재질: 인스턴스별 복제 + 환경맵 증폭. raw = 원본 metalness/roughness/맵 값을 건드리지 않음 */
-function glbNative(mesh: THREE.Mesh, m: THREE.Material, raw = false): THREE.Material {
+function glbNative(mesh: THREE.Mesh, m: THREE.Material, raw = false, flat = false): THREE.Material {
   const c = m.clone() as THREE.MeshStandardMaterial;
   if (!raw && c.metalness > 0.5) { c.metalness = 1; c.roughness = Math.max(0.16, c.roughness * 0.8); }
-  return withEnv(mesh, c);
+  return withEnv(mesh, c, flat);
+}
+
+/** nativeMaps 파츠: 모델 원본 재질의 roughness/metalness/normal 맵을 복제 재질에 연결(원본 UV) */
+function nativePbr(c: THREE.MeshStandardMaterial, m: THREE.Material, def: PartDef): THREE.MeshStandardMaterial {
+  if (!def.nativeMaps) return c;
+  const o = m as THREE.MeshStandardMaterial;
+  c.roughnessMap = o.roughnessMap; c.metalnessMap = o.metalnessMap; c.normalMap = o.normalMap; c.normalScale.copy(o.normalScale);
+  return c;
 }
 
 function build(src: Source, skin: SkinSet, roll = 0, blade?: PartDef, raw = false): THREE.Group {
@@ -374,7 +383,7 @@ function build(src: Source, skin: SkinSet, roll = 0, blade?: PartDef, raw = fals
   // 칼날 마스크: 손잡이(0)·금속 파츠(2, 예: 핑거 링)는 항상 기본 재질, 스킨은 칼날 그룹(1)에만
   const mask = src.mask;
   const own = (m: THREE.Material, def?: PartDef): THREE.Material =>
-    def ? (def.finish && curMesh ? withEnv(curMesh, partMat(def).clone()) : partMat(def)) : src.glb && curMesh ? glbNative(curMesh, m, mask?.nativeHandle) : native(m);
+    def ? (def.finish && curMesh ? withEnv(curMesh, nativePbr(partMat(def).clone(), m, def)) : partMat(def)) : src.glb && curMesh ? glbNative(curMesh, m, mask?.nativeHandle, mask?.nativeHandle) : native(m);
   const pickMasked = (m: THREE.Material, group: number): THREE.Material =>
     group === 1 ? (skin.skinned ? skin.base : own(m, blade ?? mask!.blade))
       : group === 2 ? own(m, mask!.mats?.[m.name] ?? mask!.metal ?? mask!.blade)
@@ -386,7 +395,9 @@ function build(src: Source, skin: SkinSet, roll = 0, blade?: PartDef, raw = fals
     if (puv && !(mask && !flag)) { // 마스크 모델의 손잡이 전용 메시는 원본 UV 유지
       let uv = puv;
       if (flag) { const orig = me.geometry.attributes.uv; uv = new Float32Array(puv); if (orig) for (let i = 0; i < flag.length; i++) if (flag[i] !== 1) { uv[i * 2] = orig.getX(i); uv[i * 2 + 1] = orig.getY(i); } }
-      me.geometry = me.geometry.clone(); me.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+      me.geometry = me.geometry.clone();
+      if ((blade ?? mask?.blade)?.nativeMaps) me.geometry.setAttribute('uv1', new THREE.BufferAttribute(puv, 2)); // 원본 uv 유지(ORM/normal), 시트는 uv1
+      else me.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     }
     if (mask) me.material = Array.isArray(me.material) ? me.material.map((m, i) => pickMasked(m, flag ? i : 0)) : pickMasked(me.material, 0);
     else me.material = Array.isArray(me.material) ? me.material.map(pick) : pick(me.material);
