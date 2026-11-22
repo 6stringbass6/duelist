@@ -95,7 +95,7 @@ const BLADE_VARIANTS: Record<string, PartDef> = {
   // 표면 경화 #387 블루젬 — pattern.wiki 실측 시드 좌표 (Karambit Case Hardened Seed 387)
   case_hardened_387: { role: 'base', color: 0xd4e0ff, ...SKIN_PBR, finish: true, sheet: { url: 'textures/case_hardened.png', pattern: { offsetX: 0.07, offsetY: 0.73, rotation: 264.53, scale: 0.44 } } },
   doppler_ruby: doppler([0.13, 0.0, 0.31], { offsetX: 0.31, offsetY: 0.42, rotation: 37, scale: 0.44 }, 0xff7585, 0xd91636), // 왼쪽 붉은 연기(U≈0.15~0.42, 상단 소용돌이)
-  doppler_sapphire: doppler([0.8, 0.59, 0.32], { offsetX: 0.97, offsetY: 0.18, rotation: 151, scale: 0.44 }, 0x75adff, 0x1254e8), // 오른쪽 블루 연기(U≈0.80~1.12 래핑) 밝은 하단 코어 — 어두운 좌상단 경계 회피
+  doppler_sapphire: doppler([0.8, 0.59, 0.32], { offsetX: 0.744, offsetY: 0.457, rotation: 268.825, scale: 0.44 }, 0x75adff, 0x1254e8), // CS2 Sapphire #102 시드 실측 좌표 — 오른쪽 블루 연기(U≈0.80~1.12 래핑)
   doppler_emerald: doppler([0.44, 0.0, 0.33], { offsetX: 0.48, offsetY: 0.66, rotation: 312, scale: 0.44 }, 0x66ffa3, 0x0ec95c), // 가운데 그린 연기(U≈0.44~0.77)
 };
 const KARAMBIT_FILE = 'damascus-karambit.glb';
