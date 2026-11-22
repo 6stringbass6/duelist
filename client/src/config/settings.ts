@@ -12,9 +12,20 @@ export const cmPer360 = (sens: number, dpi: number): number => (360 / (sens * VA
 /** eDPI */
 export const edpi = (sens: number, dpi: number): number => sens * dpi;
 
-/** 발로란트 기준: 16:9 에서 수평 103° */
-export const HFOV_DEG = 103;
 const REF_ASPECT = 16 / 9;
+/** 4:3 기준 수평 FOV(Source 엔진 fov / viewmodel_fov 규약) → 16:9 수평 FOV (Hor+) */
+const hFovFrom43 = (deg: number): number => (2 * Math.atan(Math.tan((deg * Math.PI) / 360) * (REF_ASPECT / (4 / 3))) * 180) / Math.PI;
+/** CS2 표준: fov 90(4:3) = 16:9 에서 수평 106.26° / 수직 73.74° */
+export const HFOV_DEG = Math.round(hFovFrom43(90) * 100) / 100;
+/** CS2 viewmodel_fov 68(4:3 수평) = 16:9 에서 수평 ≈ 83.9° / 수직 ≈ 53.7° — 손·팔·무기 전용 투영 */
+export const VIEWMODEL_HFOV_DEG = hFovFrom43(68);
+/** CS2 viewmodel_offset_x 2.5 / y 0 / z -1.5 (Source 유닛, 1u = 1.8m / 72u = 0.025m) → 카메라 공간(m): +X 오른쪽 · +Y 위 · -Z 전방 */
+export const VIEWMODEL_OFFSET = { x: 2.5 * 0.025, y: -1.5 * 0.025, z: 0 } as const;
+/** 뷰모델 구도 보정(m): 손·무기 리그/MDL 모션은 넓은 FOV(≈70° 수직) 기준으로 배치돼 있어 68 FOV 에서 1.4배 확대·하단 잘림이 생긴다.
+ *  뷰모델 카메라를 뒤로(back) 빼고 아래로(up 만큼 내용을 위로) 옮겨 원근 왜곡 없이 우측 하단 구도를 맞춘다(돌리 줌) */
+export const VIEWMODEL_FRAMING = { back: 0.1, up: 0.07 } as const;
+/** 뷰모델 전용 렌더 레이어 (월드 카메라 = 0, 뷰모델 카메라 = 1). 광원은 두 레이어 모두에 켜 둔다 */
+export const VIEWMODEL_LAYER = 1;
 /** Three.js PerspectiveCamera.fov (수직 FOV, 도). 16:9 기준 수평 FOV 를 고정 수직 FOV 로 환산(Hor+). */
 export function verticalFovDeg(hFovDeg: number = HFOV_DEG, zoom = 1): number {
   const v = 2 * Math.atan(Math.tan((hFovDeg * Math.PI) / 360) / REF_ASPECT);
@@ -192,7 +203,7 @@ export interface Settings {
   audio: { master: number; sfx: number; ui: number };
   mobile: { autoFire: boolean; joystickSize: number; buttonScale: number; buttonOpacity: number; leftHanded: boolean };
 }
-export const SETTINGS_VERSION = 1;
+export const SETTINGS_VERSION = 2; // v2: FOV 기본값 발로란트 103° → CS2 106.26°
 export const SETTINGS_LIMITS = { sens: [0.01, 10], adsMult: [0.1, 3], mobile: [0.1, 5], hFov: [80, 120], resolutionScale: [0.5, 1.5], customFps: [10, 1000] } as const;
 
 export const isTouchDevice = (): boolean =>
@@ -233,6 +244,7 @@ export function sanitizeSettings(raw: unknown): Settings {
   s.sens.adsMult = clamp(s.sens.adsMult, L.adsMult[0], L.adsMult[1]);
   s.sens.mobile = clamp(s.sens.mobile, L.mobile[0], L.mobile[1]);
   s.sens.mobileAds = clamp(s.sens.mobileAds, L.mobile[0], L.mobile[1]);
+  if (isObj(raw) && (typeof raw.version !== 'number' || raw.version < 2) && raw.hFov === 103) s.hFov = HFOV_DEG; // 구 기본값 그대로면 CS2 기본값으로 이전
   s.hFov = clamp(s.hFov, L.hFov[0], L.hFov[1]);
   if (!/^#[0-9a-fA-F]{6}$/.test(s.crosshair.color)) s.crosshair.color = d.crosshair.color;
   for (const l of [s.crosshair.inner, s.crosshair.outer]) { l.opacity = clamp(l.opacity, 0, 1); l.length = clamp(l.length, 0, 20); l.thickness = clamp(l.thickness, 0, 10); l.offset = clamp(l.offset, 0, 20); }

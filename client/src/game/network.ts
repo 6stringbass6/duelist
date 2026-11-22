@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { io, type Socket } from 'socket.io-client';
 import { F, RULES, SLOT, SLOT_KEYS, WEAPONS, isGun, type GameMode, type HitZone, type Loadout, type BattleMapId, type MapId, type ThrowableId, type WeaponId } from '../config/weapons';
 import { getSkin } from '../config/skins';
+import { VIEWMODEL_LAYER } from '../config/settings';
 import { attachSkinFx, fireWeaponFx, skinMaterials, tickSkinMaterials } from './skinFx';
 import { attachFbxModel } from './weaponModels';
 import { SERVER_URL, socketAuthPayload } from '../services/supabase';
@@ -167,7 +168,7 @@ const _fxV = new THREE.Vector3(), _fxUp = new THREE.Vector3(0, 1, 0), _fxZ = new
 /** 폭발 PointLight 풀 — 씬에 항상 남겨 두고 intensity 만 바꾼다(라이트 개수 변화 = 전 재질 셰이더 재컴파일 → 폭발 순간 끊김 방지) */
 const blastLights: THREE.PointLight[] = [], blastFree: THREE.PointLight[] = [];
 function takeBlastLight(scene: THREE.Scene, color: number, intensity: number, dist: number, p: [number, number, number]): THREE.PointLight {
-  let l = blastFree.pop(); if (!l) { l = new THREE.PointLight(0xffffff, 0, 30); scene.add(l); blastLights.push(l); }
+  let l = blastFree.pop(); if (!l) { l = new THREE.PointLight(0xffffff, 0, 30); l.layers.enable(VIEWMODEL_LAYER); scene.add(l); blastLights.push(l); } // 뷰모델 패스와 광원 구성이 같아야 패스마다 재질 프로그램이 바뀌지 않는다
   l.color.setHex(color); l.intensity = intensity; l.distance = dist; l.position.set(p[0], p[1], p[2]); return l;
 }
 class RemoteEntity {

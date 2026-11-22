@@ -142,7 +142,7 @@ export const MOVE = {
   updraftV: 17,                                                            // Q: 수직 상승
   dashMult: 1.6, dashMs: 3000,                                             // E: 3초 가속
   skillCdMs: 7000,
-  eye: 1.6, eyeCrouch: 1.0, radius: 0.4, height: 1.8, heightCrouch: 1.15, stepHeight: 0.35,
+  eye: 1.64, eyeCrouch: 1.15, radius: 0.4, height: 1.8, heightCrouch: 1.35, stepHeight: 0.35, // CS2 비율(72u 키 = 1.8m): 눈 64u→1.6~1.64m · 앉기 눈 46u=1.15m · 앉기 히트박스 54u=1.35m
 } as const;
 
 export const THROW = { gravity: 20, radius: 0.12, cooldownMs: 900 } as const;

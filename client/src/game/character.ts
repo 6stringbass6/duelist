@@ -12,6 +12,7 @@ import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { AGENTS, DEFAULT_AGENT, type AgentId } from '../config/agents';
+import { VIEWMODEL_LAYER } from '../config/settings';
 import { FINGERS, handFrame, type ArmTarget } from './karambitViewmodel';
 
 const BASE = import.meta.env?.BASE_URL ?? '/';
@@ -225,6 +226,26 @@ function addRim(m: THREE.MeshStandardMaterial, color: THREE.Color, strength: { v
   m.customProgramCacheKey = () => 'duelist-rim';
 }
 
+/** 1인칭에서 남길 본 하위 트리 (CS2 뷰모델처럼 팔뚝·장갑·손만 — 머리·목·상체·어깨·상완·다리는 숨김) */
+const FP_KEEP_ROOTS = new Set(['arm_lower_l', 'arm_lower_r']);
+const fpGeoCache = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>();
+/** 1인칭 마스크 지오메트리: 팔뚝 하위 본 스키닝 가중치가 과반인 삼각형만 남긴 인덱스 (정점 버퍼는 원본 공유 · 원본 지오메트리별 1회 계산) */
+function firstPersonGeometry(mesh: THREE.SkinnedMesh): THREE.BufferGeometry {
+  const src = mesh.geometry, hit = fpGeoCache.get(src); if (hit) return hit;
+  const keepBone = mesh.skeleton.bones.map((b) => { for (let o: THREE.Object3D | null = b; o; o = o.parent) if (FP_KEEP_ROOTS.has(o.name)) return true; return false; });
+  const si = src.getAttribute('skinIndex'), sw = src.getAttribute('skinWeight'), keepW = new Float32Array(si.count);
+  for (let v = 0; v < si.count; v++) for (let c = 0; c < si.itemSize; c++) if (keepBone[si.getComponent(v, c)]) keepW[v] += sw.getComponent(v, c);
+  const idx = src.index, n = idx ? idx.count : si.count, tris: number[] = [];
+  for (let t = 0; t < n; t += 3) {
+    const a = idx ? idx.getX(t) : t, b = idx ? idx.getX(t + 1) : t + 1, c = idx ? idx.getX(t + 2) : t + 2;
+    if (keepW[a] + keepW[b] + keepW[c] >= 1.5) tris.push(a, b, c);
+  }
+  const g = new THREE.BufferGeometry();
+  for (const [k, attr] of Object.entries(src.attributes)) g.setAttribute(k, attr);
+  g.setIndex(tris); fpGeoCache.set(src, g);
+  return g;
+}
+
 const _q = new THREE.Quaternion(), _hp = new THREE.Vector3(), _pq = new THREE.Quaternion(), _aq = new THREE.Quaternion();
 /** 본의 월드 회전을 q 로 맞추고(부모 월드 기준 로컬화) 하위 행렬까지 갱신 */
 function setWorldQuat(b: THREE.Object3D, q: THREE.Quaternion): void {
@@ -248,7 +269,7 @@ export class CharacterRig {
   private readonly mats: THREE.MeshStandardMaterial[] = [];
   private readonly rimColor = new THREE.Color(); private readonly rimStr = { value: 0.9 };
   private readonly spine: number[]; private readonly legs: number[];
-  private readonly headBones: THREE.Bone[]; private fp = false;
+  /** 1인칭 마스크 교체 전 원본 지오메트리 */ private readonly fullGeo = new Map<THREE.SkinnedMesh, THREE.BufferGeometry>();
   private cur: ClipKey | null = null;
   private rifle: boolean | null = null;
   private wasCrouch = false; private phase = 0;
@@ -272,7 +293,6 @@ export class CharacterRig {
     const byName = (n: string): THREE.Bone | null => this.bones.find((b) => b.name === n) ?? null;
     this.wrists = { r: byName('weapon_hand_r'), l: byName('weapon_hand_l') };
     this.spine = SPINE.map((n) => findBone(this.bones, n)); this.legs = LEGS.map((n) => findBone(this.bones, n));
-    this.headBones = this.bones.filter((b) => b.name === 'neck_0' || b.name === 'head_0');
     this.mixer = new THREE.AnimationMixer(this.model);
     this.actions = Object.fromEntries((Object.keys(a.clips) as ClipKey[]).map((k) => {
       const act = this.mixer.clipAction(a.clips[k]);
@@ -281,8 +301,16 @@ export class CharacterRig {
     })) as Record<ClipKey, THREE.AnimationAction>;
   }
 
-  /** 1인칭(본인 시점): 머리·목 본을 0 스케일로 숨겨 카메라가 방독면/발라클라바 메쉬에 가려지지 않게 한다 (매 프레임 애니메이션 뒤에 재적용) */
-  setFirstPerson(on: boolean): void { this.fp = on; if (!on) this.headBones.forEach((b) => b.scale.setScalar(1)); }
+  /** 1인칭(본인 시점): CS2 뷰모델처럼 팔뚝·장갑·손 삼각형만 남기고(머리·상체·어깨 소매가 렌즈를 덮지 않게) 뷰모델 레이어로 옮긴다 */
+  setFirstPerson(on: boolean): void {
+    this.model.traverse((o) => {
+      const m = o as THREE.SkinnedMesh; if (!m.isSkinnedMesh) return;
+      if (on && !this.fullGeo.has(m)) { this.fullGeo.set(m, m.geometry); m.geometry = firstPersonGeometry(m); }
+      else if (!on && this.fullGeo.has(m)) { m.geometry = this.fullGeo.get(m)!; this.fullGeo.delete(m); }
+      m.castShadow = !on;
+    });
+    this.root.traverse((o) => o.layers.set(on ? VIEWMODEL_LAYER : 0));
+  }
 
   setColor(hex: number): void { this.rimColor.setHex(hex); }
   /** 은신/보호/시전 투명도 + 대시·회복 시 림 강조 (원래 반투명 재질(렌즈 등)은 유지) */
@@ -350,7 +378,6 @@ export class CharacterRig {
       hips.position.lerpVectors(this.snapHips, _hp.copy(hips.position), t);
       if (t >= 1) this.snap = null;
     }
-    if (this.fp) for (const hb of this.headBones) hb.scale.setScalar(0);
   }
 
   /**

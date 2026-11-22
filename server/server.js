@@ -36,7 +36,7 @@ export const RULES = {
 };
 export const MOVE = {
   run: 6.6, gravity: 22, jumpV: 7.6, slideV: 12.5, updraftV: 17, dashMult: 1.6, dashMs: 3000, skillCdMs: 7000,
-  eye: 1.6, eyeCrouch: 1.0, radius: 0.4,
+  eye: 1.64, eyeCrouch: 1.15, radius: 0.4, // client/src/config/weapons.ts MOVE 와 동일 (CS2 눈높이)
 };
 export const F = { CROUCH: 1, SLIDE: 2, ADS: 4, AIR: 8, DASH: 16, ALIVE: 32, PROT: 64, RELOAD: 128, FLASHED: 256, AMP: 512, SILENCED: 1024, SHIELD: 2048, HEAL: 4096, INVIS: 8192, CAST: 16384 };
 const HB = { // 히트박스 (발 기준 높이)

@@ -1,11 +1,11 @@
 // =====================================================================
-// 로컬 플레이어: 1인칭 카메라(103° HFOV) · 발로란트 감도 · 듀얼 키바인딩 · 무빙/슬라이딩/Q/E
+// 로컬 플레이어: 1인칭 카메라(CS2 106.26° HFOV + viewmodel_fov 68 분리) · 발로란트 감도 · 듀얼 키바인딩 · 무빙/슬라이딩/Q/E
 // 4슬롯 무기 · 사격 예측/반동 · 섬광 실명 · Web Audio 신디사이저
 // 모바일 UI 는 setMoveAxis / addLook / setAction 으로 같은 경로에 입력을 주입한다.
 // =====================================================================
 import * as THREE from 'three';
 import {
-  bindFromEvent, buildBindLookup, getSettings, mobileRadPerPx, onSettingsChange, verticalFovDeg, yawRadPerCount, zoomSensScale,
+  VIEWMODEL_FRAMING, VIEWMODEL_HFOV_DEG, VIEWMODEL_LAYER, VIEWMODEL_OFFSET, bindFromEvent, buildBindLookup, getSettings, mobileRadPerPx, onSettingsChange, verticalFovDeg, yawRadPerCount, zoomSensScale,
   type Action, type BindCode,
 } from '../config/settings';
 import {
@@ -258,12 +258,14 @@ export class PlayerController {
   private recoilPitch = 0; private recoilYaw = 0; private vmKick = 0;
   private zoom = 1;
   // 뷰모델 / 오버레이
+  /** 뷰모델 전용 카메라: 월드 카메라와 같은 시점 + CS2 viewmodel_offset, viewmodel_fov 68 투영 (줌·대시 FOV 영향 없음) */
+  readonly viewmodelCamera = new THREE.PerspectiveCamera(verticalFovDeg(VIEWMODEL_HFOV_DEG), 16 / 9, 0.01, 50);
   private readonly vmRoot = new THREE.Group();
   private vm: THREE.Group | null = null; private vmKey = '';
   private bobT = 0; private swingT = 0;
-  /** 트루 1인칭 전신: 본인 진영의 장착 요원 리그 (라이플 장착 시에만 표시, 머리/목 숨김 → 팔·장갑·소매는 요원 메쉬 그대로) */
+  /** 트루 1인칭: 본인 진영의 장착 요원 리그 (라이플/카람빗 장착 시에만 표시, 팔뚝·장갑·손 삼각형만 렌더) */
   private rig: CharacterRig | null = null; private rigAgent: AgentId | null = null; private rigDisposed = false; private rigFireT = 0; private yawRate = 0; private prevYaw = NaN;
-  private static readonly FP_BACK = 0.14; // 리그를 카메라 뒤로 밀어 몸통 내부 폴리곤이 시야에 끼지 않게 함(m)
+  private static readonly FP_BACK = 0.14; // 눈(카메라) ↔ 리그 루트 전후 거리(m) — 피치와 무관하게 고정
   /** 1인칭 카람빗: MDL 추출 모션(꺼내기/베기/찌르기/자세히 보기)으로 요원 오른팔 + 카람빗을 구동. kvmOn = 이번 프레임 카람빗 뷰모델 사용 중 */
   private kvm: KarambitViewmodel | null = null; private kvmLoading = false; private kvmOn = false;
   private readonly kvmMat = new THREE.Matrix4();
@@ -278,6 +280,7 @@ export class PlayerController {
     camera.fov = verticalFovDeg(getSettings().hFov); camera.updateProjectionMatrix();
     if (!camera.parent) net.scene.add(camera);
     camera.add(this.vmRoot);
+    this.viewmodelCamera.layers.set(VIEWMODEL_LAYER);
 
     // 오버레이(실명 / 피격 / 스코프)
     const host = dom.parentElement ?? document.body;
@@ -606,7 +609,7 @@ export class PlayerController {
     const w = this.weapon, rec = isGun(w) ? w.recoil.recover : 8, k = Math.exp(-rec * dt);
     this.recoilPitch *= k; this.recoilYaw *= k; this.vmKick *= Math.exp(-12 * dt); this.swingT = Math.max(0, this.swingT - dt * 4);
 
-    // 카메라: 103° HFOV(16:9 기준) + 줌
+    // 카메라: CS2 106.26° HFOV(16:9 기준) + 줌
     const targetZoom = this.alive && this.adsOn && isGun(w) ? w.adsZoom : 1;
     this.zoom += (targetZoom - this.zoom) * Math.min(1, dt * 18); if (Math.abs(this.zoom - targetZoom) < 0.005) this.zoom = targetZoom;
     const fov = verticalFovDeg(s.hFov, this.zoom) * (now < this.dashUntil ? 1.04 : 1);
@@ -614,6 +617,9 @@ export class PlayerController {
     const sliding = now < this.slideUntil;
     this.camera.position.set(this.pos.x, this.pos.y + this.eyeH, this.pos.z);
     this.camera.rotation.set(this.pitch + this.recoilPitch, this.yaw + this.recoilYaw, sliding ? -0.05 : 0);
+    // 뷰모델 카메라 = 같은 시점에서 viewmodel_offset 만큼 반대로 이동(→ 손·무기가 오른쪽·아래로 보임)
+    const O = VIEWMODEL_OFFSET, Fr = VIEWMODEL_FRAMING, vmc = this.viewmodelCamera;
+    vmc.quaternion.copy(this.camera.quaternion); vmc.position.set(-O.x, -O.y - Fr.up, Fr.back - O.z).applyQuaternion(vmc.quaternion).add(this.camera.position);
 
     // 입력 전송 (30Hz)
     if (this.alive && n.room && now - this.lastInputAt >= 1000 / RULES.inputHz) {
@@ -637,6 +643,7 @@ export class PlayerController {
       this.vmRoot.add(this.vm);
       if (this.weaponId === 'dagger' && isKarambitSkin(skin)) this.kvm?.draw(); // 3번 장착 = 핑거 링을 돌려 역수로 감아쥐는 꺼내기
     }
+    this.vm?.traverse((o) => o.layers.set(VIEWMODEL_LAYER)); // 스킨 FX·FBX 교체가 비동기로 자식을 붙이므로 매 프레임 적용
     const scoped = this.isScoped(now), fpRifle = this.updateRig(dt, now, scoped, skin);
     this.vmRoot.visible = this.alive && !scoped && !fpRifle;
     const sp = Math.hypot(this.vel.x, this.vel.z); if (this.grounded) this.bobT += dt * sp * 1.6;
@@ -655,7 +662,8 @@ export class PlayerController {
       if (!a || this.rigDisposed || this.rigAgent !== id) return;
       if (this.vm && this.rig && this.vm.parent === this.rig.socket) this.vmRoot.add(this.vm);
       this.rig?.dispose();
-      this.rig = new CharacterRig(a, RIM_OFF, 0); this.rig.setFirstPerson(true); // 본인: 림 강조 없음 this.rig.root.visible = false; this.net.scene.add(this.rig.root);
+      this.rig = new CharacterRig(a, RIM_OFF, 0); // 본인: 림 강조 없음
+      this.rig.setFirstPerson(true); this.rig.root.visible = false; this.net.scene.add(this.rig.root);
     });
   }
   /** 트루 1인칭: 라이플(AK-47/팬텀)이면 무기를 오른손 소켓으로, 카람빗이면 weapon_hand_r 에 붙이고 MDL 모션으로 오른팔을 구동한다.
@@ -678,7 +686,7 @@ export class PlayerController {
     if (Number.isNaN(this.prevYaw) || dt <= 0) this.prevYaw = yaw;
     this.yawRate += (Math.atan2(Math.sin(yaw - this.prevYaw), Math.cos(yaw - this.prevYaw)) / Math.max(dt, 1e-3) - this.yawRate) * k; this.prevYaw = yaw;
     this.rigFireT = Math.max(0, this.rigFireT - dt);
-    const B = PlayerController.FP_BACK + Math.max(0, -this.pitch) * 0.3; // 아래를 볼수록 몸을 더 뒤로 빼 상체가 렌즈를 덮지 않게
+    const B = PlayerController.FP_BACK; // 상체·어깨는 1인칭 마스크로 숨겨지므로 피치 보정(앞뒤 쏠림) 없이 고정
     rig.root.position.set(this.pos.x + sin * B, this.pos.y, this.pos.z + cos * B); rig.root.rotation.y = yaw; // 전방 = (-sin, -cos)
     const vx = this.vel.x, vz = this.vel.z;
     rig.update(dt, {

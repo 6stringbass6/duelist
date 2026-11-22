@@ -6,7 +6,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import {
   ACTIONS, ACTION_LABELS, CROSSHAIR_COLORS, CROSSHAIR_PRESETS, FPS_CAP_OPTIONS, HFOV_DEG, RESERVED_CODES, SETTINGS_LIMITS, VALORANT_YAW_DEG,
   applyCrosshairPreset, applyGraphicsPreset, bindFromEvent, bindLabel, cmPer360, createFrameLimiter, drawCrosshair, effectiveFpsCap, effectivePixelRatio,
-  getSettings, isTouchDevice, onSettingsChange, resetSettings, setBinding, updateSettings,
+  getSettings, isTouchDevice, onSettingsChange, resetSettings, setBinding, updateSettings, verticalFovDeg,
   type Action, type CrosshairLines, type CrosshairPresetId, type FpsCap, type Settings,
 } from './config/settings';
 import {
@@ -1610,8 +1610,8 @@ function renderSettings(): void {
       sliderRow('모바일 감도', L.mobile[0], L.mobile[1], 0.05, (s) => s.sens.mobile, (s, v) => { s.sens.mobile = v; }),
       sliderRow('모바일 줌 감도', L.mobile[0], L.mobile[1], 0.05, (s) => s.sens.mobileAds, (s, v) => { s.sens.mobileAds = v; }),
       checkRow('상하 반전', (s) => s.sens.invertY, (s, v) => { s.sens.invertY = v; }),
-      sliderRow('수평 FOV (16:9 기준)', L.hFov[0], L.hFov[1], 1, (s) => s.hFov, (s, v) => { s.hFov = v; }),
-      note(`발로란트 기본값은 <b>${HFOV_DEG}°</b> Horizontal FOV 입니다.`), resetBtn('sens'));
+      sliderRow('수평 FOV (16:9 기준)', L.hFov[0], L.hFov[1], 0.01, (s) => s.hFov, (s, v) => { s.hFov = v; }),
+      note(`CS2 표준 기본값은 <b>가로 ${HFOV_DEG}° / 세로 ${verticalFovDeg(HFOV_DEG).toFixed(2)}°</b> (4:3 기준 fov 90) 입니다. 손·무기는 별도 뷰모델 FOV(viewmodel_fov 68)로 그려져 FOV 를 바꿔도 왜곡되지 않습니다.`), resetBtn('sens'));
     afterSettingChange();
   } else if (setTab === 'xhair') {
     const cv = document.createElement('canvas'); cv.id = 'xh-preview'; cv.width = 480; cv.height = 120;
@@ -1698,7 +1698,17 @@ function frame(now: number): void {
   if (!limiter(now)) return;
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (view === 'game' && net.room) { autoFireTick(); pc.update(dt); net.update(dt); updateHud(now); }
-  if (view === 'game') { renderer.shadowMap.needsUpdate = (shadowTick++ & 1) === 0; renderer.render(scene, camera); } // 그림자 맵은 2프레임마다 1회만 재계산
+  if (view === 'game') {
+    renderer.shadowMap.needsUpdate = (shadowTick++ & 1) === 0; renderer.render(scene, camera); // 그림자 맵은 2프레임마다 1회만 재계산
+    renderViewmodel();
+  }
+}
+/** 2패스: 깊이만 지우고 뷰모델 레이어(손·팔·무기)를 CS2 viewmodel_fov 카메라로 덧그린다 → 월드 FOV 와 무관하게 왜곡 없음 · 벽 관통 없음 */
+function renderViewmodel(): void {
+  const vmCam = pc.viewmodelCamera; vmCam.aspect = camera.aspect; vmCam.updateProjectionMatrix();
+  const bg = scene.background; scene.background = null; renderer.autoClear = false; renderer.shadowMap.needsUpdate = false;
+  renderer.clearDepth(); renderer.render(scene, vmCam);
+  scene.background = bg; renderer.autoClear = true;
 }
 requestAnimationFrame(frame);
 document.addEventListener('visibilitychange', () => { if (document.hidden) pc.releaseAll(); });

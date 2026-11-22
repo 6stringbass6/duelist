@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MOVE, type MapId } from '../config/weapons';
+import { VIEWMODEL_LAYER } from '../config/settings';
 
 /** [x0, y0, z0, x1, y1, z1, kind] */
 export type MapBox = [number, number, number, number, number, number, string];
@@ -258,7 +259,8 @@ export function buildArena(map: MapData): ArenaBuild {
   group.add(sun, sun.target);
 
   // 메시 맵 모델: 텍스처·머티리얼이 어둡지 않도록 보조 환경광
-  if (map.model) group.add(new THREE.AmbientLight(0xffffff, 0.35));
+  const amb = map.model ? new THREE.AmbientLight(0xffffff, 0.35) : null; if (amb) group.add(amb);
+  for (const l of [hemi, sun, amb]) l?.layers.enable(VIEWMODEL_LAYER); // 뷰모델 패스(손·무기)도 같은 조명을 받게
 
   const modelMeshes: THREE.Mesh[] = [];
   let shadowMode: 'off' | 'low' | 'high' = 'low', disposed = false;

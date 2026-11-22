@@ -22,6 +22,11 @@ const KNIFE_AXES = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix
 const KNIFE_SCALE = V(-1, 1, 1);
 /** 무기 그룹 원점(뒤끝에서 30% 그립 지점 · 단면 중심) 의 MDL knife 로컬 좌표(u) */
 const KNIFE_ORIGIN = V(0.28, -4.44 + 9.8 * 0.3, 2.4);
+/** 자세히 보기 손바닥 지지 구간: 칼 그립 중심 ↔ 손 평면(손바닥 법선 +Y) 최소 거리(u).
+ *  쥔 상태 = 손가락이 감싸므로 얕게, 손을 펼친 상태 = CS2 장갑 손바닥 두께 + 손잡이 반두께만큼 띄워 관통 방지 */
+const PALM_CLEAR_GRIP = 0.3, PALM_CLEAR_OPEN = 0.95;
+/** 손가락 펼침 정도(검지~새끼 마디 방향 · 손 전방 평균 내적): 이 구간에서 쥔(0) → 펼친(1) 으로 보간 */
+const OPEN_LO = -0.3, OPEN_HI = -0.15;
 
 /** 카람빗 스킨(표면 경화 · 도플러 3종 · 다마스커스 · 골드 룬 …) 여부 — 모두 같은 그룹 축 규약을 공유 */
 export const isKarambitSkin = (skinId: string | null | undefined): boolean => getSkin(skinId)?.collection === 'karambit';
@@ -44,7 +49,7 @@ const loadSrc = () =>
     (e) => { console.warn('[karambit] 애니메이션 로드 실패', e); return null; },
   ));
 
-const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _hp = new THREE.Vector3();
+const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _hp = new THREE.Vector3(), _ax = new THREE.Vector3(), _fq = new THREE.Quaternion();
 
 export class KarambitViewmodel {
   readonly root = new THREE.Group();
@@ -108,8 +113,21 @@ export class KarambitViewmodel {
   knifeWorld(handPos: THREE.Vector3, handSpan: number, out: THREE.Matrix4): THREE.Matrix4 {
     this.knife.matrixWorld.decompose(_p, _q, _s);
     const k = handSpan / (this.mdlSpan * UNIT);
-    _hp.copy(KNIFE_ORIGIN).multiplyScalar(UNIT).applyQuaternion(_q).add(_p).sub(this.target.hand).multiplyScalar(k).add(handPos);
-    return out.compose(_hp, _q.multiply(KNIFE_AXES), KNIFE_SCALE);
+    _hp.copy(KNIFE_ORIGIN).multiplyScalar(UNIT).applyQuaternion(_q).add(_p).sub(this.target.hand).multiplyScalar(k);
+    this.palmLift(_hp, k);
+    return out.compose(_hp.add(handPos), _q.multiply(KNIFE_AXES), KNIFE_SCALE);
+  }
+
+  /** 자세히 보기 중 손바닥 관통 방지: 손목→그립 오프셋 off(m)를 손바닥 법선 방향으로 최소 거리까지 밀어낸다.
+   *  MDL 원본 손(CS 1.6)보다 CS2 장갑이 두꺼워 펼친 손바닥 위를 지나는 손잡이가 손 안으로 파고드는 구간만 보정(쥔 자세는 그대로) */
+  private palmLift(off: THREE.Vector3, k: number): void {
+    const w = this.cur === 'inspect' ? (this.acts.get('inspect')?.getEffectiveWeight() ?? 0) : 0; if (w <= 0) return;
+    const t = this.target; _fq.copy(t.handQuat).multiply(t.handFrame);
+    _ax.set(1, 0, 0).applyQuaternion(_fq);
+    let open = 0; for (let i = 3; i < t.fingers.length; i++) open += t.fingers[i].dot(_ax); // 엄지 제외 12마디
+    const o = THREE.MathUtils.smoothstep(open / (t.fingers.length - 3), OPEN_LO, OPEN_HI);
+    const n = _ax.set(0, 1, 0).applyQuaternion(_fq), need = THREE.MathUtils.lerp(PALM_CLEAR_GRIP, PALM_CLEAR_OPEN, o) * UNIT * k;
+    const d = off.dot(n); if (d < need) off.addScaledVector(n, (need - d) * w);
   }
 
   dispose(): void { this.mixer.stopAllAction(); this.root.removeFromParent(); }
