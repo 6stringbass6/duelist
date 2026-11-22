@@ -18,8 +18,10 @@ import { createWeaponMesh, pullPin, type GameClient } from './network';
 import { CharacterRig, loadCharacterAssets } from './character';
 import { agentFor, type AgentId } from '../config/agents';
 import { fireWeaponFx } from './skinFx';
+import { KarambitViewmodel, isKarambitSkin } from './karambitViewmodel';
 
 type Slot = 1 | 2 | 3 | 4;
+const _kw = new THREE.Matrix4();
 const ULTS_AFTER_MS = 700; // server ULTS.yoru.afterMs
 export interface SkillHud { id: SkillId; name: string; icon: string; cd: number; left: number; max: number; active: boolean }
 export interface HudState {
@@ -262,6 +264,9 @@ export class PlayerController {
   /** 트루 1인칭 전신: 본인 진영의 장착 요원 리그 (라이플 장착 시에만 표시, 머리/목 숨김 → 팔·장갑·소매는 요원 메쉬 그대로) */
   private rig: CharacterRig | null = null; private rigAgent: AgentId | null = null; private rigDisposed = false; private rigFireT = 0; private yawRate = 0; private prevYaw = NaN;
   private static readonly FP_BACK = 0.14; // 리그를 카메라 뒤로 밀어 몸통 내부 폴리곤이 시야에 끼지 않게 함(m)
+  /** 1인칭 카람빗: MDL 추출 모션(꺼내기/베기/찌르기/자세히 보기)으로 요원 오른팔 + 카람빗을 구동. kvmOn = 이번 프레임 카람빗 뷰모델 사용 중 */
+  private kvm: KarambitViewmodel | null = null; private kvmLoading = false; private kvmOn = false;
+  private readonly kvmMat = new THREE.Matrix4();
   private readonly overlay: HTMLDivElement; private readonly flashEl: HTMLDivElement; private readonly hurtEl: HTMLDivElement; private readonly scopeEl: HTMLDivElement; private readonly skillFxEl: HTMLDivElement;
   private flashUntil = 0; private flashDur = 1; private flashPeak = 1; private hurtA = 0;
   private lastInputAt = 0;
@@ -354,6 +359,7 @@ export class PlayerController {
       case 'dash': if (down) this.trySkill('e'); break;
       case 'ult': if (down) this.tryUlt(); break;
       case 'reload': if (down) this.tryReload(); break;
+      case 'inspect': if (down && this.kvmOn && performance.now() >= this.equipUntil) this.kvm?.inspect(); break;
       case 'slot1': if (down) this.switchSlot(1); break;
       case 'slot2': if (down) this.switchSlot(2); break;
       case 'slot3': if (down) this.switchSlot(3); break;
@@ -551,8 +557,9 @@ export class PlayerController {
       if (this.magAmmo() <= 0) { if (fireEdge || altEdge) { this.audio.empty(); this.tryReload(); } else if (w.auto) this.tryReload(); return; }
       this.shoot(w, altFire && !(w.auto ? fireHeld : fireEdge), now);
     } else if (isMelee(w)) {
-      if ((fireHeld || altEdge) && now >= this.nextFireAt) {
+      if ((fireHeld || fireEdge || altEdge) && now >= this.nextFireAt) {
         this.nextFireAt = now + w.intervalMs; this.swingT = 1; this.audio.swing(this.weaponId === 'sword');
+        if (this.kvmOn) { if (altEdge && !fireHeld && !fireEdge) this.kvm?.stab(); else this.kvm?.slash(); } // 공격 = 자세히 보기 즉시 캔슬
         this.net.fire(this.eyePos(), this.yaw, this.pitch, false);
       }
     } else if (isThrow(w)) { // 섬광탄: 좌클릭 원거리 / 우클릭 언더핸드 · G 퀵 투척은 장착 완료 즉시 원거리 투척
@@ -628,8 +635,9 @@ export class PlayerController {
       this.vm = createWeaponMesh(this.weaponId, skin, true);
       this.vm.traverse((o) => { o.castShadow = false; o.frustumCulled = false; (o as THREE.Mesh).renderOrder = Math.max(10, (o as THREE.Mesh).renderOrder); });
       this.vmRoot.add(this.vm);
+      if (this.weaponId === 'dagger' && isKarambitSkin(skin)) this.kvm?.draw(); // 3번 장착 = 핑거 링을 돌려 역수로 감아쥐는 꺼내기
     }
-    const scoped = this.isScoped(now), fpRifle = this.updateRig(dt, now, scoped);
+    const scoped = this.isScoped(now), fpRifle = this.updateRig(dt, now, scoped, skin);
     this.vmRoot.visible = this.alive && !scoped && !fpRifle;
     const sp = Math.hypot(this.vel.x, this.vel.z); if (this.grounded) this.bobT += dt * sp * 1.6;
     const equip = Math.max(0, (this.equipUntil - now) / Math.max(1, this.weapon.equipMs)), ads = (this.zoom - 1) / Math.max(0.01, (isGun(this.weapon) ? this.weapon.adsZoom : 1.01) - 1 || 1);
@@ -650,14 +658,21 @@ export class PlayerController {
       this.rig = new CharacterRig(a, 0x3b9cff, 0); this.rig.setFirstPerson(true); this.rig.root.visible = false; this.net.scene.add(this.rig.root);
     });
   }
-  /** 트루 1인칭: 라이플(AK-47/팬텀)이면 요원 전신 리그를 갱신하고 무기를 오른손 소켓으로 옮긴다. 반환값 = 리그가 총을 들고 보이는 중 */
-  private updateRig(dt: number, now: number, scoped: boolean): boolean {
+  /** 트루 1인칭: 라이플(AK-47/팬텀)이면 무기를 오른손 소켓으로, 카람빗이면 weapon_hand_r 에 붙이고 MDL 모션으로 오른팔을 구동한다.
+   *  반환값 = 리그가 무기를 들고 보이는 중 */
+  private updateRig(dt: number, now: number, scoped: boolean, skin: string): boolean {
     this.syncRigAgent();
-    const rig = this.rig; if (!rig) return false;
-    const rifle = this.weaponId === 'vandal' || this.weaponId === 'phantom', show = this.alive && rifle && !scoped;
+    const knife = this.weaponId === 'dagger' && isKarambitSkin(skin);
+    if (knife && !this.kvm && !this.kvmLoading) {
+      this.kvmLoading = true;
+      void KarambitViewmodel.create().then((k) => { if (!k || this.rigDisposed) return; this.kvm = k; this.camera.add(k.root); k.draw(); });
+    }
+    const rig = this.rig; this.kvmOn = knife && !!this.kvm && !!rig?.wrists.r;
+    if (!rig) return false;
+    const rifle = this.weaponId === 'vandal' || this.weaponId === 'phantom', show = this.alive && ((rifle && !scoped) || this.kvmOn);
     rig.root.visible = show;
-    const want = rifle ? rig.socket : this.vmRoot;
-    if (this.vm && this.vm.parent !== want) { want.add(this.vm); if (!rifle) this.vm.position.set(0, 0, 0), this.vm.rotation.set(0, 0, 0); }
+    const want = rifle ? rig.socket : this.kvmOn ? rig.wrists.r! : this.vmRoot;
+    if (this.vm && this.vm.parent !== want) { want.add(this.vm); this.vm.position.set(0, 0, 0); this.vm.rotation.set(0, 0, 0); this.vm.scale.setScalar(1); }
     if (!show) { this.prevYaw = NaN; return false; }
     const yaw = this.yaw, sin = Math.sin(yaw), cos = Math.cos(yaw), k = Math.min(1, dt * 10);
     if (Number.isNaN(this.prevYaw) || dt <= 0) this.prevYaw = yaw;
@@ -667,9 +682,14 @@ export class PlayerController {
     rig.root.position.set(this.pos.x + sin * B, this.pos.y, this.pos.z + cos * B); rig.root.rotation.y = yaw; // 전방 = (-sin, -cos)
     const vx = this.vel.x, vz = this.vel.z;
     rig.update(dt, {
-      rifle: true, firing: this.rigFireT > 0, reloading: this.reloading, crouch: this.eyeH < MOVE.eye - 0.2 || now < this.slideUntil, air: !this.grounded,
+      rifle: !this.kvmOn, firing: this.rigFireT > 0, reloading: this.reloading, crouch: this.eyeH < MOVE.eye - 0.2 || now < this.slideUntil, air: !this.grounded,
       fwd: -vx * sin - vz * cos, side: vx * cos - vz * sin, turning: Math.abs(this.yawRate) > 1.5, pitch: this.pitch,
     });
+    if (this.kvmOn && this.kvm && this.vm) { // 카메라 고정 MDL 모션 → 오른팔 IK → 카람빗을 weapon_hand_r 로컬로 환산
+      this.camera.updateMatrixWorld(true); this.kvm.update(dt);
+      const hand = rig.poseRightArm(this.kvm.target), parent = this.vm.parent!;
+      this.kvmMat.copy(parent.matrixWorld).invert().multiply(this.kvm.knifeWorld(hand, rig.rightHandSpan(), _kw)).decompose(this.vm.position, this.vm.quaternion, this.vm.scale);
+    }
     return true;
   }
   private flashAmount(now: number): number {
@@ -722,7 +742,7 @@ export class PlayerController {
   dispose(): void {
     for (const off of this.offs) off(); this.offs.length = 0;
     if (this.locked) document.exitPointerLock();
-    this.rigDisposed = true; this.rig?.dispose(); this.rig = null;
+    this.rigDisposed = true; this.rig?.dispose(); this.rig = null; this.kvm?.dispose(); this.kvm = null;
     this.vmRoot.removeFromParent(); this.overlay.remove(); this.wheel.el.remove(); this.audio.dispose();
   }
 }

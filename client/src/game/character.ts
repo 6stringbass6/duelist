@@ -12,6 +12,7 @@ import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { AGENTS, DEFAULT_AGENT, type AgentId } from '../config/agents';
+import { FINGERS, handFrame, type ArmTarget } from './karambitViewmodel';
 
 const BASE = import.meta.env?.BASE_URL ?? '/';
 const ANIM_DIR = BASE + 'models/animations/';
@@ -224,7 +225,16 @@ function addRim(m: THREE.MeshStandardMaterial, color: THREE.Color, strength: { v
   m.customProgramCacheKey = () => 'duelist-rim';
 }
 
-const _q = new THREE.Quaternion(), _hp = new THREE.Vector3();
+const _q = new THREE.Quaternion(), _hp = new THREE.Vector3(), _pq = new THREE.Quaternion(), _aq = new THREE.Quaternion();
+/** 본의 월드 회전을 q 로 맞추고(부모 월드 기준 로컬화) 하위 행렬까지 갱신 */
+function setWorldQuat(b: THREE.Object3D, q: THREE.Quaternion): void {
+  b.parent!.matrixWorld.decompose(_p, _pq, _s); b.quaternion.copy(_pq.invert().multiply(q)); b.updateMatrixWorld(true);
+}
+/** 본을 월드 방향 from → to 로 최소 회전 */
+function aimBone(b: THREE.Object3D, from: THREE.Vector3, to: THREE.Vector3): void {
+  if (from.lengthSq() < 1e-12 || to.lengthSq() < 1e-12) return;
+  setWorldQuat(b, _aq.setFromUnitVectors(from.normalize(), to.clone().normalize()).multiply(wQuat(b)));
+}
 /** 엔티티 1개분 요원 인스턴스 */
 export class CharacterRig {
   readonly root = new THREE.Group(); // 엔티티 그룹에 붙는 래퍼 (-Z 전방 · 미터 단위)
@@ -341,6 +351,45 @@ export class CharacterRig {
       if (t >= 1) this.snap = null;
     }
     if (this.fp) for (const hb of this.headBones) hb.scale.setScalar(0);
+  }
+
+  /**
+   * 1인칭 카람빗: update() 직후 오른팔을 뷰모델 목표로 정렬한다.
+   * 어깨→팔꿈치→손목 2본 IK(팔꿈치 힌트 방향으로 굽힘) → 손 회전(MDL 손 프레임을 이 리그의 손 프레임으로 환산) → 손가락 마디 방향 일치.
+   * 반환값 = 실제 손목 월드 위치(팔 길이 밖 목표는 최대 신장에서 멈춤)
+   */
+  poseRightArm(t: ArmTarget): THREE.Vector3 {
+    const arm = this.arm ??= this.buildArm();
+    this.root.updateMatrixWorld(true);
+    const S = wPos(arm.upper), E0 = wPos(arm.lower), H0 = wPos(arm.hand);
+    const a = E0.distanceTo(S), b = H0.distanceTo(E0), toT = t.hand.clone().sub(S), d = Math.min(Math.max(toT.length(), 1e-4), (a + b) * 0.999);
+    const n = toT.normalize(), pole = t.elbow.clone().sub(S); pole.addScaledVector(n, -pole.dot(n));
+    if (pole.lengthSq() < 1e-8) pole.set(0, -1, 0).addScaledVector(n, -n.y); pole.normalize();
+    const cosA = Math.min(1, Math.max(-1, (a * a + d * d - b * b) / (2 * a * d))), E = S.clone().addScaledVector(n, a * cosA).addScaledVector(pole, a * Math.sqrt(1 - cosA * cosA));
+    aimBone(arm.upper, E0.sub(S), E.clone().sub(S));
+    const El = wPos(arm.lower); aimBone(arm.lower, wPos(arm.hand).sub(El), S.addScaledVector(n, d).sub(El));
+    // 손: 목표 월드 회전 = MDL 손 회전 · MDL 손 프레임 · (이 리그 손 프레임)⁻¹
+    setWorldQuat(arm.hand, new THREE.Quaternion().copy(t.handQuat).multiply(t.handFrame).multiply(arm.frameInv));
+    // 손가락: 각 마디의 '뼈 방향'을 MDL 마디 방향(월드)에 맞춘다 (부모 → 자식 순, setWorldQuat 가 하위 행렬까지 갱신)
+    arm.fingers.forEach((f, i) => { if (f) aimBone(f.bone, f.dir.clone().applyQuaternion(wQuat(f.bone)), t.fingers[i]); });
+    return wPos(arm.hand);
+  }
+  /** 오른손 손목 → 중지 뿌리 월드 거리(m) — 손 크기가 다른 MDL 손의 칼 오프셋을 이 장갑 크기에 맞춰 축척할 때 사용 */
+  rightHandSpan(): number { const arm = this.arm ??= this.buildArm(); return wPos(arm.hand).distanceTo(wPos(arm.middle)); }
+  private arm: { upper: THREE.Bone; lower: THREE.Bone; hand: THREE.Bone; middle: THREE.Bone; frameInv: THREE.Quaternion; fingers: ({ bone: THREE.Bone; dir: THREE.Vector3 } | null)[] } | null = null;
+  private buildArm(): NonNullable<CharacterRig['arm']> {
+    const B = (l: string): THREE.Bone => this.bones[findBone(this.bones, l)];
+    const hand = B('RightHand'); this.model.updateMatrixWorld(true);
+    const local = (o: THREE.Object3D): THREE.Vector3 => hand.worldToLocal(wPos(o));
+    const fb = (f: string, j: number): THREE.Bone | undefined => this.bones.find((x) => x.name === `finger_${f}_${j}_r`);
+    const frame = handFrame(local(fb('middle', 0)!), local(fb('index', 0)!).sub(local(fb('pinky', 0)!)));
+    // 마디 뼈 방향(본 로컬): 다음 마디가 있으면 그쪽, 끝 마디는 직전 마디 방향 연장
+    const fingers = FINGERS.flatMap((f) => [0, 1, 2].map((j) => {
+      const bone = fb(f, j); if (!bone) return null;
+      const next = fb(f, j + 1), dir = next ? bone.worldToLocal(wPos(next)) : bone.position.clone().applyQuaternion(bone.quaternion.clone().invert());
+      return { bone, dir: dir.normalize() };
+    }));
+    return { upper: B('RightArm'), lower: B('RightForeArm'), hand, middle: fb('middle', 0)!, frameInv: frame.invert(), fingers };
   }
 
   dispose(): void {
