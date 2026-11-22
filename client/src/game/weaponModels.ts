@@ -77,30 +77,40 @@ const FILE_PARTS: Record<string, Record<string, PartDef>> = {
  *  blade/handle/metal/wrap = 기본(스킨 미적용) 재질 — 생략 시 모델 내장 재질 유지. 스킨 적용 시 칼날에만 스킨 재질, 금속 파츠·손잡이는 기본 유지.
  *  mats = 칼날 외 부위에서 원본 재질 이름별 기본 재질(handle/wrap 보다 우선),
  *  nativeHandle = 칼날 외 부위는 GLB 원본 재질을 값 보정 없이 그대로(map/normal/roughness/metalness/color 무손실, 환경맵만 연결) */
-interface BladeMask { from?: number; comps?: { blade: number[]; metal?: number[] }; handleOnly?: RegExp; blade?: PartDef; handle?: PartDef; metal?: PartDef; wrap?: PartDef; mats?: Record<string, PartDef>; nativeHandle?: boolean }
+interface BladeMask { from?: number; comps?: { blade: number[]; metal?: number[] }; handleOnly?: RegExp; blade?: PartDef; handle?: PartDef; metal?: PartDef; wrap?: PartDef; mats?: Record<string, PartDef>; nativeHandle?: boolean; layout?: Record<number, [UvRect, UvRect]> }
+/** CS2 순정 UV 레이아웃의 목표 사각형 [u0, v0, u1, v1] — Source 규약(좌상단 원점, v 아래), Valve 표준 1×1 타일 */
+type UvRect = [number, number, number, number];
 /** 카람빗 기본(바닐라) 칼날·핑거 링 = 건메탈 탄소강 (원본 다마스커스 줄무늬 map 제거) */
 const KARAMBIT_VANILLA_BLADE: PartDef = { role: 'base', color: 0x2d323a, metalness: 0.84, roughness: 0.34 };
-/** 카람빗 스킨 칼날·핑거 링 마감 — 칼날·링은 별도 재질 그룹이므로 원본 normal/ORM 맵을 연결하지 않고(다마스커스 물결 제거) 스칼라 PBR + 평면 UV 스킨 시트만 사용. */
-const NATIVE_PBR = { metalness: 0.92, roughness: 0.22 } as const; // 원본 normal/ORM 맵은 다마스커스 물결이 구워져 있어 칼날·링에선 쓰지 않고 균일 고광택 스칼라 사용(손잡이는 nativeHandle 로 원본 유지)
-const doppler = (offsetU: number, color: number, emissive: number, repeat: [number, number] = [0.24, 0.55], offsetV = 0.225): PartDef => ({
-  role: 'base', color, ...NATIVE_PBR, finish: true, emissive, emissiveIntensity: 1.15,
-  sheet: { url: 'textures/doppler.jpeg', rotation: 0, repeat, offset: [offsetU, offsetV] },
+/** 카람빗 스킨 칼날·핑거 링 마감 — 원본 normal/ORM 맵은 다마스커스 물결이 구워져 있어 칼날·링에선 쓰지 않고 균일 고광택 스칼라 사용(손잡이는 nativeHandle 로 원본 유지) */
+const SKIN_PBR = { metalness: 0.92, roughness: 0.22 } as const;
+/** 도플러 3종: doppler.jpeg(1024², 좌→우 루비·에메랄드·사파이어 연기 띠)의 보석색 구역을 정사각형 서브 텍스처로 잘라 CS2 패턴 변환을 통과시킨다.
+ *  검은 연기 배경에 칼날이 묻히지 않도록 같은 시트를 emissiveMap 으로도 연결 → 보석 색 틴트 + 자체 발색 */
+const doppler = (crop: [number, number, number], pattern: Cs2Pattern, color: number, emissive: number): PartDef => ({
+  role: 'base', color, ...SKIN_PBR, finish: true, emissive, emissiveIntensity: 1.15,
+  sheet: { url: 'textures/doppler.jpeg', crop, pattern },
 });
-/** 스킨별 칼날 재질(GlbSpec.variant). 표면 경화 #387 블루젬: 시트의 큰 코발트 블루 덩어리를 칼날 측면 전체에 1:1 비율로 배치 (평면 UV: u = 길이축 0~1, v = 높이/길이) */
+/** 스킨별 칼날 재질(GlbSpec.variant) — 칼날·핑거 링 uv1(CS2 순정 레이아웃) 위에 CS2 5단계 패턴 변환으로 시트 매핑 */
 const BLADE_VARIANTS: Record<string, PartDef> = {
-  case_hardened_387: { role: 'base', color: 0xd4e0ff, ...NATIVE_PBR, finish: true, sheet: { url: 'textures/case_hardened.png', rotation: 0, repeat: [0.5, 0.5], offset: [-0.37, 0.41] } },
-  // 도플러 3종: doppler.jpeg 시트의 보석색 연기 구역만 칼날+핑거 링에 매핑 (three offset 은 중심 기준: u' = r·(u-0.5)+0.5+off).
-  // 검은 연기 배경에 칼날이 묻히지 않도록 같은 시트를 emissiveMap 으로도 연결 → 보석 색 틴트 + 자체 발색
-  doppler_ruby: doppler(-0.21, 0xff7585, 0xd91636), // 왼쪽 붉은 연기 구역(U≈0.17~0.41)
-  // 사파이어: 블루 연기 밝은 중심 구역(U≈0.84~0.92 · V≈0.75~0.9, 실측 B채널 — U<0.74 와 V 0.45~0.67 은 암부) → 창을 U 0.80~0.92 로 이동·확장해 창 시작점의 핑거 링까지 푸르게
-  doppler_sapphire: doppler(0.36, 0x75adff, 0x1254e8, [0.12, 0.3], 0.4),
-  doppler_emerald: doppler(0.055, 0x66ffa3, 0x0ec95c), // 가운데 그린 연기 구역(U≈0.43~0.68)
+  // 표면 경화 #387 블루젬 — pattern.wiki 실측 시드 좌표 (Karambit Case Hardened Seed 387)
+  case_hardened_387: { role: 'base', color: 0xd4e0ff, ...SKIN_PBR, finish: true, sheet: { url: 'textures/case_hardened.png', pattern: { offsetX: 0.07, offsetY: 0.73, rotation: 264.53, scale: 0.44 } } },
+  doppler_ruby: doppler([0.13, 0.0, 0.31], { offsetX: 0.31, offsetY: 0.42, rotation: 37, scale: 0.44 }, 0xff7585, 0xd91636), // 왼쪽 붉은 연기(U≈0.15~0.42, 상단 소용돌이)
+  doppler_sapphire: doppler([0.8, 0.59, 0.32], { offsetX: 0.97, offsetY: 0.18, rotation: 151, scale: 0.44 }, 0x75adff, 0x1254e8), // 오른쪽 블루 연기(U≈0.80~1.12 래핑) 밝은 하단 코어 — 어두운 좌상단 경계 회피
+  doppler_emerald: doppler([0.44, 0.0, 0.33], { offsetX: 0.48, offsetY: 0.66, rotation: 312, scale: 0.44 }, 0x66ffa3, 0x0ec95c), // 가운데 그린 연기(U≈0.44~0.77)
 };
 const KARAMBIT_FILE = 'damascus-karambit.glb';
 const BLADE_MASKS: Record<string, BladeMask> = {
   // CS2 카람빗(damascus-karambit.glb, KarambitFinal.obj + 2K PBR 텍스처 변환본): 단일 메시·연결 컴포넌트 3개(실측) — #0 손잡이(4730 tri, 탱·그립 스케일), #1 핑거 링(948), #2 칼날(858)
   // → 칼날 + 핑거 링 = 블레이드 그룹(바닐라 건메탈 또는 스킨 variant), 손잡이는 모델 내장 원본 PBR 재질 그대로(nativeHandle)
-  [KARAMBIT_FILE]: { comps: { blade: [1, 2] }, blade: KARAMBIT_VANILLA_BLADE, nativeHandle: true },
+  // layout = 원본 uv 의 ±Z 면 섬(링·칼날 각 2개)을 CS2 순정 카람빗 1×1 레이아웃으로 재배치한 uv1 — 앞·뒷면이 서로 다른 시트 영역을 샘플링(거울 대칭 없음)
+  [KARAMBIT_FILE]: {
+    comps: { blade: [1, 2] }, blade: KARAMBIT_VANILLA_BLADE, nativeHandle: true,
+    layout: {
+      // [Play Side, Back Side] — Play Side = 1인칭 뷰모델·조사 기본 각도에서 보이는 면(이 모델은 root -Z 면, cs2Layout 참고)
+      1: [[0.03, 0.03, 0.33, 0.22], [0.03, 0.23, 0.33, 0.42]], // 핑거 링 Play(위) · Back(아래) — 좌측 상단
+      2: [[0.35, 0.03, 0.97, 0.44], [0.35, 0.45, 0.97, 0.86]], // 칼날 Play Side(우측 상단) · Back Side(우측 중단)
+    },
+  },
   // CS2 바닐라 스켈레톤: 내장 Fade 텍스처를 덮어쓰는 무광 다크 스틸 날 + 차콜 그레이 프레임/링, 파라코드(Plane001)는 통째로 손잡이
   'skeleton_knife.glb': {
     from: 0.42, handleOnly: /^Plane001$/,
@@ -132,9 +142,12 @@ type ModelDef = { file: string; length: number; grip?: number; roll?: number; ow
 type Role = 'base' | 'accent' | 'dark' | 'glass';
 /** split = 단일 메시 안의 2차 영역(rot 적용 후 모델 좌표 x/y 로 판정) → 기본 외형에서만 part 재질, 스킨 장착 시엔 메시 전체가 기존처럼 role 스킨. grain = 나뭇결 텍스처,
  *  emissive = 시트(sheet)를 emissiveMap 으로도 연결해 이 색으로 자체 발색, finish = 골드 룬 마감(인스턴스별 환경맵 직접 연결 + 증폭, 양면) */
-interface PartDef { role: Role; color: number; metalness: number; roughness: number; grain?: boolean; sheet?: SheetMap; emissive?: number; emissiveIntensity?: number; finish?: boolean; nativeMaps?: boolean; split?: { test: (x: number, y: number) => boolean; part: PartDef } }
-/** 원본 시트 이미지(public/textures)를 평면 UV 로 매핑하는 변환 — THREE.Texture 의 center/rotation/repeat/offset 그대로 */
-interface SheetMap { url: string; rotation: number; repeat: [number, number]; offset: [number, number] }
+interface PartDef { role: Role; color: number; metalness: number; roughness: number; grain?: boolean; sheet?: SheetMap; emissive?: number; emissiveIntensity?: number; finish?: boolean; split?: { test: (x: number, y: number) => boolean; part: PartDef } }
+/** CS2 페인트킷 패턴 시드 좌표 (pattern.wiki 표기: offset X/Y, rotation(°), scale) */
+interface Cs2Pattern { offsetX: number; offsetY: number; rotation: number; scale: number }
+/** 시트 이미지(public/textures) → 마스크 layout 의 uv1 에 CS2 패턴 변환으로 매핑.
+ *  crop = [x0, y0, size] 시트 비율 단위 정사각형 서브 텍스처(가로 래핑 허용) — 생략 시 시트 전체 */
+interface SheetMap { url: string; pattern: Cs2Pattern; crop?: [number, number, number] }
 interface Source { glb: boolean; root: THREE.Object3D; roles: Map<string, Role>; scale: number; offset: THREE.Vector3; muzzle: THREE.Vector3; parts?: Record<string, PartDef>; mask?: BladeMask; axis: { y: Float32Array; x0: number; len: number } }
 export interface SkinSet { base: THREE.Material; accent: THREE.Material; skinned: boolean }
 
@@ -150,6 +163,8 @@ const glassMat = new THREE.MeshStandardMaterial({ color: 0x88c8ff, roughness: 0.
 const planarUvs = new WeakMap<THREE.BufferGeometry, Float32Array>();
 /** 칼날 마스크로 분할된 지오메트리 → 정점별 그룹 번호 (스킨 시 칼날(1) 정점만 평면 UV, 나머지는 원본 UV 유지) */
 const bladeVerts = new WeakMap<THREE.BufferGeometry, Uint8Array>();
+/** 마스크 layout 으로 만든 CS2 순정 레이아웃 uv1 (layout 밖 정점 = 0) */
+const layoutUvs = new WeakMap<THREE.BufferGeometry, Float32Array>();
 
 const triVerts = (src: ArrayLike<number> | null, t: number): [number, number, number] => (src ? [src[t * 3], src[t * 3 + 1], src[t * 3 + 2]] : [t * 3, t * 3 + 1, t * 3 + 2]);
 
@@ -184,6 +199,95 @@ function triComponents(g: THREE.BufferGeometry): Int32Array {
   return root.map((r) => rank.get(r)!);
 }
 
+/** CS2 순정 레이아웃 uv1: layout 컴포넌트마다 원본 uv 섬을 찾고, 가장 큰 두 섬(= ±Z 면)을 섬 모양 그대로(회전·균일 스케일·이동만)
+ *  목표 사각형에 배치한다. 섬 방향은 손잡이 중심 → 칼끝 방향이 +U(오른쪽)를 향하도록 정렬(섬 uv ↔ 월드 xy 최소제곱 아핀으로 방향 추정).
+ *  나머지 얇은 측면(두께) 섬은 같은 컴포넌트의 가장 가까운 면 정점 uv1 을 복사 → 날 가장자리가 인접 면 패턴을 이어받는다. comp = 삼각형별 컴포넌트 순위 */
+function cs2Layout(me: THREE.Mesh, comp: Int32Array, layout: Record<number, [UvRect, UvRect]>): Float32Array {
+  const g = me.geometry, pos = g.attributes.position, uv = g.attributes.uv, nor = g.attributes.normal, src = g.index ? g.index.array : null;
+  const n = pos.count, out = new Float32Array(n * 2), tris = comp.length;
+  if (!uv || !nor) return out;
+  const wp = new Float32Array(n * 3), nz = new Float32Array(n), v = new THREE.Vector3(), nm = new THREE.Matrix3().getNormalMatrix(me.matrixWorld);
+  for (let i = 0; i < n; i++) {
+    v.fromBufferAttribute(pos, i).applyMatrix4(me.matrixWorld); wp[i * 3] = v.x; wp[i * 3 + 1] = v.y; wp[i * 3 + 2] = v.z;
+    nz[i] = v.fromBufferAttribute(nor, i).applyMatrix3(nm).normalize().z;
+  }
+  // 손잡이(비 layout 컴포넌트) 중심 → 가장 먼 layout 정점(칼끝) = 칼날 진행 방향
+  const inLayout = (t: number): boolean => comp[t] in layout;
+  let hx = 0, hy = 0, hn = 0;
+  for (let t = 0; t < tris; t++) if (!inLayout(t)) for (const i of triVerts(src, t)) { hx += wp[i * 3]; hy += wp[i * 3 + 1]; hn++; }
+  hx /= hn || 1; hy /= hn || 1;
+  let dx = 1, dy = 0, far = -1;
+  for (let t = 0; t < tris; t++) if (inLayout(t)) for (const i of triVerts(src, t)) { const ex = wp[i * 3] - hx, ey = wp[i * 3 + 1] - hy, d = ex * ex + ey * ey; if (d > far) { far = d; dx = ex; dy = ey; } }
+  // uv 섬: 같은 삼각형 정점 + (같은 위치·같은 uv) 정점을 묶는 union-find
+  const par = Int32Array.from({ length: n }, (_, i) => i), find = (x: number): number => { while (par[x] !== x) x = par[x] = par[par[x]]; return x; };
+  const q = (x: number): number => Math.round(x * 1e4), seen = new Map<string, number>();
+  for (let t = 0; t < tris; t++) {
+    if (!inLayout(t)) continue;
+    const [a, b, c] = triVerts(src, t); par[find(b)] = find(a); par[find(c)] = find(a);
+    for (const i of [a, b, c]) {
+      const k = `${comp[t]},${q(wp[i * 3])},${q(wp[i * 3 + 1])},${q(wp[i * 3 + 2])},${q(uv.getX(i))},${q(uv.getY(i))}`, j = seen.get(k);
+      if (j === undefined) seen.set(k, i); else par[find(i)] = find(j);
+    }
+  }
+  for (const [key, rects] of Object.entries(layout)) {
+    const c = Number(key), islands = new Map<number, Set<number>>();
+    for (let t = 0; t < tris; t++) if (comp[t] === c) for (const i of triVerts(src, t)) { const r = find(i); (islands.get(r) ?? islands.set(r, new Set()).get(r)!).add(i); }
+    const sorted = [...islands.values()].sort((a, b) => b.size - a.size), faces = sorted.slice(0, 2), mean = (s: Set<number>): number => { let z = 0; for (const i of s) z += nz[i]; return z / s.size; };
+    if (faces.length < 2) continue;
+    faces.sort((a, b) => mean(a) - mean(b)); // [-Z = Play Side, +Z = Back Side] — 뷰모델(오른쪽 +X 배치, wrap Y+90°)에서 root -Z 면이 카메라를 향한다
+    faces.forEach((isl, side) => {
+      // 최소제곱: uv ≈ A·(x, y) + b → 칼날 방향의 uv 방향 d = A·dir
+      let mx = 0, my = 0, mu = 0, mv = 0;
+      for (const i of isl) { mx += wp[i * 3]; my += wp[i * 3 + 1]; mu += uv.getX(i); mv += uv.getY(i); }
+      const k = isl.size; mx /= k; my /= k; mu /= k; mv /= k;
+      let sxx = 0, sxy = 0, syy = 0, sux = 0, suy = 0, svx = 0, svy = 0;
+      for (const i of isl) { const x = wp[i * 3] - mx, y = wp[i * 3 + 1] - my, u = uv.getX(i) - mu, w = uv.getY(i) - mv; sxx += x * x; sxy += x * y; syy += y * y; sux += u * x; suy += u * y; svx += w * x; svy += w * y; }
+      const det = sxx * syy - sxy * sxy || 1, ix = (syy * dx - sxy * dy) / det, iy = (sxx * dy - sxy * dx) / det; // Sxx⁻¹·dir
+      const ang = Math.atan2(svx * ix + svy * iy, sux * ix + suy * iy), cs = Math.cos(-ang), sn = Math.sin(-ang);
+      let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+      for (const i of isl) {
+        const u = uv.getX(i) - mu, w = uv.getY(i) - mv, ru = u * cs - w * sn, rv = u * sn + w * cs;
+        out[i * 2] = ru; out[i * 2 + 1] = rv; u0 = Math.min(u0, ru); u1 = Math.max(u1, ru); v0 = Math.min(v0, rv); v1 = Math.max(v1, rv);
+      }
+      const [r0, s0, r1, s1] = rects[side], sc = Math.min((r1 - r0) / (u1 - u0), (s1 - s0) / (v1 - v0));
+      const ou = (r0 + r1) / 2 - ((u0 + u1) / 2) * sc, ov = (s0 + s1) / 2 - ((v0 + v1) / 2) * sc;
+      for (const i of isl) { out[i * 2] = out[i * 2] * sc + ou; out[i * 2 + 1] = out[i * 2 + 1] * sc + ov; }
+    });
+    // 측면(두께) 섬: 삼각형마다 한쪽 면(세 정점의 최근접 면 다수결)을 고른 뒤 그 면의 최근접 정점 uv1 복사
+    // → 앞·뒷면을 가로지르는 날·등 띠가 uv1 에서 두 섬 사이로 늘어나 패턴이 번지지 않게
+    const sides = faces.map((s) => [...s]), nearest = (i: number, list: number[]): [number, number] => {
+      let best = list[0], bd = Infinity;
+      for (const j of list) { const ex = wp[i * 3] - wp[j * 3], ey = wp[i * 3 + 1] - wp[j * 3 + 1], ez = wp[i * 3 + 2] - wp[j * 3 + 2], d = ex * ex + ey * ey + ez * ez; if (d < bd) { bd = d; best = j; } }
+      return [best, bd];
+    };
+    const edge = new Set(sorted.slice(2).flatMap((s) => [...s]));
+    for (let t = 0; t < tris; t++) {
+      if (comp[t] !== c) continue;
+      const vs = triVerts(src, t); if (!edge.has(vs[0])) continue;
+      const side = vs.reduce((k, i) => k + (nearest(i, sides[0])[1] <= nearest(i, sides[1])[1] ? 1 : 0), 0) >= 2 ? 0 : 1;
+      for (const i of vs) { const [j] = nearest(i, sides[side]); out[i * 2] = out[j * 2]; out[i * 2 + 1] = out[j * 2 + 1]; }
+    }
+  }
+  return out;
+}
+
+/** CS2(Source) CustomPaintJob 패턴 변환 — pattern.wiki 5단계(SVG 표기 순서대로 합성: 바깥 → 안쪽)를 uv1(Source 규약) → 시트 좌표 행렬로.
+ *  three 의 mapTransform 으로 그대로 들어가므로(texture.matrixAutoUpdate = false) 셰이더 수정 없이 map·emissiveMap 에 동일 적용된다 */
+function cs2Matrix({ offsetX, offsetY, rotation, scale }: Cs2Pattern): THREE.Matrix3 {
+  // Step 4 계수 — pattern.wiki 원본 수식 그대로 (extraOffsetY 가 invScale 대신 extraOffsetX 를 쓰는 것도 원문 유지)
+  const invScale = 0.5 / scale;
+  const rotationRad = -rotation * (Math.PI / 180.0);
+  const cos = Math.cos(rotationRad);
+  const sin = Math.sin(rotationRad);
+  const extraOffsetX = (invScale * cos) - (invScale * sin);
+  const extraOffsetY = (extraOffsetX * sin) + (invScale * cos);
+  const m = new THREE.Matrix3().makeTranslation(offsetX - 0.5, offsetY - 0.5) // Step 1: 초기 이동(템플릿 원점 중앙 보정)
+    .multiply(new THREE.Matrix3().makeScale(scale, scale)) // Step 2: 스케일
+    .multiply(new THREE.Matrix3().makeRotation(rotation * (Math.PI / 180))) // Step 3: 좌상단 (0,0) 기준 회전 (v 아래 좌표계 = 시계 방향, SVG rotate 와 동일)
+    .multiply(new THREE.Matrix3().makeTranslation(extraOffsetX, extraOffsetY)); // Step 4: 추가 오프셋
+  return new THREE.Matrix3().set(1, 0, 0, 0, -1, 1, 0, 0, 1).multiply(m); // Step 5: Source(좌상단 원점) → WebGL(flipY 텍스처, 좌하단 원점) v' = 1 - v
+}
+
 /** 칼날 마스크: comps(실제 연결 컴포넌트) 또는 from(길이축 절단)으로 [손잡이 0, 칼날 1, 금속 2] 분할 */
 function splitBlade(root: THREE.Object3D, mask: BladeMask): void {
   root.updateMatrixWorld(true);
@@ -192,6 +296,7 @@ function splitBlade(root: THREE.Object3D, mask: BladeMask): void {
     const me = o as THREE.Mesh;
     if (!me.isMesh || Array.isArray(me.material) || mask.handleOnly?.test(me.name)) return;
     const cs = mask.comps, comp = cs ? triComponents(me.geometry) : null;
+    if (comp && mask.layout) layoutUvs.set(me.geometry, cs2Layout(me, comp, mask.layout)); // splitTris 재정렬 전(원본 삼각형 순서)에 계산
     bladeVerts.set(me.geometry, splitTris(me, (t, x) => (cs ? (cs.blade.includes(comp![t]) ? 1 : cs.metal?.includes(comp![t]) ? 2 : 0) : x >= cut ? 1 : 0)));
   });
 }
@@ -318,17 +423,27 @@ const texLoader = new THREE.TextureLoader();
 const sheetBase = new Map<string, THREE.Texture>();
 /** 모델 로드 전에 시트 이미지를 먼저 받아 둔다 → 썸네일/프리뷰가 텍스처 미로드(검은 칼날) 상태로 캡처되지 않게 */
 const preloadSheet = (s?: SheetMap): Promise<unknown> => (!s || sheetBase.has(s.url) ? Promise.resolve() : texLoader.loadAsync((import.meta.env?.BASE_URL ?? '/') + s.url).then((t) => sheetBase.set(s.url, t)));
+/** 시트 텍스처: crop 이면 정사각형 서브 텍스처(캔버스, 가로 래핑) + 거울 반복(잘린 경계 이음매 방지), 아니면 원본 타일 반복.
+ *  uv1(CS2 레이아웃) 채널 + CS2 패턴 행렬 */
 function sheetTex(s: SheetMap): THREE.Texture {
-  const t = sheetBase.get(s.url)!.clone(); t.needsUpdate = true;
-  t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8;
-  t.center.set(0.5, 0.5); t.rotation = s.rotation; t.repeat.set(...s.repeat); t.offset.set(...s.offset);
+  const base = sheetBase.get(s.url)!;
+  let t: THREE.Texture;
+  if (s.crop) {
+    const img = base.image as HTMLImageElement, W = img.width, H = img.height, [x0, y0, size] = s.crop, S = 1024;
+    const cv = document.createElement('canvas'); cv.width = cv.height = S;
+    const cx = cv.getContext('2d')!, sx = (x0 % 1) * W, sy = y0 * H, sw = size * W, sh = size * H, w1 = Math.min(sw, W - sx); // 시트 오른쪽 끝을 넘으면 왼쪽에서 이어 그림
+    cx.drawImage(img, sx, sy, w1, sh, 0, 0, (w1 / sw) * S, S);
+    if (w1 < sw) cx.drawImage(img, 0, sy, sw - w1, sh, (w1 / sw) * S, 0, ((sw - w1) / sw) * S, S);
+    t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.MirroredRepeatWrapping;
+  } else { t = base.clone(); t.needsUpdate = true; t.wrapS = t.wrapT = THREE.RepeatWrapping; }
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  t.channel = 1; t.matrixAutoUpdate = false; t.matrix.copy(cs2Matrix(s.pattern));
   return t;
 }
 const partMat = (p: PartDef): THREE.MeshStandardMaterial => {
   let r = partCache.get(p);
   if (!r) {
     const map = p.sheet ? sheetTex(p.sheet) : p.grain ? woodGrain() : null;
-    if (p.nativeMaps && map) map.channel = 1; // 평면 UV 는 uv1, 원본 UV(uv)는 ORM/normal 맵용
     r = new THREE.MeshStandardMaterial({ color: p.color, metalness: p.metalness, roughness: p.roughness, map, side: p.finish ? THREE.DoubleSide : THREE.FrontSide });
     if (p.emissive !== undefined) { r.emissive.setHex(p.emissive); r.emissiveMap = map; r.emissiveIntensity = p.emissiveIntensity ?? 1; }
     partCache.set(p, r);
@@ -358,14 +473,6 @@ function glbNative(mesh: THREE.Mesh, m: THREE.Material, raw = false, flat = fals
   return withEnv(mesh, c, flat);
 }
 
-/** nativeMaps 파츠: 모델 원본 재질의 roughness/metalness/normal 맵을 복제 재질에 연결(원본 UV) */
-function nativePbr(c: THREE.MeshStandardMaterial, m: THREE.Material, def: PartDef): THREE.MeshStandardMaterial {
-  if (!def.nativeMaps) return c;
-  const o = m as THREE.MeshStandardMaterial;
-  c.roughnessMap = o.roughnessMap; c.metalnessMap = o.metalnessMap; c.normalMap = o.normalMap; c.normalScale.copy(o.normalScale);
-  return c;
-}
-
 function build(src: Source, skin: SkinSet, roll = 0, blade?: PartDef, raw = false): THREE.Group {
   const wrap = new THREE.Group(); wrap.rotation.y = Math.PI / 2; wrap.scale.setScalar(src.scale); // +X(총열) → -Z(전방)
   const inner = src.root.clone(true); inner.position.copy(src.offset); inner.rotation.x = roll; wrap.add(inner);
@@ -382,7 +489,7 @@ function build(src: Source, skin: SkinSet, roll = 0, blade?: PartDef, raw = fals
   // 칼날 마스크: 손잡이(0)·금속 파츠(2, 예: 핑거 링)는 항상 기본 재질, 스킨은 칼날 그룹(1)에만
   const mask = src.mask;
   const own = (m: THREE.Material, def?: PartDef): THREE.Material =>
-    def ? (def.finish && curMesh ? withEnv(curMesh, nativePbr(partMat(def).clone(), m, def)) : partMat(def)) : src.glb && curMesh ? glbNative(curMesh, m, mask?.nativeHandle, mask?.nativeHandle) : native(m);
+    def ? (def.finish && curMesh ? withEnv(curMesh, partMat(def).clone()) : partMat(def)) : src.glb && curMesh ? glbNative(curMesh, m, mask?.nativeHandle, mask?.nativeHandle) : native(m);
   const pickMasked = (m: THREE.Material, group: number): THREE.Material =>
     group === 1 ? (skin.skinned ? skin.base : own(m, blade ?? mask!.blade))
       : group === 2 ? own(m, mask!.mats?.[m.name] ?? mask!.metal ?? mask!.blade)
@@ -390,13 +497,14 @@ function build(src: Source, skin: SkinSet, roll = 0, blade?: PartDef, raw = fals
   inner.traverse((o) => {
     const me = o as THREE.Mesh; if (!me.isMesh) return;
     curMesh = me;
-    const puv = src.glb && !raw && (skin.skinned || (blade ?? mask?.blade)?.sheet) ? planarUvs.get(me.geometry) : undefined, flag = bladeVerts.get(me.geometry);
-    if (puv && !(mask && !flag)) { // 마스크 모델의 손잡이 전용 메시는 원본 UV 유지
+    const luv = !raw && !skin.skinned && (blade ?? mask?.blade)?.sheet ? layoutUvs.get(me.geometry) : undefined;
+    const puv = src.glb && !raw && skin.skinned ? planarUvs.get(me.geometry) : undefined, flag = bladeVerts.get(me.geometry);
+    if (luv) { me.geometry = me.geometry.clone(); me.geometry.setAttribute('uv1', new THREE.BufferAttribute(luv, 2)); } // 시트 스킨: 원본 uv 유지(손잡이 PBR), 시트는 CS2 레이아웃 uv1
+    else if (puv && !(mask && !flag)) { // 마스크 모델의 손잡이 전용 메시는 원본 UV 유지
       let uv = puv;
       if (flag) { const orig = me.geometry.attributes.uv; uv = new Float32Array(puv); if (orig) for (let i = 0; i < flag.length; i++) if (flag[i] !== 1) { uv[i * 2] = orig.getX(i); uv[i * 2 + 1] = orig.getY(i); } }
       me.geometry = me.geometry.clone();
-      if ((blade ?? mask?.blade)?.nativeMaps) me.geometry.setAttribute('uv1', new THREE.BufferAttribute(puv, 2)); // 원본 uv 유지(ORM/normal), 시트는 uv1
-      else me.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+      me.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     }
     if (mask && !raw) me.material =Array.isArray(me.material) ? me.material.map((m, i) => pickMasked(m, flag ? i : 0)) : pickMasked(me.material, 0);
     else me.material = Array.isArray(me.material) ? me.material.map(pick) : pick(me.material);
