@@ -417,7 +417,7 @@ begin
     exit when v_roll <= v_acc;
   end loop;
   if v_rarity = 'karambit' then
-    select * into v_skin from skin_catalog where skin_id = 'karambit_dagger' and active;
+    select * into v_skin from skin_catalog where skin_id in ('karambit_dagger','karambit_doppler') and active order by random() limit 1; -- 표면 경화 / 도플러 균등 분할
   else
     select * into v_skin from skin_catalog where rarity = v_rarity and in_box and active
       and (not v_gun_only or weapon_id not in ('dagger','sword')) order by random() limit 1;

@@ -26,7 +26,7 @@ begin
     exit when v_roll <= v_acc;
   end loop;
   if v_rarity = 'karambit' then
-    select * into v_skin from skin_catalog where skin_id = 'karambit_dagger' and active;
+    select * into v_skin from skin_catalog where skin_id in ('karambit_dagger','karambit_doppler') and active order by random() limit 1; -- 표면 경화 / 도플러 균등 분할
   else
     select * into v_skin from skin_catalog where rarity = v_rarity and in_box and active
       and (not v_gun_only or weapon_id not in ('dagger','sword')) order by random() limit 1;
@@ -55,3 +55,7 @@ on conflict (skin_id) do update set weapon_id = excluded.weapon_id, name = exclu
 insert into public.lootbox_rates (box_id, rarity, weight, dup_refund) values
   ('karambit','karambit',0.1,2000),('karambit','covert',19.9,900),('karambit','classified',23.33,550),('karambit','restricted',41.67,375),('karambit','milspec',15,225),('karambit','industrial',0,150),('karambit','consumer',0,150)
 on conflict (box_id, rarity) do update set weight = excluded.weight, dup_refund = excluded.dup_refund;
+insert into public.skin_catalog (skin_id, weapon_id, name, rarity, price, featured, in_daily, in_box, sort)
+values ('karambit_doppler','dagger','★ 카람빗 | 도플러','exrare',4500,false,false,false,14.5)
+on conflict (skin_id) do update set weapon_id = excluded.weapon_id, name = excluded.name, rarity = excluded.rarity, price = excluded.price,
+  featured = false, in_daily = false, in_box = false, sort = excluded.sort, active = true;

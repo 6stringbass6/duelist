@@ -289,7 +289,11 @@ function load(def: ModelDef | undefined): Promise<Source | null> {
   return p;
 }
 /** 해당 무기/스킨이 쓰는 모델 파일의 로드가 끝나면(실패 포함) resolve — 이후 createWeaponMesh 는 동기로 실제 모델을 붙인다 */
-export function weaponModelReady(weaponId: WeaponId, skinId?: string | null): Promise<void> { return load(modelFor(weaponId, skinId)).then(() => undefined); }
+/** ⚠ 모델은 파일명으로 캐시되어 같은 GLB 를 쓰는 스킨(표면 경화/도플러 카람빗)끼리 시트 선로드가 건너뛰어지므로, 스킨별 시트 텍스처를 여기서 따로 보장한다 */
+export function weaponModelReady(weaponId: WeaponId, skinId?: string | null): Promise<void> {
+  const def = modelFor(weaponId, skinId);
+  return Promise.all([load(def), def ? preloadSheet(bladeOf(def)?.sheet) : undefined]).then(() => undefined);
+}
 /** 시작 시 한 번 호출 — 사용하는 모델을 미리 받아 둔다 */
 export function preloadWeaponModels(): Promise<void> { return Promise.all((Object.keys(WEAPON_MODELS) as WeaponId[]).map((id) => load(WEAPON_MODELS[id]))).then(() => undefined); }
 

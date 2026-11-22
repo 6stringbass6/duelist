@@ -220,16 +220,16 @@ export const DEFAULT_SKIN: Pick<SkinDef, 'model' | 'material' | 'emissive' | 'vf
 };
 
 // ───────────────────────────── 2) 랜덤박스 확률표 (스킨 데이터와 독립) ─────────────────────────────
-/** jackpot = 등급과 별개로 특정 스킨 1종을 weight(%)로 뽑는 칸 (DB lootbox_rates 에 rarity='karambit' 행으로 저장). gunOnly = 등급 추첨 풀에서 근접(단검/장검) 제외 */
-export interface LootboxJackpot { key: string; skinId: string; weight: number; refund: number; label: string }
+/** jackpot = 등급과 별개로 특정 스킨 묶음(skinIds)을 weight(%)로 뽑는 칸 — 당첨 시 묶음 안에서 균등 추첨(서버 open_lootbox 와 동일) (DB lootbox_rates 에 rarity='karambit' 행으로 저장). gunOnly = 등급 추첨 풀에서 근접(단검/장검) 제외 */
+export interface LootboxJackpot { key: string; skinIds: string[]; weight: number; refund: number; label: string }
 export interface LootboxDef { id: string; name: string; price: number; rates: Partial<Record<Tier, number>>; jackpot?: LootboxJackpot; gunOnly?: boolean; desc?: string }
 export const LOOTBOXES: Record<string, LootboxDef> = {
   standard: { id: 'standard', name: '스탠다드 박스', price: 1000, rates: { consumer: 18.33, industrial: 18.33, milspec: 27.67, restricted: 22.67, classified: 8, covert: 5 } },
   premium: { id: 'premium', name: '프리미엄 박스', price: 2000, rates: { consumer: 6.66, industrial: 6.67, milspec: 20, restricted: 35.67, classified: 18, covert: 13 } },
   karambit: {
-    id: 'karambit', name: '카람빗 스페셜 박스', price: 4000, gunOnly: true, desc: '총기 스킨 전용 · 평범한·쓸만한 등급 제외 · 0.1% 확률로 단검 카람빗 등장',
+    id: 'karambit', name: '카람빗 스페셜 박스', price: 4000, gunOnly: true, desc: '총기 스킨 전용 · 평범한·쓸만한 등급 제외 · 0.1% 확률로 단검 카람빗(표면 경화 / 도플러) 등장',
     rates: { milspec: 15, restricted: 41.67, classified: 23.33, covert: 19.9 },
-    jackpot: { key: 'karambit', skinId: KARAMBIT_SKIN_ID, weight: 0.1, refund: 2000, label: '단검: 카람빗' },
+    jackpot: { key: 'karambit', skinIds: [KARAMBIT_SKIN_ID, 'karambit_doppler'], weight: 0.1, refund: 2000, label: '단검: 카람빗' },
   },
 };
 /** 중복 획득 시 크레딧 환급액 (등급 기준가의 25%) */
@@ -248,7 +248,7 @@ export function lootboxOdds(boxId: string): OddsRow[] {
 export function buildGachaReel(resultSkinId: string, length = 40, boxId = ''): SkinDef[] {
   const box = LOOTBOXES[boxId], pool = SKINS.filter((s) => s.inBox && !(box?.gunOnly && (s.weaponId === 'dagger' || s.weaponId === 'sword'))), reel: SkinDef[] = [];
   for (let i = 0; i < length; i++) reel.push(pool[Math.floor(Math.random() * pool.length)]);
-  const jp = box?.jackpot && getSkin(box.jackpot.skinId); if (jp) for (const k of [5, 13, 22, 31]) reel[k] = jp; // 연출용 카람빗 노출(실제 확률과 무관)
+  const jps = (box?.jackpot?.skinIds ?? []).map(getSkin).filter((x): x is SkinDef => !!x); if (jps.length) [5, 13, 22, 31].forEach((k, j) => { reel[k] = jps[j % jps.length]; }); // 연출용 카람빗 노출(실제 확률과 무관)
   const result = getSkin(resultSkinId); if (result) reel[length - 4] = result;
   return reel;
 }
