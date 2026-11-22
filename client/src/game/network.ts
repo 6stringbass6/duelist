@@ -13,6 +13,7 @@ import type { SkillId, UltId } from '../config/skills';
 import { buildArena, textSprite, type ArenaBuild, type MapData, type World } from './arena';
 import { ImpactFx } from './impactFx';
 import { CharacterRig, loadCharacterAssets } from './character';
+import { agentFor, type AgentId } from '../config/agents';
 
 // ───────────────────────────── 타입 ─────────────────────────────
 export type Phase = 'lobby' | 'buy' | 'live' | 'roundEnd' | 'ended';
@@ -169,11 +170,11 @@ function takeBlastLight(scene: THREE.Scene, color: number, intensity: number, di
 }
 class RemoteEntity {
   readonly group = new THREE.Group();
-  /** Swat.fbx 로드 전/실패 시 쓰는 절차적 박스 캐릭터 */
+  /** 요원 GLB 로드 전/실패 시 쓰는 절차적 박스 캐릭터 */
   private readonly legacy = new THREE.Group();
   private readonly upper = new THREE.Group();
   private readonly hand = new THREE.Group();
-  private rig: CharacterRig | null = null;
+  private rig: CharacterRig | null = null; private agent: AgentId | null = null;
   private disposed = false;
   private prevX = NaN; private prevZ = NaN; private prevYaw = 0; private vx = 0; private vz = 0; private yawRate = 0; private fireT = 0;
   private readonly bodyMat: THREE.MeshStandardMaterial;
@@ -214,12 +215,7 @@ class RemoteEntity {
     this.hand.position.set(0.24, -0.1, -0.42); this.upper.add(this.hand);
     g.add(this.upper);
     g.traverse((o) => { if ((o as THREE.Mesh).isMesh) { o.castShadow = true; o.userData.entityId = info.id; } });
-    void loadCharacterAssets().then((a) => {
-      if (!a || this.disposed) return;
-      this.rig = new CharacterRig(a, this.teamColor(), info.id);
-      this.group.add(this.rig.root); this.legacy.visible = false; this.legacy.scale.y = 1;
-      if (this.weapon) this.rig.socket.add(this.weapon);
-    });
+    this.loadRig();
     const mkFx = (color: number, r: number): THREE.Mesh => { // 스킬 상태 이펙트 구체 (데미지 증폭 붉은 오라 / 보호막 / 봉인)
       const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.28, depthWrite: false, blending: THREE.AdditiveBlending });
       this.fxMat.push(mat); const m = new THREE.Mesh(FX_GEO, mat); m.scale.setScalar(r); m.position.y = 0.95; m.visible = false; this.group.add(m); return m;
@@ -227,6 +223,18 @@ class RemoteEntity {
     this.aura = mkFx(0xff2a2a, 1.05); this.bubble = mkFx(0x5ef0ff, 0.95);
     this.setTag(ally);
     this.group.visible = false;
+  }
+  /** 현재 진영(팀)·로드아웃에 맞는 요원 모델 로드 → 다르면 기존 리그 교체 (봇은 서버가 진영별 풀에서 랜덤 배정) */
+  private loadRig(): void {
+    const id = agentFor(this.info.team, this.info.loadout); if (id === this.agent) return;
+    this.agent = id;
+    void loadCharacterAssets(id).then((a) => {
+      if (!a || this.disposed || this.agent !== id) return;
+      this.rig?.dispose();
+      this.rig = new CharacterRig(a, this.teamColor(), this.info.id);
+      this.group.add(this.rig.root); this.legacy.visible = false; this.legacy.scale.y = 1;
+      if (this.weapon) this.rig.socket.add(this.weapon);
+    });
   }
   private teamColor(): number { return this.info.dummy ? COLOR_DUMMY : this.ally ? COLOR_ALLY : COLOR_ENEMY; }
   private setTag(ally: boolean): void {
@@ -238,7 +246,7 @@ class RemoteEntity {
     const renamed = info.name !== this.info.name; this.info = info; this.ally = ally;
     const color = this.teamColor(); this.rig?.setColor(color); this.bodyMat.color.setHex(color); this.bodyMat.emissive.setHex(color); this.neonMat.color.setHex(color); this.neonMat.emissive.setHex(color);
     if (renamed) this.setTag(ally);
-    this.weaponKey = '';
+    this.weaponKey = ''; this.loadRig();
   }
   push(s: Snap): void { this.buf.push(s); if (this.buf.length > 40) this.buf.shift(); }
   onShot(): void { this.kick = 1; this.fireT = 0.3; fireWeaponFx(this.weapon); }
@@ -277,7 +285,7 @@ class RemoteEntity {
     }
     if (this.rig) this.updateRig(dt, wid, low !== 0);
   }
-  /** 스냅샷 보간 위치에서 로컬 속도·선회 속도를 구해 Swat 애니메이션 상태를 결정 */
+  /** 스냅샷 보간 위치에서 로컬 속도·선회 속도를 구해 요원 애니메이션 상태를 결정 */
   private updateRig(dt: number, wid: WeaponId, low: boolean): void {
     const rig = this.rig!, f = this.flags, k = Math.min(1, dt * 10);
     if (Number.isNaN(this.prevX) || dt <= 0) { this.prevX = this.x; this.prevZ = this.z; this.prevYaw = this.yaw; }

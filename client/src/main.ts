@@ -15,6 +15,8 @@ import {
 } from './config/weapons';
 import { preloadWeaponModels, WEAPON_MODELS } from './game/weaponModels';
 import { CharacterRig, loadCharacterAssets } from './game/character';
+import { AgentPreview } from './game/agentPreview';
+import { AGENTS, DEFAULT_AGENT, SIDES, agentsForSide, type AgentId, type Side } from './config/agents';
 import { skinSwatchUrl } from './game/skinTextures';
 import { BUY_QTYS, CASES, MAX_QTY, clampQty, SHOP_PRICES, SKINS, SKIN_WEAPONS, TIERS, TIER_ORDER, XP_PER_LEVEL, caseOdds, getSkin, resolveSkinId, skinsForWeapon, tierEmblemSvg, type CaseKind, type SkinDef, type Tier } from './config/skins';
 import { awardGuestMatchXp, buyShopSkin, buyStoreItem, equipGuestSkin, guestDaily, guestSkins, inventoryOf, levelOf, normalizeDaily, openCases, permanentPrice, permanentStock, type StoreItem } from './services/economy';
@@ -65,11 +67,11 @@ function warmShaders(): void {
   if (!renderer) return;
   const tmp = new THREE.Group(); tmp.position.set(0, -500, 0); scene.add(tmp);
   for (const id of Object.keys(WEAPON_MODELS) as WeaponId[]) { tmp.add(createWeaponMesh(id, null, false)); tmp.add(createWeaponMesh(id, null, true)); }
-  let rig: CharacterRig | null = null;
-  void loadCharacterAssets().then((a) => { if (a) { rig = new CharacterRig(a, 0xffffff, 0); tmp.add(rig.root); } }).finally(() => {
-    try { renderer.compile(scene, camera); } catch { /* 컴파일 실패해도 렌더 시점에 정상 컴파일됨 */ }
-    rig?.dispose(); scene.remove(tmp); // 공유 지오메트리/캐시 재질은 dispose 하지 않는다
-  });
+  const rigs: CharacterRig[] = [];
+  void Promise.all([DEFAULT_AGENT.ct, DEFAULT_AGENT.t].map((id) => loadCharacterAssets(id).then((a) => { if (a) { const r = new CharacterRig(a, 0xffffff, 0); rigs.push(r); tmp.add(r.root); } })))
+    // compileAsync: 병렬 컴파일(KHR_parallel_shader_compile)이 끝난 뒤에 재질을 정리해야 링크 중인 프로그램이 삭제되지 않는다(GL_INVALID_VALUE 경고 방지)
+    .then(() => renderer.compileAsync(scene, camera)).catch(() => { /* 컴파일 실패해도 렌더 시점에 정상 컴파일됨 */ })
+    .finally(() => { rigs.forEach((r) => r.dispose()); scene.remove(tmp); }); // 공유 지오메트리/캐시 재질은 dispose 하지 않는다
 }
 void preloadWeaponModels().then(() => { if (renderer) warmShaders(); else requestAnimationFrame(() => warmShaders()); });
 const net = new GameClient(scene);
@@ -309,7 +311,7 @@ function renderLobby(): void {
   else html = { play: htmlPlay, loadout: htmlLoadout, shop: htmlShop, stats: htmlCareer }[lobbyTab]();
   body.innerHTML = `<div class="${fresh ? 'c-fade' : ''}">${html}</div>`;
   if (lobbyTab === 'settings') renderSettings();
-  bindLobbyBody(); mountPreview(); hydrateThumbs(body);
+  bindLobbyBody(); mountPreview(); mountAgentPreview(); hydrateThumbs(body);
 }
 
 // ───────────────────────────── 01 PLAY ─────────────────────────────
@@ -370,7 +372,7 @@ function htmlPlay(): string {
 }
 
 // ───────────────────────────── 02 LOADOUT ─────────────────────────────
-type LdSlot = SlotKey | 'q' | 'e' | 'x' | 'cases';
+type LdSlot = SlotKey | 'q' | 'e' | 'x' | 'cases' | 'agent_ct' | 'agent_t';
 let ldSlot: LdSlot = 'primary';
 /** 근접 슬롯 보기 필터: 'all' = 전체 모델 섹션, 'fists' = 주먹, 그 외 = MELEE_SECTS 의 key */
 let meleeView = 'all';
@@ -388,9 +390,38 @@ function htmlLoadout(): string {
   }).join('');
   const inv = inventoryOf(getProfile());
   const cases = `<button type="button" class="c-slot${ldSlot === 'cases' ? ' c-on' : ''}" data-ldslot="cases"><span class="c-sk">◆</span><span class="c-st">컨테이너</span><span class="c-sl">${CASES.drop.name} · ${CASES.store.name} · 열쇠</span><span class="c-ss">컨테이너 ${inv.dropCases + inv.storeCases} · 열쇠 ${inv.keys}</span></button>`;
-  const right = ldSlot === 'cases' ? htmlContainers() : ldSlot === 'q' || ldSlot === 'e' || ldSlot === 'x' ? htmlSkillGrid(ldSlot) : htmlSkinGrid(ldSlot);
+  const agents = (['ct', 't'] as Side[]).map((k) => {
+    const a = AGENTS[k === 'ct' ? l.agentCt : l.agentT], sd = SIDES[k];
+    return `<button type="button" class="c-slot${ldSlot === `agent_${k}` ? ' c-on' : ''}" data-ldslot="agent_${k}"><span class="c-sk" style="color:${sd.color}">${sd.code}</span><span class="c-st">${sd.code} Agent <span class="c-stk">${sd.name}</span></span><span class="c-sl">${agentsForSide(k).map((x) => x.name).join(' · ')}</span><span class="c-ss">${esc(a.name)}</span></button>`;
+  }).join('');
+  const right = ldSlot === 'cases' ? htmlContainers() : ldSlot === 'agent_ct' || ldSlot === 'agent_t' ? htmlAgents(ldSlot === 'agent_ct' ? 'ct' : 't') : ldSlot === 'q' || ldSlot === 'e' || ldSlot === 'x' ? htmlSkillGrid(ldSlot) : htmlSkinGrid(ldSlot);
   return `<div class="c-sect"><span class="c-h1">Loadout</span><span class="c-h2">보관함 · 슬롯을 고르고 보유 스킨을 장착하세요</span></div>
-  <div class="c-loadout"><div><div class="c-slots">${slots}</div><div class="c-ph c-ph2"><span class="c-h1">Abilities</span><span class="c-h2">스킬 · 다음 매치부터 적용</span></div><div class="c-slots">${abil}</div><div class="c-ph c-ph2"><span class="c-h1">Inventory</span><span class="c-h2">보유 아이템</span></div><div class="c-slots">${cases}</div></div><div>${right}</div></div>`;
+  <div class="c-loadout"><div><div class="c-slots">${slots}</div><div class="c-ph c-ph2"><span class="c-h1">Agents</span><span class="c-h2">요원 · 진영별로 장착</span></div><div class="c-slots">${agents}</div><div class="c-ph c-ph2"><span class="c-h1">Abilities</span><span class="c-h2">스킬 · 다음 매치부터 적용</span></div><div class="c-slots">${abil}</div><div class="c-ph c-ph2"><span class="c-h1">Inventory</span><span class="c-h2">보유 아이템</span></div><div class="c-slots">${cases}</div></div><div>${right}</div></div>`;
+}
+// ── 요원: 진영 전환 칩 + 3D 무대(드래그 회전) + 카드 그리드. 새 요원은 config/agents.ts AGENTS 에 추가하면 카드가 자동으로 늘어난다.
+const agentPv = new AgentPreview();
+/** 무대에 띄울 요원 — 카드 클릭으로 미리보기(장착 전), 없으면 현재 진영의 장착 요원 */
+let agView: AgentId | null = null;
+function htmlAgents(side: Side): string {
+  const l = getProfile()!.loadout, eq = side === 'ct' ? l.agentCt : l.agentT, sd = SIDES[side];
+  if (!agView || AGENTS[agView].side !== side) agView = eq;
+  const a = AGENTS[agView], isEq = agView === eq;
+  const tabs = `<div class="c-chips" role="group" aria-label="진영 선택">${(['ct', 't'] as Side[]).map((k) => `<button type="button" class="c-chip${k === side ? ' c-on' : ''}" data-agside="${k}" aria-pressed="${k === side}"><span class="ag-dot" style="background:${SIDES[k].color}"></span>${SIDES[k].name}<span class="c-cn">${SIDES[k].code}</span></button>`).join('')}</div>`;
+  const cards = agentsForSide(side).map((x) => {
+    const on = x.id === eq, view = x.id === agView;
+    return `<div class="c-card ag-card${on ? ' c-eq' : ''}${view ? ' ag-view' : ''}" data-agview="${x.id}" title="클릭: 무대에서 보기"><div class="c-vis ag-mono" style="--sc:${sd.color}"><span>${esc(x.tag)}</span></div>${on ? '<span class="c-eqtag">EQUIPPED</span>' : ''}<div class="c-body"><span class="c-cn2">${esc(x.name)}</span><span class="c-cw">${esc(x.en)} · ${sd.code}</span><div class="c-row">${on ? '<span class="c-own">장착 중</span>' : `<button type="button" class="c-btn" data-agequip="${x.id}">장착</button>`}</div></div></div>`;
+  }).join('');
+  return `${tabs}<section class="ag-stage" style="--sc:${sd.color}" aria-label="${sd.name} 요원 3D 미리보기">
+    <span class="ag-code" aria-hidden="true">${sd.code}</span><div id="ag-slot" class="ag-slot"></div>
+    <div class="ag-info"><span class="ag-side">${sd.en}</span><h3 class="ag-name">${esc(a.name)}</h3><span class="ag-en">${esc(a.en)}</span><p class="ag-desc">${esc(a.desc)}</p>
+      <div class="ag-act">${isEq ? '<span class="c-own">장착 중</span>' : `<button type="button" class="c-btn c-fill" data-agequip="${a.id}">${sd.code} 요원으로 장착</button>`}</div>
+      <span class="ag-hint">드래그해서 돌려 보기 · 더블클릭하면 정면</span></div>
+  </section><div class="c-grid ag-grid">${cards}</div><div class="c-foot">${sd.name} 요원 ${agentsForSide(side).length}명 · 다음 매치부터 적용</div>`;
+}
+function mountAgentPreview(): void {
+  const slot = document.getElementById('ag-slot'); if (!slot || !agView) return;
+  const l = getProfile()!.loadout;
+  slot.appendChild(agentPv.el); agentPv.show(agView, l.primary, equippedSkin(l.primary)?.id ?? null);
 }
 // 근접(3번) 슬롯: 모델별로 섹션을 나눠 보여 준다. 단검 = M9 배요네트(기본) / 버터플라이 / 카람빗, 장검 = 카타나.
 // ⚠ 새 근접 모델 추가 시 반드시 MELEE_SECTS(+특수 모델은 MELEE_SPECIAL)에 등록할 것 — 보관함 상단 무기 선택 칩(htmlMeleeChips)도 여기서 파생된다.
@@ -630,6 +661,13 @@ function bindLobbyBody(): void {
   each('[data-ldw]', (b) => (b.onclick = () => {
     const k = ldSlot as SlotKey, l = { ...getProfile()!.loadout, [k]: b.dataset.ldw } as Loadout;
     needReconnect = true; void saveLoadout(l).then(() => renderLobby());
+  }));
+  each('[data-agside]', (b) => (b.onclick = () => { ldSlot = `agent_${b.dataset.agside as Side}`; renderLobby(); }));
+  each('[data-agview]', (c) => (c.onclick = (e) => { if ((e.target as HTMLElement).closest('button')) return; agView = c.dataset.agview as AgentId; renderLobby(); }));
+  each('[data-agequip]', (b) => (b.onclick = () => {
+    const id = b.dataset.agequip as AgentId, a = AGENTS[id]; agView = id;
+    const l = { ...getProfile()!.loadout, [a.side === 'ct' ? 'agentCt' : 'agentT']: id } as Loadout;
+    needReconnect = true; void saveLoadout(l).then(() => { toast(`${SIDES[a.side].code} 요원: ${a.name} 장착`, 'good'); renderLobby(); });
   }));
   each('[data-mview]', (b) => (b.onclick = () => { meleeView = b.dataset.mview!; rarity = 'all'; renderLobby(); }));
   each('[data-lmel]', (b) => (b.onclick = async () => { // 주먹 장착

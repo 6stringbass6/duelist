@@ -509,6 +509,32 @@ th{font-family:var(--c-en);font-weight:500;font-size:11px;letter-spacing:.2em;te
 #lobby .c-slot .c-sl{font-size:11px;color:#8a857a;font-weight:300}
 #lobby .c-slot .c-ss{font-size:13px;color:#fdcb6e}
 #lobby .c-empty{border:1px solid #262421;padding:56px;text-align:center;color:#8a857a;font-size:13px}
+/* ── 요원(Agents): 진영 코드 아웃라인 타이포 + 진영색 바닥선 무대, 우측 신상 패널 */
+#lobby .ag-dot{width:7px;height:7px;transform:rotate(45deg)}
+#lobby .ag-stage{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 300px;border:1px solid #262421;margin:0 0 28px;overflow:hidden;background-color:#0a0a0a;background-image:linear-gradient(#141312 1px,transparent 1px),linear-gradient(90deg,#141312 1px,transparent 1px);background-size:40px 40px}
+#lobby .ag-code{position:absolute;left:3%;top:50%;transform:translateY(-55%);font-family:'Jost',sans-serif;font-weight:200;font-size:clamp(150px,21vw,320px);line-height:.8;letter-spacing:-.02em;color:transparent;-webkit-text-stroke:1px color-mix(in srgb,var(--sc) 42%,transparent);pointer-events:none;user-select:none}
+#lobby .ag-slot{position:relative;min-height:480px}
+#lobby .ag-slot::after{content:"";position:absolute;left:8%;right:8%;bottom:46px;height:1px;background:linear-gradient(90deg,transparent,var(--sc),transparent);pointer-events:none}
+#lobby .ag-canvas{position:absolute;inset:0;cursor:grab;touch-action:pan-y}
+#lobby .ag-canvas:active{cursor:grabbing}
+#lobby .ag-canvas canvas{display:block;width:100%!important;height:100%!important}
+#lobby .ag-canvas.ld::before,#lobby .ag-canvas.off::before{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:12px;color:#8a857a;white-space:nowrap}
+#lobby .ag-canvas.ld::before{content:"요원 모델 불러오는 중…"}
+#lobby .ag-canvas.off::before{content:"이 기기에서는 3D 미리보기를 쓸 수 없습니다"}
+#lobby .ag-info{position:relative;border-left:1px solid #262421;background:rgba(10,10,10,.88);padding:32px 28px 24px;display:flex;flex-direction:column;gap:10px}
+#lobby .ag-side{font-family:'Jost',sans-serif;font-size:12px;letter-spacing:.12em;color:var(--sc)}
+#lobby .ag-name{margin:0;font-family:'Jost','Noto Sans KR',sans-serif;font-weight:300;font-size:34px;line-height:1.15;letter-spacing:.04em;color:#f2efe8}
+#lobby .ag-en{font-size:12px;color:#a9a397}
+#lobby .ag-desc{margin:6px 0 0;font-size:13px;line-height:1.75;color:#a9a397;font-weight:300;max-width:34em}
+#lobby .ag-act{margin-top:auto;padding-top:18px;border-top:1px solid #1a1918}
+#lobby .ag-act .c-btn{width:100%}
+#lobby .ag-hint{font-size:11px;color:#5b574f}
+#lobby .ag-card{cursor:pointer}
+#lobby .ag-mono{background:#0c0c0b}
+#lobby .ag-mono span{font-family:'Jost',sans-serif;font-weight:200;font-size:52px;white-space:nowrap;letter-spacing:.06em;color:transparent;-webkit-text-stroke:1px var(--sc)}
+#lobby .ag-card.ag-view .ag-mono{box-shadow:inset 0 -2px 0 var(--sc)}
+#lobby .ag-card :focus-visible,#lobby .ag-stage :focus-visible{outline:2px solid #fdcb6e;outline-offset:2px}
+@media (max-width:860px){#lobby .ag-stage{grid-template-columns:1fr}#lobby .ag-slot{min-height:400px}#lobby .ag-info{border-left:0;border-top:1px solid #262421}#lobby .ag-code{top:200px}}
 #lobby .c-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid #262421;margin:0 0 28px}
 #lobby .c-tile{padding:24px 26px;border-right:1px solid #262421}
 #lobby .c-tile:last-child{border-right:0}

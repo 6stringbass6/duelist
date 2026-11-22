@@ -4,6 +4,7 @@
 // =====================================================================
 
 import type { SkillId, UltId } from './skills';
+import { DEFAULT_AGENT, type AgentId } from './agents';
 
 export type SlotKey = 'primary' | 'secondary' | 'melee' | 'throwable';
 export type MeleeId = 'fists' | 'dagger' | 'sword';
@@ -14,13 +15,13 @@ export type GunId = SecondaryId | PrimaryId;
 export type WeaponId = MeleeId | GunId | ThrowableId;
 export type HitZone = 'head' | 'body' | 'leg';
 
-/** q/e = 일반 스킬 슬롯, x = 궁극기 슬롯 (서버로 전달되어 방 전원과 동기화) */
-export interface Loadout { melee: MeleeId; secondary: SecondaryId; primary: PrimaryId; throwable: ThrowableId; q: SkillId; e: SkillId; x: UltId }
+/** q/e = 일반 스킬 슬롯, x = 궁극기 슬롯, agentCt/agentT = 진영별 장착 요원 (서버로 전달되어 방 전원과 동기화) */
+export interface Loadout { melee: MeleeId; secondary: SecondaryId; primary: PrimaryId; throwable: ThrowableId; q: SkillId; e: SkillId; x: UltId; agentCt: AgentId; agentT: AgentId }
 
 /** 숫자키 슬롯 (FPS 표준): 1 주무기 / 2 보조 / 3 근접 / 4 투척 — server.js SLOT_KEYS 와 동일 */
 export const SLOT_KEYS: Record<1 | 2 | 3 | 4, SlotKey> = { 1: 'primary', 2: 'secondary', 3: 'melee', 4: 'throwable' };
 export const SLOT: Record<SlotKey, 1 | 2 | 3 | 4> = { primary: 1, secondary: 2, melee: 3, throwable: 4 };
-export const DEFAULT_LOADOUT: Loadout = { melee: 'dagger', secondary: 'classic', primary: 'vandal', throwable: 'grenade', q: 'updraft', e: 'haste', x: 'omen' };
+export const DEFAULT_LOADOUT: Loadout = { melee: 'dagger', secondary: 'classic', primary: 'vandal', throwable: 'grenade', q: 'updraft', e: 'haste', x: 'omen', agentCt: DEFAULT_AGENT.ct, agentT: DEFAULT_AGENT.t };
 
 interface BaseDef { id: WeaponId; slot: 1 | 2 | 3 | 4; name: string; desc: string; move: number; equipMs: number; model: string }
 

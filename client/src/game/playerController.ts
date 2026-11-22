@@ -16,6 +16,7 @@ import { NadeWheel } from './nadeWheel';
 import { DEFAULT_SKILLS, SKILLS, ULTS, ULT_COST, type SkillId, type UltId } from '../config/skills';
 import { createWeaponMesh, pullPin, type GameClient } from './network';
 import { CharacterRig, loadCharacterAssets } from './character';
+import { agentFor, type AgentId } from '../config/agents';
 import { fireWeaponFx } from './skinFx';
 
 type Slot = 1 | 2 | 3 | 4;
@@ -258,8 +259,8 @@ export class PlayerController {
   private readonly vmRoot = new THREE.Group();
   private vm: THREE.Group | null = null; private vmKey = '';
   private bobT = 0; private swingT = 0;
-  /** 트루 1인칭 전신: 본인 Swat 리그 (라이플 장착 시에만 표시, 머리/목 숨김) */
-  private rig: CharacterRig | null = null; private rigDisposed = false; private rigFireT = 0; private yawRate = 0; private prevYaw = NaN;
+  /** 트루 1인칭 전신: 본인 진영의 장착 요원 리그 (라이플 장착 시에만 표시, 머리/목 숨김 → 팔·장갑·소매는 요원 메쉬 그대로) */
+  private rig: CharacterRig | null = null; private rigAgent: AgentId | null = null; private rigDisposed = false; private rigFireT = 0; private yawRate = 0; private prevYaw = NaN;
   private static readonly FP_BACK = 0.14; // 리그를 카메라 뒤로 밀어 몸통 내부 폴리곤이 시야에 끼지 않게 함(m)
   private readonly overlay: HTMLDivElement; private readonly flashEl: HTMLDivElement; private readonly hurtEl: HTMLDivElement; private readonly scopeEl: HTMLDivElement; private readonly skillFxEl: HTMLDivElement;
   private flashUntil = 0; private flashDur = 1; private flashPeak = 1; private hurtA = 0;
@@ -271,10 +272,7 @@ export class PlayerController {
     camera.rotation.order = 'YXZ'; camera.near = 0.05; camera.far = 600;
     camera.fov = verticalFovDeg(getSettings().hFov); camera.updateProjectionMatrix();
     if (!camera.parent) net.scene.add(camera);
-    camera.add(this.vmRoot);    void loadCharacterAssets().then((a) => {
-      if (!a || this.rigDisposed) return;
-      this.rig = new CharacterRig(a, 0x3b9cff, 0); this.rig.setFirstPerson(true); this.rig.root.visible = false; net.scene.add(this.rig.root);
-    });
+    camera.add(this.vmRoot);
 
     // 오버레이(실명 / 피격 / 스코프)
     const host = dom.parentElement ?? document.body;
@@ -640,8 +638,21 @@ export class PlayerController {
     this.vmRoot.position.set(0.2 * (1 - a) + bx, -0.19 + 0.06 * a - by - equip * 0.25 - (this.reloading ? 0.08 : 0), -0.36 + this.vmKick * 0.035 - (melee ? this.swingT * 0.25 : 0));
     this.vmRoot.rotation.set(this.vmKick * 0.07 - equip * 0.8 - (this.reloading ? 0.35 : 0) - (melee ? this.swingT * 0.9 : 0), melee ? this.swingT * 0.6 : 0, now < this.slideUntil ? 0.15 : 0);
   }
-  /** 트루 1인칭: 라이플(AK-47/팬텀)이면 Swat 전신 리그를 갱신하고 무기를 오른손 소켓으로 옮긴다. 반환값 = 리그가 총을 들고 보이는 중 */
+  /** 진영(CT/T) 또는 장착 요원이 바뀌면 1인칭 전신 리그를 해당 요원 모델로 교체 */
+  private syncRigAgent(): void {
+    const me = this.net.me; if (!me) return;
+    const id = agentFor(me.team, me.loadout); if (id === this.rigAgent) return;
+    this.rigAgent = id;
+    void loadCharacterAssets(id).then((a) => {
+      if (!a || this.rigDisposed || this.rigAgent !== id) return;
+      if (this.vm && this.rig && this.vm.parent === this.rig.socket) this.vmRoot.add(this.vm);
+      this.rig?.dispose();
+      this.rig = new CharacterRig(a, 0x3b9cff, 0); this.rig.setFirstPerson(true); this.rig.root.visible = false; this.net.scene.add(this.rig.root);
+    });
+  }
+  /** 트루 1인칭: 라이플(AK-47/팬텀)이면 요원 전신 리그를 갱신하고 무기를 오른손 소켓으로 옮긴다. 반환값 = 리그가 총을 들고 보이는 중 */
   private updateRig(dt: number, now: number, scoped: boolean): boolean {
+    this.syncRigAgent();
     const rig = this.rig; if (!rig) return false;
     const rifle = this.weaponId === 'vandal' || this.weaponId === 'phantom', show = this.alive && rifle && !scoped;
     rig.root.visible = show;

@@ -6,6 +6,7 @@
 import { createClient, type RealtimeChannel, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import { DEFAULT_LOADOUT, WEAPONS, SLOT_KEYS, type Loadout } from '../config/weapons';
 import { SKILLS, SKILL_IDS, ULTS } from '../config/skills';
+import { resolveAgent } from '../config/agents';
 import { getSettings, onSettingsChange, replaceSettings, type Settings } from '../config/settings';
 
 const env = (import.meta as unknown as { env: Record<string, string | undefined> }).env;
@@ -101,6 +102,7 @@ export function sanitizeLoadout(l: unknown): Loadout {
     if (typeof r.q === 'string' && r.q in SKILLS) out.q = r.q;
     if (typeof r.e === 'string' && r.e in SKILLS) out.e = r.e;
     if (typeof r.x === 'string' && r.x in ULTS) out.x = r.x;
+    out.agentCt = resolveAgent(r.agentCt, 'ct'); out.agentT = resolveAgent(r.agentT, 't'); // 삭제된 구형 요원 등 알 수 없는 요원 → 진영 기본 요원
   }
   if (out.q === out.e) out.e = SKILL_IDS.find((k) => k !== out.q)!; // 같은 스킬 중복 장착 불가
   return out as unknown as Loadout;

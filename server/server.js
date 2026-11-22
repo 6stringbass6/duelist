@@ -46,7 +46,9 @@ const HB = { // 히트박스 (발 기준 높이)
 // 슬롯 번호 = 숫자키: 1 주무기 / 2 보조 / 3 근접 / 4 투척 (client/src/config/weapons.ts SLOT_KEYS 와 동일)
 const SLOT_KEYS = { 1: 'primary', 2: 'secondary', 3: 'melee', 4: 'throwable' };
 const SLOT = { primary: 1, secondary: 2, melee: 3, throwable: 4 };
-const DEFAULT_LOADOUT = { melee: 'dagger', secondary: 'classic', primary: 'vandal', throwable: 'grenade', q: 'updraft', e: 'haste', x: 'omen' };
+// 진영별 요원 풀 (client/src/config/agents.ts AGENTS 와 ID 동일). 팀 0 = CT, 팀 1 = T. 첫 항목 = 기본 요원
+const AGENT_POOL = { ct: ['ct_sas'], t: ['t_phoenix'] };
+const DEFAULT_LOADOUT = { melee: 'dagger', secondary: 'classic', primary: 'vandal', throwable: 'grenade', q: 'updraft', e: 'haste', x: 'omen', agentCt: AGENT_POOL.ct[0], agentT: AGENT_POOL.t[0] };
 // 스킬 정의 (client/src/config/skills.ts 와 동일 수치). cd=쿨타임(ms), uses=라운드(리스폰)당 사용 횟수
 export const SKILLS = {
   updraft:  { cd: 7000, uses: 3 },
@@ -312,6 +314,8 @@ function sanitizeLoadout(l) {
     if (typeof l.q === 'string' && Object.hasOwn(SKILLS, l.q)) out.q = l.q;
     if (typeof l.e === 'string' && Object.hasOwn(SKILLS, l.e)) out.e = l.e;
     if (typeof l.x === 'string' && Object.hasOwn(ULTS, l.x)) out.x = l.x;
+    if (AGENT_POOL.ct.includes(l.agentCt)) out.agentCt = l.agentCt; // 삭제된 구형/알 수 없는 요원은 기본 요원으로
+    if (AGENT_POOL.t.includes(l.agentT)) out.agentT = l.agentT;
   }
   if (out.q === out.e) out.e = Object.keys(SKILLS).find((k) => k !== out.q); // 같은 스킬 중복 장착 불가
   return out;
@@ -410,6 +414,7 @@ function addBot(room, team, now, level = room.botLevel) {
       melee: pick(['dagger', 'sword']), secondary: pick(['classic', 'shorty', 'frenzy', 'ghost', 'sheriff']),
       primary: pick(lv >= 9 ? ['vandal', 'vandal', 'phantom', 'phantom', 'marshal'] : ['vandal', 'phantom', 'phantom']),
       throwable: pick(['grenade', 'flash']),
+      agentCt: pick(AGENT_POOL.ct), agentT: pick(AGENT_POOL.t), // 진영별 요원 풀에서 랜덤 배정(팀 변경 시에도 진영에 맞는 모델)
     },
   });
   b.ai = { P: botParams(lv) }; resetAi(b, now);
