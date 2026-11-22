@@ -26,7 +26,7 @@ export interface SkinMaterial {
 export interface SkinEmissive { color: number; color2?: number; intensity: number; mode: 'none' | 'static' | 'pulse' | 'flow' | 'energy' | 'plasma'; speed?: number; ambient?: number }
 export interface SkinVfx { tracerColor?: number; muzzleColor?: number; killEffect?: 'none' | 'shatter' | 'burn' | 'freeze' | 'void' | 'gold' | 'nova'; trail?: boolean }
 /** 외부 GLB/FBX 모델을 그대로 쓰는 스킨(절차적 재질 대신 내장 PBR 텍스처). 값 의미는 game/weaponModels.ts 참고 */
-export interface GlbSpec { file: string; length: number; grip?: number; roll?: number; own?: boolean; rot?: [number, number, number]; variant?: string }
+export interface GlbSpec { file: string; length: number; grip?: number; roll?: number; own?: boolean; rot?: [number, number, number]; variant?: string; native?: boolean }
 export interface SkinDef {
   glb?: GlbSpec; attach?: SkinAttachment;
   /** CS2 패턴 시드 (표면 경화 등) — 지정 스킨은 획득 시 항상 이 값, UI 에 `패턴 #N` 표기 */
@@ -167,6 +167,11 @@ export const EXTRA_SKINS: SkinDef[] = [
     blurb: '칼날 전체에 에메랄드 그린 연기가 피어오르는 감마 도플러 카람빗 (Emerald). 카람빗 스페셜 박스 한정.',
     model: 'default', material: { style: 'solid', baseColor: 0x0f8f4a, accentColor: 0x06361c, patternColor: 0x4dff9a, metalness: 0.78, roughness: 0.2 },
     emissive: NO_GLOW, vfx: { tracerColor: 0x4dff9a }, glb: { file: 'damascus_karambit.glb', length: 0.27, grip: 0.3, roll: 0, rot: [0, 0, Math.PI], variant: 'doppler_emerald' } },
+  // 카람빗 골드 룬 — karambit_csgo_gold_runes.glb 의 원본 머티리얼·텍스처를 그대로 렌더(native: 재질/역할 오버라이드 전면 우회). rot = 원본 축(두께 X · 길이 Y · 높이 Z) → 기본 카람빗 축(길이 X · 높이 Y · 두께 Z)
+  { id: 'karambit_gold_runes', collection: 'karambit', weaponId: 'dagger', name: '★ 카람빗 | 골드 룬', patternSeed: 420, tier: 'exrare', price: 4500, featured: false, inDaily: false, inBox: false, sort: 14.8,
+    blurb: '금빛 룬 문양이 새겨진 카람빗 (Gold Runes). 카람빗 스페셜 박스 한정.',
+    model: 'default', material: { style: 'solid', baseColor: 0xd9a93a, accentColor: 0x5a3c0a, patternColor: 0xffd35a, metalness: 0.9, roughness: 0.25 },
+    emissive: NO_GLOW, vfx: { tracerColor: 0xffd35a }, glb: { file: 'karambit_csgo_gold_runes.glb', length: 0.27, grip: 0.3, roll: 0, rot: [-Math.PI / 2, 0, -Math.PI / 2], native: true } },
   // 버터플라이 나이프 — 상점 NEW(featured) 상시 판매. 단검(근접 3번 슬롯) 전용, butterfly_knife.glb 내장 PBR 재질(스틸 날 + 블랙/레드 핸들) 사용
   // GLB 규약: 날끝 +X, 등날 +Y(위), 핸들 -X — 원본 .blend 에서 Blender 5.3 으로 변환
   { id: BUTTERFLY_SKIN_ID, collection: 'butterfly', weaponId: 'dagger', name: '버터플라이 나이프', tier: 'exrare', price: 4500, featured: true, inDaily: false, inBox: false, sort: 15,
@@ -237,9 +242,9 @@ export const LOOTBOXES: Record<string, LootboxDef> = {
   standard: { id: 'standard', name: '스탠다드 박스', price: 1000, rates: { consumer: 18.33, industrial: 18.33, milspec: 27.67, restricted: 22.67, classified: 8, covert: 5 } },
   premium: { id: 'premium', name: '프리미엄 박스', price: 2000, rates: { consumer: 6.66, industrial: 6.67, milspec: 20, restricted: 35.67, classified: 18, covert: 13 } },
   karambit: {
-    id: 'karambit', name: '카람빗 스페셜 박스', price: 4000, gunOnly: true, desc: '총기 스킨 전용 · 평범한·쓸만한 등급 제외 · 0.1% 확률로 단검 카람빗(표면 경화 / 도플러 / 사파이어 / 에메랄드) 등장',
+    id: 'karambit', name: '카람빗 스페셜 박스', price: 4000, gunOnly: true, desc: '총기 스킨 전용 · 평범한·쓸만한 등급 제외 · 0.1% 확률로 단검 카람빗(표면 경화 / 도플러 / 사파이어 / 에메랄드 / 골드 룬) 등장',
     rates: { milspec: 15, restricted: 41.67, classified: 23.33, covert: 19.9 },
-    jackpot: { key: 'karambit', skinIds: [KARAMBIT_SKIN_ID, 'karambit_doppler', 'karambit_doppler_sapphire', 'karambit_gamma_doppler'], weight: 0.1, refund: 2000, label: '단검: 카람빗' },
+    jackpot: { key: 'karambit', skinIds: [KARAMBIT_SKIN_ID, 'karambit_doppler', 'karambit_doppler_sapphire', 'karambit_gamma_doppler', 'karambit_gold_runes'], weight: 0.1, refund: 2000, label: '단검: 카람빗' },
   },
 };
 /** 중복 획득 시 크레딧 환급액 (등급 기준가의 25%) */

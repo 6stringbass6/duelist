@@ -125,7 +125,7 @@ const BLADE_MASKS: Record<string, BladeMask> = {
 /** own = FBX 라도 내장 UV/텍스처를 유지(GLB 와 동일 취급). 스킨 적용 시에만 평면 UV 사용
  *  rot = 정규화 전에 모델에 굽는 회전(Euler XYZ) → 길이축을 +X 로 맞춤, hide = 제거할 메시 이름(예: 칼집),
  *  parts = 메시 이름별 기본 재질 + 스킨 역할(재질이 하나뿐인 모델용, 부모 메시 이름이 아닌 메시 자신의 이름 기준) */
-type ModelDef = { file: string; length: number; grip?: number; roll?: number; own?: boolean; rot?: [number, number, number]; hide?: RegExp; parts?: Record<string, PartDef>; variant?: string };
+type ModelDef = { file: string; length: number; grip?: number; roll?: number; own?: boolean; rot?: [number, number, number]; hide?: RegExp; parts?: Record<string, PartDef>; variant?: string; native?: boolean };
 type Role = 'base' | 'accent' | 'dark' | 'glass';
 /** split = 단일 메시 안의 2차 영역(rot 적용 후 모델 좌표 x/y 로 판정) → 기본 외형에서만 part 재질, 스킨 장착 시엔 메시 전체가 기존처럼 role 스킨. grain = 나뭇결 텍스처 */
 interface PartDef { role: Role; color: number; metalness: number; roughness: number; envMapIntensity?: number; grain?: boolean; sheet?: SheetMap; split?: { test: (x: number, y: number) => boolean; part: PartDef } }
@@ -327,9 +327,9 @@ const partMat = (p: PartDef): THREE.MeshStandardMaterial => {
 };
 
 /** GLB 내장 PBR 재질: 인스턴스별 복제 + 렌더 직전 장면 환경맵을 직접 물려 금속 반사를 강하게(씬 IBL 이 약해도 어둡지 않게) */
-function glbNative(mesh: THREE.Mesh, m: THREE.Material): THREE.Material {
+function glbNative(mesh: THREE.Mesh, m: THREE.Material, raw = false): THREE.Material {
   const c = m.clone() as THREE.MeshStandardMaterial;
-  if (c.metalness > 0.5) { c.metalness = 1; c.roughness = Math.max(0.16, c.roughness * 0.8); }
+  if (!raw && c.metalness > 0.5) { c.metalness = 1; c.roughness = Math.max(0.16, c.roughness * 0.8); } // raw(def.native) = 원본 metalness/roughness/맵 값을 건드리지 않음
   c.envMapIntensity = 1;
   let last: THREE.Texture | null = null, lastI = -1;
   const prev = mesh.onBeforeRender;
@@ -343,13 +343,14 @@ function glbNative(mesh: THREE.Mesh, m: THREE.Material): THREE.Material {
   return c;
 }
 
-function build(src: Source, skin: SkinSet, roll = 0, blade?: PartDef): THREE.Group {
+function build(src: Source, skin: SkinSet, roll = 0, blade?: PartDef, raw = false): THREE.Group {
   const wrap = new THREE.Group(); wrap.rotation.y = Math.PI / 2; wrap.scale.setScalar(src.scale); // +X(총열) → -Z(전방)
   const inner = src.root.clone(true); inner.position.copy(src.offset); inner.rotation.x = roll; wrap.add(inner);
   let curMesh: THREE.Mesh | null = null;
   const pick = (m: THREE.Material, i = 0): THREE.Material => {
     const part = curMesh && src.parts?.[curMesh.name];
     if (part) return skin.skinned ? (part.role === 'base' ? skin.base : part.role === 'accent' ? skin.accent : part.role === 'glass' ? glassMat : darkMat) : partMat(i === 1 && part.split ? part.split.part : part);
+    if (raw) return curMesh ? glbNative(curMesh, m, true) : m; // def.native: 역할/스킨/파츠 오버라이드 전부 우회, GLB 원본 재질 그대로
     const role = src.roles.get(m.name) ?? 'base';
     if (role === 'glass') return glassMat; if (role === 'dark') return darkMat;
     if (!skin.skinned) return src.glb && curMesh ? glbNative(curMesh, m) : native(m);
@@ -381,7 +382,7 @@ function build(src: Source, skin: SkinSet, roll = 0, blade?: PartDef): THREE.Gro
 export function attachFbxModel(g: THREE.Group, weaponId: WeaponId, skin: SkinSet, viewmodel: boolean, skinId?: string | null): void {
   const def = modelFor(weaponId, skinId); if (!def) return;
   const apply = (src: Source): void => {
-    const model = build(src, skin, def.roll ?? 0, bladeOf(def));
+    const model = build(src, skin, def.roll ?? 0, bladeOf(def), !!def.native);
     model.traverse((o) => { if ((o as THREE.Mesh).isMesh) { o.castShadow = !viewmodel; if (viewmodel) { o.frustumCulled = false; o.renderOrder = 10; } } });
     const mz = g.userData.muzzle as THREE.Object3D;
     for (const c of [...g.children]) if (c !== mz && !c.userData.keep) c.removeFromParent(); // 등급 파츠(userData.keep)는 유지
