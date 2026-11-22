@@ -77,7 +77,7 @@ const FILE_PARTS: Record<string, Record<string, PartDef>> = {
  *  blade/handle/metal/wrap = 기본(스킨 미적용) 재질 — 생략 시 모델 내장 재질 유지. 스킨 적용 시 칼날에만 스킨 재질, 금속 파츠·손잡이는 기본 유지.
  *  mats = 칼날 외 부위에서 원본 재질 이름별 기본 재질(handle/wrap 보다 우선) */
 interface BladeMask { from?: number; comps?: { blade: number[]; metal?: number[] }; handleOnly?: RegExp; blade?: PartDef; handle?: PartDef; metal?: PartDef; wrap?: PartDef; mats?: Record<string, PartDef> }
-/** 카람빗 재질. 손잡이·핑거 링 = 모든 스킨 공통 매트 차콜 폴리머, 기본(바닐라) 칼날 = 건메탈 탄소강 */
+/** 카람빗 재질. 손잡이 몸체 = 모든 스킨 공통 매트 차콜 폴리머, 기본(바닐라) 칼날·핑거 링 = 건메탈 탄소강 */
 const KARAMBIT_POLYMER: PartDef = { role: 'dark', color: 0x181a1e, metalness: 0.15, roughness: 0.82 };
 const KARAMBIT_VANILLA_BLADE: PartDef = { role: 'base', color: 0x2d323a, metalness: 0.84, roughness: 0.34 };
 /** 스킨별 칼날 재질(GlbSpec.variant). 표면 경화 #387 블루젬: 시트의 큰 코발트 블루 덩어리를 칼날 측면 전체에 1:1 비율로 배치 (평면 UV: u = 길이축 0~1, v = 높이/길이) */
@@ -87,10 +87,10 @@ const BLADE_VARIANTS: Record<string, PartDef> = {
 const DAMASCUS_FILE = 'damascus_karambit.glb';
 const BLADE_MASKS: Record<string, BladeMask> = {
   // CS2 카람빗(damascus_karambit.glb): 단일 메시·연결 컴포넌트 3개(실측) — #0 손잡이 몸체(4730 tri), #1 핑거 링(948), #2 칼날(858)
-  // → 칼날 = 바닐라 건메탈(스킨 variant 가 덮어씀), 손잡이·핑거 링 = 매트 차콜 폴리머. 내장 다마스커스 PBR 텍스처는 원본 root 재질에 그대로 보존(embeddedMaterials)
+  // → 칼날 + 핑거 링 금속 테두리 = 같은 블레이드 그룹(바닐라 건메탈, 스킨 variant/skin.base 가 둘 다 덮어씀), 손잡이 몸체만 매트 차콜 폴리머. 내장 다마스커스 PBR 텍스처는 원본 root 재질에 그대로 보존(embeddedMaterials)
   [DAMASCUS_FILE]: {
-    comps: { blade: [2], metal: [1] },
-    blade: KARAMBIT_VANILLA_BLADE, metal: KARAMBIT_POLYMER, handle: KARAMBIT_POLYMER,
+    comps: { blade: [1, 2] },
+    blade: KARAMBIT_VANILLA_BLADE, handle: KARAMBIT_POLYMER,
   },
   // CS2 바닐라 스켈레톤: 내장 Fade 텍스처를 덮어쓰는 무광 다크 스틸 날 + 차콜 그레이 프레임/링, 파라코드(Plane001)는 통째로 손잡이
   'skeleton_knife.glb': {
