@@ -83,6 +83,8 @@ const KARAMBIT_VANILLA_BLADE: PartDef = { role: 'base', color: 0x2d323a, metalne
 /** 스킨별 칼날 재질(GlbSpec.variant). 표면 경화 #387 블루젬: 시트의 큰 코발트 블루 덩어리를 칼날 측면 전체에 1:1 비율로 배치 (평면 UV: u = 길이축 0~1, v = 높이/길이) */
 const BLADE_VARIANTS: Record<string, PartDef> = {
   case_hardened_387: { role: 'base', color: 0xa8bce6, metalness: 0.76, roughness: 0.26, envMapIntensity: 0.8, sheet: { url: 'textures/case_hardened.png', rotation: 0, repeat: [0.5, 0.5], offset: [-0.37, 0.41] } },
+  // 도플러 루비: doppler.jpeg 시트의 왼쪽 붉은 연기 구역(U≈0.17~0.41)만 칼날+핑거 링에 매핑 (three offset 은 중심 기준: u' = r·(u-0.5)+0.5+off)
+  doppler_ruby: { role: 'base', color: 0xffc4c4, metalness: 0.78, roughness: 0.2, envMapIntensity: 0.85, sheet: { url: 'textures/doppler.jpeg', rotation: 0, repeat: [0.24, 0.55], offset: [-0.21, 0.225] } },
 };
 const DAMASCUS_FILE = 'damascus_karambit.glb';
 const BLADE_MASKS: Record<string, BladeMask> = {

@@ -152,6 +152,11 @@ export const EXTRA_SKINS: SkinDef[] = [
     blurb: '표면 경화 열처리로 칼날 전면이 코발트 블루로 물든 블루젬 카람빗 (패턴 #387). 카람빗 스페셜 박스 0.1% 한정.',
     model: 'default', material: { style: 'solid', baseColor: 0x1d4fb8, accentColor: 0xe0b440, patternColor: 0x9fd0ff, metalness: 0.95, roughness: 0.25 },
     emissive: NO_GLOW, vfx: { tracerColor: 0x9fd0ff }, glb: { file: 'damascus_karambit.glb', length: 0.27, grip: 0.3, roll: 0, rot: [0, 0, Math.PI], variant: 'case_hardened_387' } },
+  // 카람빗 도플러(루비) — 표면 경화와 동일 등급 체계, doppler.jpeg 원본 시트의 붉은 연기 구역을 칼날·핑거 링에 매핑
+  { id: 'karambit_doppler', collection: 'karambit', weaponId: 'dagger', name: '★ 카람빗 | 도플러', patternSeed: 417, tier: 'exrare', price: 4500, featured: false, inDaily: false, inBox: false, sort: 14.5,
+    blurb: '칼날 전체에 루비 레드 연기가 소용돌이치는 도플러 카람빗 (Ruby). 카람빗 스페셜 박스 한정.',
+    model: 'default', material: { style: 'solid', baseColor: 0xb3122a, accentColor: 0x5a0a14, patternColor: 0xff4d5e, metalness: 0.78, roughness: 0.2 },
+    emissive: NO_GLOW, vfx: { tracerColor: 0xff4d5e }, glb: { file: 'damascus_karambit.glb', length: 0.27, grip: 0.3, roll: 0, rot: [0, 0, Math.PI], variant: 'doppler_ruby' } },
   // 버터플라이 나이프 — 상점 NEW(featured) 상시 판매. 단검(근접 3번 슬롯) 전용, butterfly_knife.glb 내장 PBR 재질(스틸 날 + 블랙/레드 핸들) 사용
   // GLB 규약: 날끝 +X, 등날 +Y(위), 핸들 -X — 원본 .blend 에서 Blender 5.3 으로 변환
   { id: BUTTERFLY_SKIN_ID, collection: 'butterfly', weaponId: 'dagger', name: '버터플라이 나이프', tier: 'exrare', price: 4500, featured: true, inDaily: false, inBox: false, sort: 15,
