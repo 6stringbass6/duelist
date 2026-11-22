@@ -172,6 +172,11 @@ export const EXTRA_SKINS: SkinDef[] = [
     blurb: '금빛 룬 문양이 새겨진 카람빗 (Gold Runes). 카람빗 스페셜 박스 한정.',
     model: 'default', material: { style: 'solid', baseColor: 0xd9a93a, accentColor: 0x5a3c0a, patternColor: 0xffd35a, metalness: 0.9, roughness: 0.25 },
     emissive: NO_GLOW, vfx: { tracerColor: 0xffd35a }, glb: { file: 'karambit_csgo_gold_runes.glb', length: 0.27, grip: 0.3, roll: 0, rot: [-Math.PI / 2, 0, -Math.PI / 2], native: true } },
+  // 카람빗 다마스커스 강철 — damascus-karambit.glb 내장 원본 PBR(map/normal/roughness/metalness)과 그립 텍스처를 무손실 그대로 렌더(native)
+  { id: 'karambit_damascus_steel', collection: 'karambit', weaponId: 'dagger', name: '★ 카람빗 | 다마스커스 강철', patternSeed: 421, tier: 'exrare', price: 4500, featured: false, inDaily: false, inBox: false, sort: 14.9,
+    blurb: '접쳐 두드린 강철 특유의 물결 무늬가 칼날 전체에 살아 있는 다마스커스 카람빗. 카람빗 스페셜 박스 한정.',
+    model: 'default', material: { style: 'solid', baseColor: 0x6b7078, accentColor: 0x2a2d33, patternColor: 0xc4c9d0, metalness: 0.9, roughness: 0.3 },
+    emissive: NO_GLOW, vfx: { tracerColor: 0xc4c9d0 }, glb: { file: 'damascus-karambit.glb', length: 0.27, grip: 0.3, roll: 0, rot: [0, 0, Math.PI], native: true } },
   // 버터플라이 나이프 — 상점 NEW(featured) 상시 판매. 단검(근접 3번 슬롯) 전용, butterfly_knife.glb 내장 PBR 재질(스틸 날 + 블랙/레드 핸들) 사용
   // GLB 규약: 날끝 +X, 등날 +Y(위), 핸들 -X — 원본 .blend 에서 Blender 5.3 으로 변환
   { id: BUTTERFLY_SKIN_ID, collection: 'butterfly', weaponId: 'dagger', name: '버터플라이 나이프', tier: 'exrare', price: 4500, featured: true, inDaily: false, inBox: false, sort: 15,
@@ -244,7 +249,7 @@ export const LOOTBOXES: Record<string, LootboxDef> = {
   karambit: {
     id: 'karambit', name: '카람빗 스페셜 박스', price: 4000, gunOnly: true, desc: '총기 스킨 전용 · 평범한·쓸만한 등급 제외 · 0.1% 확률로 단검 카람빗(표면 경화 / 도플러 / 사파이어 / 에메랄드 / 골드 룬) 등장',
     rates: { milspec: 15, restricted: 41.67, classified: 23.33, covert: 19.9 },
-    jackpot: { key: 'karambit', skinIds: [KARAMBIT_SKIN_ID, 'karambit_doppler', 'karambit_doppler_sapphire', 'karambit_gamma_doppler', 'karambit_gold_runes'], weight: 0.1, refund: 2000, label: '단검: 카람빗' },
+    jackpot: { key: 'karambit', skinIds: [KARAMBIT_SKIN_ID, 'karambit_doppler', 'karambit_doppler_sapphire', 'karambit_gamma_doppler', 'karambit_gold_runes', 'karambit_damascus_steel'], weight: 0.1, refund: 2000, label: '단검: 카람빗' },
   },
 };
 /** 중복 획득 시 크레딧 환급액 (등급 기준가의 25%) */

@@ -390,7 +390,7 @@ function build(src: Source, skin: SkinSet, roll = 0, blade?: PartDef, raw = fals
   inner.traverse((o) => {
     const me = o as THREE.Mesh; if (!me.isMesh) return;
     curMesh = me;
-    const puv = src.glb && (skin.skinned || (blade ?? mask?.blade)?.sheet) ? planarUvs.get(me.geometry) : undefined, flag = bladeVerts.get(me.geometry);
+    const puv = src.glb && !raw && (skin.skinned || (blade ?? mask?.blade)?.sheet) ? planarUvs.get(me.geometry) : undefined, flag = bladeVerts.get(me.geometry);
     if (puv && !(mask && !flag)) { // 마스크 모델의 손잡이 전용 메시는 원본 UV 유지
       let uv = puv;
       if (flag) { const orig = me.geometry.attributes.uv; uv = new Float32Array(puv); if (orig) for (let i = 0; i < flag.length; i++) if (flag[i] !== 1) { uv[i * 2] = orig.getX(i); uv[i * 2 + 1] = orig.getY(i); } }
@@ -398,7 +398,7 @@ function build(src: Source, skin: SkinSet, roll = 0, blade?: PartDef, raw = fals
       if ((blade ?? mask?.blade)?.nativeMaps) me.geometry.setAttribute('uv1', new THREE.BufferAttribute(puv, 2)); // 원본 uv 유지(ORM/normal), 시트는 uv1
       else me.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     }
-    if (mask) me.material = Array.isArray(me.material) ? me.material.map((m, i) => pickMasked(m, flag ? i : 0)) : pickMasked(me.material, 0);
+    if (mask && !raw) me.material =Array.isArray(me.material) ? me.material.map((m, i) => pickMasked(m, flag ? i : 0)) : pickMasked(me.material, 0);
     else me.material = Array.isArray(me.material) ? me.material.map(pick) : pick(me.material);
   });
   return wrap;
