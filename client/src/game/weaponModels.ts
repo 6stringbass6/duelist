@@ -83,9 +83,9 @@ const KARAMBIT_VANILLA_BLADE: PartDef = { role: 'base', color: 0x2d323a, metalne
 /** 골드 룬 표면 마감 — karambit_csgo_gold_runes.glb 의 Material__35 실측값(metallicFactor 1 · roughnessFactor 0 · KHR_materials_specular 1/흰색 = 기본값 · doubleSided).
  *  ⚠ 이 GLB 에는 roughness/metalness/normal 맵이 없다(baseColor 룬 텍스처 1장뿐) → 영롱한 반짝임은 이 계수 + 환경맵 증폭(glbNative 와 동일 공식)에서 나온다. 룬 색상 map 은 가져오지 않음 */
 const GOLD_RUNES_FINISH = { metalness: 1, roughness: 0 } as const;
-const doppler = (offsetU: number, color: number, emissive: number): PartDef => ({
-  role: 'base', color, ...GOLD_RUNES_FINISH, finish: true, emissive, emissiveIntensity: 0.55,
-  sheet: { url: 'textures/doppler.jpeg', rotation: 0, repeat: [0.24, 0.55], offset: [offsetU, 0.225] },
+const doppler = (offsetU: number, color: number, emissive: number, repeat: [number, number] = [0.24, 0.55], offsetV = 0.225): PartDef => ({
+  role: 'base', color, ...GOLD_RUNES_FINISH, finish: true, emissive, emissiveIntensity: 1.1,
+  sheet: { url: 'textures/doppler.jpeg', rotation: 0, repeat, offset: [offsetU, offsetV] },
 });
 /** 스킨별 칼날 재질(GlbSpec.variant). 표면 경화 #387 블루젬: 시트의 큰 코발트 블루 덩어리를 칼날 측면 전체에 1:1 비율로 배치 (평면 UV: u = 길이축 0~1, v = 높이/길이) */
 const BLADE_VARIANTS: Record<string, PartDef> = {
@@ -93,7 +93,8 @@ const BLADE_VARIANTS: Record<string, PartDef> = {
   // 도플러 3종: doppler.jpeg 시트의 보석색 연기 구역만 칼날+핑거 링에 매핑 (three offset 은 중심 기준: u' = r·(u-0.5)+0.5+off).
   // 검은 연기 배경에 칼날이 묻히지 않도록 같은 시트를 emissiveMap 으로도 연결 → 보석 색 틴트 + 자체 발색
   doppler_ruby: doppler(-0.21, 0xff7585, 0xd91636), // 왼쪽 붉은 연기 구역(U≈0.17~0.41)
-  doppler_sapphire: doppler(0.34, 0x75adff, 0x1254e8), // 오른쪽 블루 연기 구역(U≈0.72~0.96)
+  // 사파이어: 블루 연기 밝은 중심 구역(U≈0.84~0.92 · V≈0.75~0.9, 실측 B채널 — U<0.84 와 V 0.45~0.67 은 암부) → 창 시작점에 놓인 핑거 링까지 푸르게
+  doppler_sapphire: doppler(0.38, 0x75adff, 0x1254e8, [0.08, 0.3], 0.4),
   doppler_emerald: doppler(0.055, 0x66ffa3, 0x0ec95c), // 가운데 그린 연기 구역(U≈0.43~0.68)
 };
 const KARAMBIT_FILE = 'damascus-karambit.glb';
