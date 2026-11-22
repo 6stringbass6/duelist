@@ -14,7 +14,7 @@ import {
 } from '../config/weapons';
 import { NadeWheel } from './nadeWheel';
 import { DEFAULT_SKILLS, SKILLS, ULTS, ULT_COST, type SkillId, type UltId } from '../config/skills';
-import { createWeaponMesh, pullPin, type GameClient } from './network';
+import { createWeaponMesh, pullPin, RIM_OFF, type GameClient } from './network';
 import { CharacterRig, loadCharacterAssets } from './character';
 import { agentFor, type AgentId } from '../config/agents';
 import { fireWeaponFx } from './skinFx';
@@ -655,7 +655,7 @@ export class PlayerController {
       if (!a || this.rigDisposed || this.rigAgent !== id) return;
       if (this.vm && this.rig && this.vm.parent === this.rig.socket) this.vmRoot.add(this.vm);
       this.rig?.dispose();
-      this.rig = new CharacterRig(a, 0x3b9cff, 0); this.rig.setFirstPerson(true); this.rig.root.visible = false; this.net.scene.add(this.rig.root);
+      this.rig = new CharacterRig(a, RIM_OFF, 0); this.rig.setFirstPerson(true); // 본인: 림 강조 없음 this.rig.root.visible = false; this.net.scene.add(this.rig.root);
     });
   }
   /** 트루 1인칭: 라이플(AK-47/팬텀)이면 무기를 오른손 소켓으로, 카람빗이면 weapon_hand_r 에 붙이고 MDL 모션으로 오른팔을 구동한다.

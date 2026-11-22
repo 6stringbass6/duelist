@@ -147,6 +147,8 @@ function thrownNadeMesh(type: ThrowableId): THREE.Group {
 
 // ───────────────────────────── 원격 캐릭터 ─────────────────────────────
 const COLOR_ALLY = 0x3b9cff, COLOR_ENEMY = 0xff4655, COLOR_DUMMY = 0xffa23a;
+/** 림 강조 끔 — 림은 가산 합성이라 검정 = 원본 요원 텍스처 그대로 (아군·본인에게 사용) */
+export const RIM_OFF = 0x000000;
 const HEAD_GEO = new THREE.SphereGeometry(0.23, 16, 12);
 // 투사체(억제 나이프)·오브: 공유 지오메트리/재질 (스폰마다 생성·dispose 하지 않는다)
 const ZERO_GEO = new THREE.ConeGeometry(0.07, 0.3, 6), ZERO_MAT = new THREE.MeshStandardMaterial({ color: 0x2a1a4a, emissive: 0xb06bff, emissiveIntensity: 0.8 });
@@ -231,12 +233,14 @@ class RemoteEntity {
     void loadCharacterAssets(id).then((a) => {
       if (!a || this.disposed || this.agent !== id) return;
       this.rig?.dispose();
-      this.rig = new CharacterRig(a, this.teamColor(), this.info.id);
+      this.rig = new CharacterRig(a, this.rimColor(), this.info.id);
       this.group.add(this.rig.root); this.legacy.visible = false; this.legacy.scale.y = 1;
       if (this.weapon) this.rig.socket.add(this.weapon);
     });
   }
   private teamColor(): number { return this.info.dummy ? COLOR_DUMMY : this.ally ? COLOR_ALLY : COLOR_ENEMY; }
+  /** 요원 모델 림 강조는 적(및 연습용 더미)에게만 — 아군은 끔 */
+  private rimColor(): number { return this.ally ? RIM_OFF : this.teamColor(); }
   private setTag(ally: boolean): void {
     if (this.tag) { this.tag.material.map?.dispose(); this.tag.material.dispose(); this.tag.removeFromParent(); }
     if (this.info.dummy) return;
@@ -244,7 +248,7 @@ class RemoteEntity {
   }
   setInfo(info: PlayerInfo, ally: boolean): void {
     const renamed = info.name !== this.info.name; this.info = info; this.ally = ally;
-    const color = this.teamColor(); this.rig?.setColor(color); this.bodyMat.color.setHex(color); this.bodyMat.emissive.setHex(color); this.neonMat.color.setHex(color); this.neonMat.emissive.setHex(color);
+    const color = this.teamColor(); this.rig?.setColor(this.rimColor()); this.bodyMat.color.setHex(color); this.bodyMat.emissive.setHex(color); this.neonMat.color.setHex(color); this.neonMat.emissive.setHex(color);
     if (renamed) this.setTag(ally);
     this.weaponKey = ''; this.loadRig();
   }
@@ -531,8 +535,12 @@ export class GameClient {
     if (this.room) this.room.mapId = map.id;
   }
   private addPlayer(info: PlayerInfo): void {
+    const prevTeam = this.players.get(info.id)?.team;
     this.players.set(info.id, info);
-    if (info.id === this.you) return;
+    if (info.id === this.you) { // 내 팀이 바뀌면 모든 엔티티의 아군/적 판정(림 강조)을 다시 계산
+      if (prevTeam !== undefined && prevTeam !== info.team) for (const e of this.entities.values()) e.setInfo(e.info, !e.info.dummy && e.info.team === info.team);
+      return;
+    }
     const ally = !info.dummy && info.team === this.myTeam, cur = this.entities.get(info.id);
     if (cur) cur.setInfo(info, ally);
     else { const e = new RemoteEntity(info, ally); this.entities.set(info.id, e); this.scene.add(e.group); }
