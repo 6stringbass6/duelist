@@ -153,17 +153,17 @@ export const EXTRA_SKINS: SkinDef[] = [
     model: 'default', material: { style: 'solid', baseColor: 0x1d4fb8, accentColor: 0xe0b440, patternColor: 0x9fd0ff, metalness: 0.95, roughness: 0.25 },
     emissive: NO_GLOW, vfx: { tracerColor: 0x9fd0ff }, glb: { file: 'damascus-karambit.glb', length: 0.27, grip: 0.3, roll: 0, rot: [0, 0, Math.PI], variant: 'case_hardened_387' } },
   // 카람빗 도플러(루비) — 표면 경화와 동일 등급 체계, doppler.jpeg 원본 시트의 붉은 연기 구역을 칼날·핑거 링에 매핑
-  { id: 'karambit_doppler', collection: 'karambit', weaponId: 'dagger', name: '★ 카람빗 | 도플러', patternSeed: 417, tier: 'exrare', price: 4500, featured: false, inDaily: false, inBox: false, sort: 14.5,
+  { id: 'karambit_doppler', collection: 'karambit', weaponId: 'dagger', name: '★ 카람빗 | 도플러 루비', patternSeed: 417, tier: 'exrare', price: 4500, featured: false, inDaily: false, inBox: false, sort: 14.5,
     blurb: '칼날 전체에 루비 레드 연기가 소용돌이치는 도플러 카람빗 (Ruby). 카람빗 스페셜 박스 한정.',
     model: 'default', material: { style: 'solid', baseColor: 0xb3122a, accentColor: 0x5a0a14, patternColor: 0xff4d5e, metalness: 0.78, roughness: 0.2 },
     emissive: NO_GLOW, vfx: { tracerColor: 0xff4d5e }, glb: { file: 'damascus-karambit.glb', length: 0.27, grip: 0.3, roll: 0, rot: [0, 0, Math.PI], variant: 'doppler_ruby' } },
   // 카람빗 도플러(사파이어) — doppler.jpeg 오른쪽 블루 연기 구역
-  { id: 'karambit_doppler_sapphire', collection: 'karambit', weaponId: 'dagger', name: '★ 카람빗 | 사파이어', patternSeed: 418, tier: 'exrare', price: 4500, featured: false, inDaily: false, inBox: false, sort: 14.6,
+  { id: 'karambit_doppler_sapphire', collection: 'karambit', weaponId: 'dagger', name: '★ 카람빗 | 도플러 사파이어', patternSeed: 418, tier: 'exrare', price: 4500, featured: false, inDaily: false, inBox: false, sort: 14.6,
     blurb: '칼날 전체에 코발트 블루 연기가 감도는 도플러 카람빗 (Sapphire). 카람빗 스페셜 박스 한정.',
     model: 'default', material: { style: 'solid', baseColor: 0x1d4fb8, accentColor: 0x0a1a5a, patternColor: 0x4d8dff, metalness: 0.78, roughness: 0.2 },
     emissive: NO_GLOW, vfx: { tracerColor: 0x4d8dff }, glb: { file: 'damascus-karambit.glb', length: 0.27, grip: 0.3, roll: 0, rot: [0, 0, Math.PI], variant: 'doppler_sapphire' } },
   // 카람빗 감마 도플러(에메랄드) — doppler.jpeg 가운데 그린 연기 구역
-  { id: 'karambit_gamma_doppler', collection: 'karambit', weaponId: 'dagger', name: '★ 카람빗 | 에메랄드', patternSeed: 419, tier: 'exrare', price: 4500, featured: false, inDaily: false, inBox: false, sort: 14.7,
+  { id: 'karambit_gamma_doppler', collection: 'karambit', weaponId: 'dagger', name: '★ 카람빗 | 도플러 에메랄드', patternSeed: 419, tier: 'exrare', price: 4500, featured: false, inDaily: false, inBox: false, sort: 14.7,
     blurb: '칼날 전체에 에메랄드 그린 연기가 피어오르는 감마 도플러 카람빗 (Emerald). 카람빗 스페셜 박스 한정.',
     model: 'default', material: { style: 'solid', baseColor: 0x0f8f4a, accentColor: 0x06361c, patternColor: 0x4dff9a, metalness: 0.78, roughness: 0.2 },
     emissive: NO_GLOW, vfx: { tracerColor: 0x4dff9a }, glb: { file: 'damascus-karambit.glb', length: 0.27, grip: 0.3, roll: 0, rot: [0, 0, Math.PI], variant: 'doppler_emerald' } },

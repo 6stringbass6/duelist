@@ -86,16 +86,16 @@ const KARAMBIT_VANILLA_BLADE: PartDef = { role: 'base', color: 0x2d323a, metalne
 const SKIN_PBR = { metalness: 0.92, roughness: 0.22 } as const;
 /** 도플러 3종: doppler.jpeg(1024², 좌→우 루비·에메랄드·사파이어 연기 띠)의 보석색 구역을 정사각형 서브 텍스처로 잘라 CS2 패턴 변환을 통과시킨다.
  *  검은 연기 배경에 칼날이 묻히지 않도록 같은 시트를 emissiveMap 으로도 연결 → 보석 색 틴트 + 자체 발색 */
-const doppler = (crop: [number, number, number], pattern: Cs2Pattern, color: number, emissive: number): PartDef => ({
+const doppler = (crop: [number, number, number], pattern: Cs2Pattern, color: number, emissive: number, gain?: number): PartDef => ({
   role: 'base', color, ...SKIN_PBR, finish: true, emissive, emissiveIntensity: 1.15,
-  sheet: { url: 'textures/doppler.jpeg', crop, pattern },
+  sheet: { url: 'textures/doppler.jpeg', crop, pattern, gain },
 });
 /** 스킨별 칼날 재질(GlbSpec.variant) — 칼날·핑거 링 uv1(CS2 순정 레이아웃) 위에 CS2 5단계 패턴 변환으로 시트 매핑 */
 const BLADE_VARIANTS: Record<string, PartDef> = {
   // 표면 경화 #387 블루젬 — pattern.wiki 실측 시드 좌표 (Karambit Case Hardened Seed 387)
   case_hardened_387: { role: 'base', color: 0xd4e0ff, ...SKIN_PBR, finish: true, sheet: { url: 'textures/case_hardened.png', pattern: { offsetX: 0.07, offsetY: 0.73, rotation: 264.53, scale: 0.44 } } },
   doppler_ruby: doppler([0.13, 0.0, 0.31], { offsetX: 0.31, offsetY: 0.42, rotation: 37, scale: 0.44 }, 0xff7585, 0xd91636), // 왼쪽 붉은 연기(U≈0.15~0.42, 상단 소용돌이)
-  doppler_sapphire: doppler([0.8, 0.59, 0.32], { offsetX: 0.744, offsetY: 0.457, rotation: 268.825, scale: 0.44 }, 0x75adff, 0x1254e8), // CS2 Sapphire #102 시드 실측 좌표 — 오른쪽 블루 연기(U≈0.80~1.12 래핑)
+  doppler_sapphire: doppler([0.8, 0.7, 0.2], { offsetX: 0.744, offsetY: 0.457, rotation: 268.825, scale: 0.44 }, 0x9ccaff, 0x2475ff, 3), // CS2 Sapphire #102 시드 좌표 — 오른쪽 가장 밝은 로열 블루 연기(U 0.70~1.0, V 0.62~0.92; 어두운 좌측 래핑 경계 제외)
   doppler_emerald: doppler([0.44, 0.0, 0.33], { offsetX: 0.48, offsetY: 0.66, rotation: 312, scale: 0.44 }, 0x66ffa3, 0x0ec95c), // 가운데 그린 연기(U≈0.44~0.77)
 };
 const KARAMBIT_FILE = 'damascus-karambit.glb';
@@ -147,7 +147,7 @@ interface PartDef { role: Role; color: number; metalness: number; roughness: num
 interface Cs2Pattern { offsetX: number; offsetY: number; rotation: number; scale: number }
 /** 시트 이미지(public/textures) → 마스크 layout 의 uv1 에 CS2 패턴 변환으로 매핑.
  *  crop = [x0, y0, size] 시트 비율 단위 정사각형 서브 텍스처(가로 래핑 허용) — 생략 시 시트 전체 */
-interface SheetMap { url: string; pattern: Cs2Pattern; crop?: [number, number, number] }
+interface SheetMap { url: string; pattern: Cs2Pattern; crop?: [number, number, number]; gain?: number }
 interface Source { glb: boolean; root: THREE.Object3D; roles: Map<string, Role>; scale: number; offset: THREE.Vector3; muzzle: THREE.Vector3; parts?: Record<string, PartDef>; mask?: BladeMask; axis: { y: Float32Array; x0: number; len: number } }
 export interface SkinSet { base: THREE.Material; accent: THREE.Material; skinned: boolean }
 
@@ -434,6 +434,7 @@ function sheetTex(s: SheetMap): THREE.Texture {
     const cx = cv.getContext('2d')!, sx = (x0 % 1) * W, sy = y0 * H, sw = size * W, sh = size * H, w1 = Math.min(sw, W - sx); // 시트 오른쪽 끝을 넘으면 왼쪽에서 이어 그림
     cx.drawImage(img, sx, sy, w1, sh, 0, 0, (w1 / sw) * S, S);
     if (w1 < sw) cx.drawImage(img, 0, sy, sw - w1, sh, (w1 / sw) * S, 0, ((sw - w1) / sw) * S, S);
+    if (s.gain) { cx.globalCompositeOperation = 'lighter'; for (let k = 1; k < s.gain; k++) cx.drawImage(cv, 0, 0); cx.globalCompositeOperation = 'source-over'; } // 원본 시트에서 어두운 구역(사파이어 블루)을 정수 배수로 밝힘(가산 합성)
     t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.MirroredRepeatWrapping;
   } else { t = base.clone(); t.needsUpdate = true; t.wrapS = t.wrapT = THREE.RepeatWrapping; }
   t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
