@@ -288,6 +288,9 @@ export const SHOP_PRICES = {
   permanent: { consumer: 400, industrial: 700 } as Partial<Record<Tier, number>>,
 };
 export const BUY_QTYS = [1, 3, 5, 10] as const;
+/** 구매·개봉 1회 최대 수량 (직접 입력 상한) */
+export const MAX_QTY = 999;
+export const clampQty = (v: number, max = MAX_QTY): number => Math.min(Math.max(1, max), Math.max(1, Math.floor(v) || 1));
 export const DAILY_SLOTS = 4;
 /** 매치 XP: 기본 100 + 킬 10 + 승리 100 (이탈 0), 1,000 XP = 1 레벨 */
 export const XP_PER_LEVEL = 1000;

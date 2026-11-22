@@ -1122,7 +1122,7 @@ async function loadProfile(sess) {
 }
 /** 관리자 계정 검색: UUID / 이메일(auth.users) / 닉네임·아이디(부분 일치) 모두 지원. [{id,nickname,username,credits,email?}] 반환 */
 let BAN_COLS = true; // supabase_account_admin.sql 적용 여부(미적용이면 자동 false)
-const profileCols = () => 'id,nickname,username,credits,rank_points' + (BAN_COLS ? ',banned_until,ban_reason' : '');
+const profileCols = () => 'id,nickname,username,credits,rank_points,lootboxes,store_cases,case_keys' + (BAN_COLS ? ',banned_until,ban_reason' : '');
 async function findAccounts(q) {
   try { return await findAccountsRaw(q); }
   catch (e) { if (BAN_COLS && /banned_until|ban_reason/.test(e?.message || '')) { BAN_COLS = false; return findAccountsRaw(q); } throw e; }
@@ -1367,6 +1367,21 @@ on('room:config', 4, inGame((room, e, m) => {
       console.log(`[admin] credits ${delta >= 0 ? '+' : ''}${delta} target=${id} ${data.before}->${data.after} by=${sess.userId}`);
       const t = online.get(id); if (t) t.emit('credits:update', { credits: data.after });
       return { ok: true, before: data.before, after: data.after };
+    });
+
+    // 상자·열쇠 지급/차감: {id:uuid, drop?:int, store?:int, keys?:int} (각 ±, 합산 후 0~20억 클램프) → profiles 갱신, 접속 중이면 즉시 반영
+    onA('admin:items', 8, async (m) => {
+      const e = needDev(); if (e) return { ok: false, error: e };
+      const id = String(m.id ?? '').trim().toLowerCase();
+      const d = { lootboxes: Number(m.drop ?? 0), store_cases: Number(m.store ?? 0), case_keys: Number(m.keys ?? 0) };
+      if (!UUID_RE.test(id) || Object.values(d).some((v) => !Number.isInteger(v) || Math.abs(v) > 1e9) || Object.values(d).every((v) => v === 0)) return { ok: false, error: 'BAD_REQUEST' };
+      const cur = await supabase.from('profiles').select('lootboxes,store_cases,case_keys').eq('id', id).maybeSingle(); if (cur.error) throw cur.error;
+      if (!cur.data) return { ok: false, error: 'USER_NOT_FOUND' };
+      const next = Object.fromEntries(Object.keys(d).map((k) => [k, Math.min(2e9, Math.max(0, (cur.data[k] ?? 0) + d[k]))]));
+      const { error } = await supabase.from('profiles').update(next).eq('id', id); if (error) throw error;
+      console.log(`[admin] items ${JSON.stringify(d)} target=${id} by=${sess.userId}`);
+      const t = online.get(id); if (t) t.emit('items:update', next);
+      return { ok: true, drop: next.lootboxes, store: next.store_cases, keys: next.case_keys };
     });
 
     // ───── 계정 스킨 관리 (개발자 모드 전용 — needDev 로 DEV_SECRET_CODE 인증된 소켓만, DB 는 service_role 클라이언트)

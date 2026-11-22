@@ -4,7 +4,7 @@
 //  · 게스트: 같은 규칙을 이 브라우저 localStorage 에서 재현 (크레딧·컨테이너는 supabase.ts 게스트 프로필, 스킨은 아래 키)
 // 결과는 모두 patchProfile 로 프로필에 반영되고, 계정은 마지막 스냅샷을 localStorage 에도 캐시한다.
 // =====================================================================
-import { CASES, DAILY_SLOTS, DUP_REFUND, SHOP_PRICES, SKINS, XP_PER_LEVEL, getSkin, matchXp, normalizeTier, rollCaseTier, tierPool, type CaseKind, type SkinDef, type Tier } from '../config/skins';
+import { CASES, DAILY_SLOTS, MAX_QTY, DUP_REFUND, SHOP_PRICES, SKINS, XP_PER_LEVEL, getSkin, matchXp, normalizeTier, rollCaseTier, tierPool, type CaseKind, type SkinDef, type Tier } from '../config/skins';
 import { GameError, getProfile, onProfileChange, patchProfile, rpc, type OwnedSkin, type Profile, type ShopItem } from './supabase';
 
 export type StoreItem = 'key' | 'store_case';
@@ -63,7 +63,19 @@ function spend(cost: number): void {
   const p = getProfile()!; if (p.credits < cost) throw new GameError('NOT_ENOUGH_CREDITS');
   patchProfile({ credits: p.credits - cost });
 }
-const assertQty = (n: number): void => { if (![1, 3, 5, 10].includes(n)) throw new GameError('INVALID_QTY'); };
+const assertQty = (n: number): void => { if (!Number.isInteger(n) || n < 1 || n > MAX_QTY) throw new GameError('INVALID_QTY'); };
+/** 수량 제한이 1·3·5·10 인 구버전 DB RPC 용 분할 (큰 묶음부터) */
+const legacyChunks = (n: number): number[] => { const out: number[] = []; for (; n > 0;) { const c = ([10, 5, 3, 1] as const).find((x) => x <= n)!; out.push(c); n -= c; } return out; };
+/** RPC 를 한 번에 호출하고, DB 가 임의 수량을 아직 지원하지 않으면(INVALID_QTY) 허용 수량 단위로 나눠 순차 호출 */
+async function rpcQty<T>(fn: string, make: (q: number) => Record<string, unknown>, qty: number, merge: (acc: T | null, r: T) => T): Promise<T> {
+  try { return await rpc<T>(fn, make(qty)); }
+  catch (e) {
+    if (!(e instanceof GameError) || e.code !== 'INVALID_QTY' || [1, 3, 5, 10].includes(qty)) throw e;
+    let acc: T | null = null;
+    for (const c of legacyChunks(qty)) acc = merge(acc, await rpc<T>(fn, make(c)));
+    return acc!;
+  }
+}
 
 // ───────────────────────────── 공개 API ─────────────────────────────
 /** 오늘의 상점 또는 상설 판매 스킨 구매 */
@@ -78,7 +90,7 @@ export async function buyShopSkin(skinId: string, daily: ShopItem[]): Promise<vo
 /** 무기 상자 열쇠 / 상점 전용 컨테이너 구매 */
 export async function buyStoreItem(item: StoreItem, qty: number): Promise<void> {
   assertQty(qty);
-  if (!isGuest()) { const r = await rpc<{ credits: number; lootboxes: number; case_keys: number; store_cases: number }>('buy_store_item', { p_item: item, p_qty: qty }); patchProfile(r); return; }
+  if (!isGuest()) { patchProfile(await rpcQty<{ credits: number; lootboxes: number; case_keys: number; store_cases: number }>('buy_store_item', (q) => ({ p_item: item, p_qty: q }), qty, (_, r) => r)); return; }
   spend((item === 'key' ? SHOP_PRICES.key : SHOP_PRICES.storeCase) * qty);
   const p = getProfile()!;
   patchProfile(item === 'key' ? { case_keys: (p.case_keys ?? 0) + qty } : { store_cases: (p.store_cases ?? 0) + qty });
@@ -87,7 +99,8 @@ export async function buyStoreItem(item: StoreItem, qty: number): Promise<void> 
 export async function openCases(kind: CaseKind, count: number): Promise<CaseResult[]> {
   assertQty(count);
   if (!isGuest()) {
-    const r = await rpc<{ results: CaseResult[]; credits: number; lootboxes: number; case_keys: number; store_cases: number }>('open_cases', { p_case: kind, p_count: count });
+    type R = { results: CaseResult[]; credits: number; lootboxes: number; case_keys: number; store_cases: number };
+    const r = await rpcQty<R>('open_cases', (q) => ({ p_case: kind, p_count: q }), count, (acc, x) => ({ ...x, results: [...(acc?.results ?? []), ...x.results] }));
     patchProfile({ credits: r.credits, lootboxes: r.lootboxes, case_keys: r.case_keys, store_cases: r.store_cases });
     return r.results.map((x) => ({ ...x, rarity: normalizeTier(x.rarity) }));
   }

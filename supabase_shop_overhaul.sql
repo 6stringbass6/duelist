@@ -82,13 +82,13 @@ begin
   return jsonb_build_object('skin_id', p_skin_id, 'credits', v_p.credits, 'unlocked', to_jsonb(v_new));
 end $$;
 
--- 열쇠 / 상점 전용 컨테이너 구매 (수량 1·3·5·10)
+-- 열쇠 / 상점 전용 컨테이너 구매 (수량 1~999)
 create or replace function public.buy_store_item(p_item text, p_qty int default 1) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare v_uid uuid := auth.uid(); v_unit int; v_p profiles;
 begin
   if v_uid is null then raise exception 'NOT_AUTHENTICATED'; end if;
-  if p_qty not in (1, 3, 5, 10) then raise exception 'INVALID_QTY'; end if;
+  if p_qty not between 1 and 999 then raise exception 'INVALID_QTY'; end if;
   v_unit := case p_item when 'key' then 1500 when 'store_case' then 2200 end;
   if v_unit is null then raise exception 'NOT_FOR_SALE'; end if;
   select * into v_p from profiles where id = v_uid for update;
@@ -107,7 +107,7 @@ declare v_uid uuid := auth.uid(); v_p profiles; v_rarity text; v_skin skin_catal
         v_out jsonb := '[]'::jsonb; v_new text[]; i int;
 begin
   if v_uid is null then raise exception 'NOT_AUTHENTICATED'; end if;
-  if p_count not in (1, 3, 5, 10) then raise exception 'INVALID_QTY'; end if;
+  if p_count not between 1 and 999 then raise exception 'INVALID_QTY'; end if;
   select * into v_p from profiles where id = v_uid for update;
   if p_case = 'drop' then
     if v_p.lootboxes < p_count then raise exception 'NO_LOOTBOX'; end if;

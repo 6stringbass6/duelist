@@ -16,7 +16,7 @@ import {
 import { preloadWeaponModels, WEAPON_MODELS } from './game/weaponModels';
 import { CharacterRig, loadCharacterAssets } from './game/character';
 import { skinSwatchUrl } from './game/skinTextures';
-import { BUY_QTYS, CASES, SHOP_PRICES, SKINS, SKIN_WEAPONS, TIERS, TIER_ORDER, XP_PER_LEVEL, caseOdds, getSkin, resolveSkinId, skinsForWeapon, tierEmblemSvg, type CaseKind, type SkinDef, type Tier } from './config/skins';
+import { BUY_QTYS, CASES, MAX_QTY, clampQty, SHOP_PRICES, SKINS, SKIN_WEAPONS, TIERS, TIER_ORDER, XP_PER_LEVEL, caseOdds, getSkin, resolveSkinId, skinsForWeapon, tierEmblemSvg, type CaseKind, type SkinDef, type Tier } from './config/skins';
 import { awardGuestMatchXp, buyShopSkin, buyStoreItem, equipGuestSkin, guestDaily, guestSkins, inventoryOf, levelOf, normalizeDaily, openCases, permanentPrice, permanentStock, type StoreItem } from './services/economy';
 import { SkinPreview } from './game/skinPreview';
 import { runCaseOpening } from './game/caseOpening';
@@ -498,8 +498,12 @@ function caseVis(art: CaseKind | 'key'): string {
 const CASE_TINT: Record<CaseKind | 'key', string> = { drop: '#9fb3c8', store: '#fdcb6e', key: '#e6d3a3' };
 const buyQty: Record<StoreItem, number> = { key: 1, store_case: 1 };
 const openQty: Record<CaseKind, number> = { drop: 1, store: 1 };
-const qtyPills = (attr: string, id: string, cur: number, max = 10): string =>
-  `<div class="c-qty" role="group" aria-label="수량">${BUY_QTYS.map((n) => `<button type="button" class="c-qp${n === cur ? ' c-on' : ''}" data-${attr}="${id}" data-n="${n}" ${n > max ? 'disabled' : ''}>${n}</button>`).join('')}</div>`;
+/** 수량 컨트롤: 단축 버튼(1·3·5·10[·MAX]) + − [직접 입력] + 스테퍼. attr = 'bq'(구매) | 'oq'(개봉), 입력/스테퍼는 data-{attr}-in / -step 로 연결 */
+const qtyPills = (attr: string, id: string, cur: number, max = MAX_QTY, withMax = false): string => {
+  const pills: number[] = [...BUY_QTYS]; if (withMax && max > 0 && !pills.includes(max)) pills.push(max);
+  return `<div class="c-qty" role="group" aria-label="수량" data-qk="${attr}:${id}" data-max="${max}">${pills.map((n) => `<button type="button" class="c-qp${n === cur ? ' c-on' : ''}" data-${attr}="${id}" data-n="${n}" ${n > max ? 'disabled' : ''}>${withMax && n === max && !(BUY_QTYS as readonly number[]).includes(n) ? 'MAX ' + n : n}</button>`).join('')}
+    <span class="c-qs"><button type="button" class="c-qp" data-${attr}-step="${id}" data-d="-1" aria-label="1 감소">−</button><input class="c-qi" type="number" inputmode="numeric" min="1" max="${max}" step="1" value="${cur}" data-${attr}-in="${id}" aria-label="수량 직접 입력" /><button type="button" class="c-qp" data-${attr}-step="${id}" data-d="1" aria-label="1 증가">＋</button></span></div>`;
+};
 const oddsHtml = (k: CaseKind): string => `<div class="c-odds">${caseOdds(k).map((o) => `<span style="color:${o.color}">${esc(o.label)}${o.tier === 'exrare' ? ' ★' : ''} <b>${o.percent.toFixed(2)}%</b></span>`).join('')}</div>`;
 /** 다음 KST 자정까지 남은 시간 */
 function untilReset(): string {
@@ -517,7 +521,7 @@ function htmlShop(): string {
       <span class="c-cn2">${esc(name)}</span><span class="c-cw">${esc(desc)}</span>
       ${art === 'store' ? `<button type="button" class="c-link2" data-odds>${oddsOpen ? '확률 숨기기' : '확률 보기'}</button>${oddsOpen ? oddsHtml('store') : ''}` : ''}
       ${qtyPills('bq', item, q)}
-      <div class="c-row"><span class="c-price"><span class="c-gem"></span>${fmt(unit * q)}</span><span class="c-acts">${art === 'store' && own > 0 ? `<button type="button" class="c-btn c-ghostb" data-open="store" data-n="${q}">${[...BUY_QTYS].reverse().find((x) => x <= Math.min(q, own))}개 열기</button>` : ''}<button type="button" class="c-btn c-fill" data-sbuy="${item}" ${p.credits < unit * q ? 'disabled title="크레딧 부족"' : ''}>${q}개 구매</button></span></div></div></div>`;
+      <div class="c-row"><span class="c-price"><span class="c-gem"></span><span data-bp="${item}">${fmt(unit * q)}</span></span><span class="c-acts">${art === 'store' && own > 0 ? `<button type="button" class="c-btn c-ghostb" data-open="store" data-own="${own}" data-n="${Math.min(q, own)}">${Math.min(q, own)}개 열기</button>` : ''}<button type="button" class="c-btn c-fill" data-sbuy="${item}" data-unit="${unit}" ${p.credits < unit * q ? 'disabled title="크레딧 부족"' : ''}>${q}개 구매</button></span></div>${p.credits < unit * q ? `<span class="c-cw c-short" data-bshort="${item}">크레딧이 ◈ ${fmt(unit * q - p.credits)} 부족합니다</span>` : `<span class="c-cw c-short hidden" data-bshort="${item}"></span>`}</div></div>`;
   };
   const daily = bundle?.shop ?? [];
   const dailyCards = daily.map((it) => { const s = getSkin(it.skin_id)!; return shopSkinCard(s, it.price, it.owned || owned(s.id), 'daily'); }).join('');
@@ -543,7 +547,7 @@ function htmlContainers(): string {
   const opener = (k: CaseKind, max: number): string => {
     const q = Math.min(openQty[k], Math.max(1, max)); openQty[k] = q;
     return max < 1 ? `<div class="c-row"><span class="c-lock">${k === 'drop' && inv.dropCases > 0 ? '무기 상자 열쇠가 필요합니다' : '보유한 컨테이너가 없습니다'}</span><button type="button" class="c-btn c-ghostb" data-gotab="shop">상점</button></div>`
-      : `${qtyPills('oq', k, q, max)}<div class="c-row"><span class="c-cw">${k === 'drop' ? `열쇠 ${q}개 사용` : '열쇠 동봉'}</span><button type="button" class="c-btn c-fill" data-open="${k}">${q}개 열기</button></div>`;
+      : `${qtyPills('oq', k, q, Math.min(max, MAX_QTY), true)}<div class="c-row"><span class="c-cw" data-okey="${k}">${k === 'drop' ? `열쇠 ${q}개 사용` : '열쇠 동봉'}</span><button type="button" class="c-btn c-fill" data-open="${k}" data-max="${Math.min(max, MAX_QTY)}">${q}개 열기</button></div>`;
   };
   return `<div class="c-grid c-grid3 c-cgrid">
     ${card('drop', CASES.drop.name, inv.dropCases, CASES.drop.desc, opener('drop', Math.min(inv.dropCases, inv.keys)))}
@@ -641,16 +645,48 @@ function bindLobbyBody(): void {
     if (!confirm(`${s.name} 을(를) ◈ ${fmt(price)}에 구매할까요?`)) return;
     if ((await guard(() => buyShopSkin(s.id, bundle?.shop ?? []))) !== null) { toast(`${s.name} 구매 완료`, 'good'); await loadBundle(); }
   }));
-  each('[data-bq]', (b) => (b.onclick = () => { buyQty[b.dataset.bq as StoreItem] = +b.dataset.n!; renderLobby(); }));
-  each('[data-oq]', (b) => (b.onclick = () => { openQty[b.dataset.oq as CaseKind] = +b.dataset.n!; renderLobby(); }));
+  const syncQty = (attr: 'bq' | 'oq', id: string, keepInput = false): void => { // 재렌더 없이 수량 표시 갱신 (입력 중 포커스 유지)
+    const ctl = body.querySelector<HTMLElement>(`[data-qk="${attr}:${id}"]`); if (!ctl) return;
+    const max = +ctl.dataset.max!, q = attr === 'bq' ? buyQty[id as StoreItem] : openQty[id as CaseKind], card = ctl.closest<HTMLElement>('.c-ccard')!;
+    ctl.querySelectorAll<HTMLElement>('button[data-n]').forEach((b) => b.classList.toggle('c-on', +b.dataset.n! === q));
+    const inp = ctl.querySelector<HTMLInputElement>('input'); if (inp && !keepInput) inp.value = String(q);
+    const stepBtns = ctl.querySelectorAll<HTMLButtonElement>('[data-d]'); stepBtns.forEach((b) => (b.disabled = (+b.dataset.d! < 0 && q <= 1) || (+b.dataset.d! > 0 && q >= max)));
+    if (attr === 'bq') {
+      const buy = card.querySelector<HTMLButtonElement>('[data-sbuy]')!, total = +buy.dataset.unit! * q, credits = getProfile()!.credits, short = card.querySelector<HTMLElement>('[data-bshort]');
+      card.querySelector('[data-bp]')!.textContent = fmt(total); buy.textContent = `${q}개 구매`;
+      buy.disabled = credits < total; if (credits < total) buy.title = '크레딧 부족'; else buy.removeAttribute('title');
+      if (short) { short.classList.toggle('hidden', credits >= total); short.textContent = credits < total ? `크레딧이 ◈ ${fmt(total - credits)} 부족합니다` : ''; }
+      const op = card.querySelector<HTMLButtonElement>('[data-open]'); if (op) { const m = Math.min(q, +op.dataset.own!); op.dataset.n = String(m); op.textContent = `${m}개 열기`; }
+    } else {
+      card.querySelector('[data-okey]')!.textContent = id === 'drop' ? `열쇠 ${q}개 사용` : '열쇠 동봉'; card.querySelector<HTMLElement>('[data-open]')!.textContent = `${q}개 열기`;
+    }
+  };
+  const setQty = (attr: 'bq' | 'oq', id: string, v: number, keepInput = false): void => {
+    const max = +body.querySelector<HTMLElement>(`[data-qk="${attr}:${id}"]`)!.dataset.max!, q = clampQty(v, max);
+    if (attr === 'bq') buyQty[id as StoreItem] = q; else openQty[id as CaseKind] = q;
+    syncQty(attr, id, keepInput);
+  };
+  for (const attr of ['bq', 'oq'] as const) {
+    each(`[data-${attr}]`, (b) => (b.onclick = () => setQty(attr, b.dataset[attr]!, +b.dataset.n!)));
+    each(`[data-${attr}-step]`, (b) => (b.onclick = () => { const id = b.dataset[`${attr}Step`]!; setQty(attr, id, (attr === 'bq' ? buyQty[id as StoreItem] : openQty[id as CaseKind]) + +b.dataset.d!); }));
+    each(`[data-${attr}-in]`, (i) => {
+      const inp = i as HTMLInputElement, id = inp.dataset[`${attr}In`]!;
+      inp.oninput = () => setQty(attr, id, Number(inp.value), true);
+      inp.onchange = () => setQty(attr, id, Number(inp.value));
+      inp.onkeydown = (e) => { if (e.key === 'Enter') inp.blur(); };
+    });
+    body.querySelectorAll<HTMLElement>(`[data-qk^="${attr}:"]`).forEach((c) => syncQty(attr, c.dataset.qk!.split(':')[1]));
+  }
   each('[data-sbuy]', (b) => (b.onclick = async () => {
     const item = b.dataset.sbuy as StoreItem, n = buyQty[item], name = item === 'key' ? '무기 상자 열쇠' : CASES.store.name;
     if ((await guard(() => buyStoreItem(item, n))) !== null) { toast(`${name} ${n}개 구매 완료`, 'good'); renderLobby(); }
   }));
   each('[data-open]', (b) => (b.onclick = () => {
-    const k = b.dataset.open as CaseKind, inv = inventoryOf(getProfile()), max = k === 'drop' ? Math.min(inv.dropCases, inv.keys) : inv.storeCases;
-    const n = +(b.dataset.n ?? openQty[k]), q = [...BUY_QTYS].reverse().find((x) => x <= Math.min(n, max));
-    if (q) void openCaseFlow(k, q);
+    const k = b.dataset.open as CaseKind, inv = inventoryOf(getProfile()), max = Math.min(MAX_QTY, k === 'drop' ? Math.min(inv.dropCases, inv.keys) : inv.storeCases);
+    const q = clampQty(+(b.dataset.n ?? openQty[k]), max); // 보유 상자·열쇠보다 많으면 가능한 최대 수량으로 보정
+    if (max < 1) return;
+    if (q < +(b.dataset.n ?? openQty[k])) toast(`보유 수량에 맞춰 ${q}개만 개봉합니다.`);
+    void openCaseFlow(k, q);
   }));
   each('[data-gocases]', (b) => (b.onclick = () => { ldSlot = 'cases'; goTab('loadout'); }));
   each('[data-gotab]', (b) => (b.onclick = () => goTab(b.dataset.gotab as LobbyTab)));
@@ -1319,13 +1355,14 @@ $('btn-settings').onclick = () => { if (view === 'lobby') goTab('settings'); els
 
 // ───────────────────────────── 고객센터 / 개발자 모드 ─────────────────────────────
 interface Ticket { id: number; message: string; status: 'open' | 'done'; created_at: string; user_id?: string; nickname?: string }
-interface AdminUser { id: string; nickname: string; username?: string | null; credits: number; rank_points?: number; banned_until?: string | null; ban_reason?: string | null; email?: string }
+interface AdminUser { id: string; nickname: string; username?: string | null; credits: number; lootboxes?: number; store_cases?: number; case_keys?: number; rank_points?: number; banned_until?: string | null; ban_reason?: string | null; email?: string }
 const SUP_ERR: Record<string, string> = { LOGIN_REQUIRED: '로그인 후 이용할 수 있습니다.', RATE_LIMIT: '잠시 후 다시 시도해 주세요.', TICKET_LIMIT: '문의 전송 한도를 초과했습니다. 잠시 후 다시 시도해 주세요.',
   TOO_LONG: '500자 이내로 작성해 주세요.', EMPTY: '내용을 입력해 주세요.', FORBIDDEN: '권한이 없습니다. 개발자 모드를 다시 인증해 주세요.', EMPTY_QUERY: '검색어(닉네임·이메일·UUID)를 입력해 주세요.', USER_NOT_FOUND: '해당 유저를 찾을 수 없습니다.', BAD_REQUEST: '잘못된 요청입니다. (대상 ID/스킨 ID 형식 오류)', NO_DB: '서버 DB가 연결되지 않았습니다.' };
 const supMsg = (c?: string): string => SUP_ERR[c ?? ''] ?? ackMsg(c);
 const fmtTime = (iso: string): string => new Date(iso).toLocaleString('ko-KR', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 let devMode = false, devTab: 'inbox' | 'account' = 'inbox';
 net.onCredits = (c) => patchProfile({ credits: c });
+net.onItems = (m) => { patchProfile(m); if (view === 'lobby' && (lobbyTab === 'shop' || lobbyTab === 'loadout')) renderLobby(); };
 net.onSkinsUpdate = () => { needReconnect = true; toast('보유 스킨이 갱신되었습니다.', 'good'); void loadBundle(); };
 function endDevMode(): void { if (devMode) { devMode = false; admSkinUser = null; admSkinOwned = []; void net.call('admin:exit'); } }
 
@@ -1396,6 +1433,9 @@ function renderAdminAccount(): void {
     box.innerHTML = `<div class="tk"><div class="row"><b>${esc(u.nickname)}</b>${left ? '<span class="chip" style="margin-left:8px;border-color:var(--acc)">정지 중</span>' : ''}<span class="mut" style="font-size:11px;margin-left:8px">${esc(u.email ? u.email + ' · ' : '')}${esc(u.id)}</span></div>
       <div style="${sec}"><div class="row"><b>크레딧</b><span class="right">◈ <b>${fmt(u.credits)}</b></span></div>
         <div class="row" style="gap:8px;margin-top:6px"><input id="adm-amt" type="number" min="1" max="1000000000" placeholder="수량" style="flex:1" /><button class="pri" id="adm-add">+ 지급</button><button id="adm-sub">− 차감</button></div></div>
+      <div style="${sec}"><div class="row"><b>상자 · 열쇠</b><span class="right mut" style="font-size:12px">드롭 상자 <b>${fmt(u.lootboxes ?? 0)}</b> · 상점 컨테이너 <b>${fmt(u.store_cases ?? 0)}</b> · 열쇠 <b>${fmt(u.case_keys ?? 0)}</b></span></div>
+        <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap"><input id="adm-iq" type="number" min="1" max="1000000000" value="10" placeholder="수량" style="width:110px" />${([10, 100, 999] as const).map((n) => `<button class="sm" data-iq="${n}">${n}</button>`).join('')}<span class="mut" style="font-size:12px">← 수량 입력 후 아래 버튼</span></div>
+        <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap"><button class="pri" data-ig="drop">+ 드롭 무기 상자</button><button class="pri" data-ig="store">+ 상점 전용 컨테이너</button><button class="pri" data-ig="keys">+ 무기 상자 열쇠</button><button class="pri" data-ig="all">전체 상자 &amp; 열쇠 대량 지급</button><button data-ig="zero">모두 0으로</button></div></div>
       <div style="${sec}"><div class="row"><b>랭크 점수</b><span class="right">현재 <b>${fmt(u.rank_points ?? 0)}</b> RP</span></div>
         <div class="row" style="gap:8px;margin-top:6px"><input id="rp-val" type="number" min="0" max="1000000" placeholder="설정할 랭크 점수" style="flex:1" value="${u.rank_points ?? 0}" /><button class="pri" id="rp-set">랭크 점수 적용</button></div></div>
       <div style="${sec}"><div class="row"><b>스킨</b><span class="right mut" style="font-size:12px">보유 ${admSkinOwned.length}종 — × 로 회수</span></div>
@@ -1409,6 +1449,21 @@ function renderAdminAccount(): void {
       const r = await net.call<{ before: number; after: number }>('admin:credits', { id: u.id, delta: sign * n }); if (!r.ok) { fail(r); return; }
       u.credits = r.after ?? u.credits; done({}, `크레딧 ◈ ${fmt(r.before ?? 0)} → ${fmt(r.after ?? 0)}`);
     });
+    const iq = (): number => Math.floor(Number($<HTMLInputElement>('adm-iq').value));
+    box.querySelectorAll<HTMLElement>('[data-iq]').forEach((b) => (b.onclick = () => { $<HTMLInputElement>('adm-iq').value = b.dataset.iq!; }));
+    box.querySelectorAll<HTMLElement>('[data-ig]').forEach((b) => (b.onclick = () => void guard(b, async () => {
+      const k = b.dataset.ig!, cur = { drop: u.lootboxes ?? 0, store: u.store_cases ?? 0, keys: u.case_keys ?? 0 };
+      let n = iq(), d: { drop?: number; store?: number; keys?: number };
+      if (k === 'zero') { if (!confirm(`${u.nickname} 의 상자·열쇠를 모두 0개로 만들까요?`)) return; d = { drop: -cur.drop, store: -cur.store, keys: -cur.keys }; }
+      else {
+        if (!Number.isFinite(n) || n <= 0) { status('1 이상의 수량을 입력하세요.', 'bad'); return; }
+        n = Math.min(n, 1e9);
+        d = k === 'all' ? { drop: n, store: n, keys: n } : k === 'drop' ? { drop: n } : k === 'store' ? { store: n } : { keys: n };
+      }
+      const r = await net.call<{ drop: number; store: number; keys: number }>('admin:items', { id: u.id, ...d }); if (!r.ok) { fail(r); return; }
+      u.lootboxes = r.drop ?? u.lootboxes; u.store_cases = r.store ?? u.store_cases; u.case_keys = r.keys ?? u.case_keys;
+      done({}, `드롭 상자 ${fmt(u.lootboxes ?? 0)} · 상점 컨테이너 ${fmt(u.store_cases ?? 0)} · 열쇠 ${fmt(u.case_keys ?? 0)}`);
+    })));
     $('adm-add').onclick = credit(1); $('adm-sub').onclick = credit(-1);
     $('rp-set').onclick = (e) => void guard(e.currentTarget as HTMLElement, async () => {
       const v = Number($<HTMLInputElement>('rp-val').value); if (!Number.isInteger(v) || v < 0 || v > 1000000) { status('랭크 점수는 0 ~ 1,000,000 사이 정수여야 합니다.', 'bad'); return; }

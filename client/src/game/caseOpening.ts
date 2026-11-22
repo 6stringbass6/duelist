@@ -29,6 +29,8 @@ const esc = (s: unknown): string => String(s ?? '').replace(/[&<>"']/g, (c) => (
 const fmt = (n: number): string => n.toLocaleString('ko-KR');
 const hex = (n: number): string => '#' + n.toString(16).padStart(6, '0');
 const STAR_SVG = '<svg class="co-star" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 4 L39.6 23.6 L60 24.4 L44 37.4 L49.6 58 L32 46.4 L14.4 58 L20 37.4 L4 24.4 L24.4 23.6 Z"/></svg>';
+const TIER_COUNT_ORDER = (Object.keys(TIERS) as Tier[]).sort((a, b) => TIERS[b].order - TIERS[a].order);
+const BULK_SKIP = 10;
 const REEL_LEN = 52, WIN_AT = 45;
 const reduced = (): boolean => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -190,11 +192,13 @@ export function runCaseOpening(kind: CaseKind, results: CaseResult[], hooks: Cas
     stop(); phase = 'summary'; idx = n - 1; setSub();
     results.forEach((_, i) => mark(i));
     const refund = results.reduce((a, r) => a + r.refund, 0), fresh = results.filter((r) => !r.duplicate).length;
+    const tally = TIER_COUNT_ORDER.map((tr) => [tr, results.filter((r) => (skinOf(r)?.tier ?? r.rarity) === tr).length] as const).filter(([, c]) => c > 0);
     $('co-sub').textContent = `${n}개 개봉 결과`;
     stage.innerHTML = '';
     result.innerHTML = `<div class="co-sum">${results.map((r) => { const s = skinOf(r), t = TIERS[s?.tier ?? r.rarity];
-      return `<div class="co-si" style="--tc:${t.color}"><div class="co-svis">${s ? hooks.vis(s) : ''}</div><span class="co-st">${esc(t.name)}</span><span class="co-sn">${esc(s?.name ?? r.skin_id)}</span><span class="co-sd">${r.duplicate ? `중복 · ◈ ${fmt(r.refund)} 환급` : '새 스킨'}</span></div>`; }).join('')}</div>
-      <div class="co-total">새 스킨 ${fresh}개${refund ? ` · 중복 환급 ◈ ${fmt(refund)}` : ''}</div>`;
+      const tier = s?.tier ?? r.rarity, hi = TIERS[tier].order >= TIERS.covert.order;
+      return `<div class="co-si${hi ? ' co-hi' : ''}${tier === 'exrare' ? ' co-rare' : ''}" style="--tc:${t.color}">${tier === 'exrare' ? STAR_SVG : ''}<div class="co-svis">${s ? hooks.vis(s) : ''}</div><span class="co-st">${esc(t.name)}${tier === 'exrare' ? ' ★' : ''}</span><span class="co-sn">${esc(s?.name ?? r.skin_id)}</span><span class="co-sd">${r.duplicate ? `중복 · ◈ ${fmt(r.refund)} 환급` : '새 스킨'}</span></div>`; }).join('')}</div>
+      <div class="co-tally">${tally.map(([tr, c]) => `<span style="--tc:${TIERS[tr].color}">${esc(TIERS[tr].name)}${tr === 'exrare' ? ' ★' : ''} <b>${c}</b></span>`).join('')}</div><div class="co-total">새 스킨 ${fresh}개${refund ? ` · 중복 환급 ◈ ${fmt(refund)}` : ''}</div>`;
     hooks.hydrate(result);
     $('co-skip').classList.add('hidden'); $('co-skipall')?.classList.add('hidden');
     const done = $('co-done'); done.classList.remove('hidden'); done.focus();
@@ -209,5 +213,5 @@ export function runCaseOpening(kind: CaseKind, results: CaseResult[], hooks: Cas
   $('co-done').onclick = close;
   $('co-x').onclick = () => (phase === 'summary' || (n === 1 && phase === 'reveal') ? close() : skipAll());
   $('co-skip').focus();
-  intro();
+  if (n > BULK_SKIP) { stage3d.dispose(); summary(); } else intro(); // 대량 개봉은 룰렛 대신 결과 그리드로 즉시
 }

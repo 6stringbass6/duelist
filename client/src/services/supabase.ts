@@ -49,7 +49,7 @@ const ERROR_KO: Record<string, string> = {
   INVALID_NICKNAME: '닉네임은 한글·영문·숫자·밑줄 2~16자입니다.', NICKNAME_TAKEN: '이미 사용 중인 닉네임입니다.', SAME_NICKNAME: '현재 닉네임과 같습니다.',
   NOT_ENOUGH_CREDITS: '크레딧이 부족합니다.', ALREADY_OWNED: '이미 보유한 스킨입니다.', NOT_FOR_SALE: '현재 판매 중인 스킨이 아닙니다.',
   SKIN_NOT_FOUND: '존재하지 않는 스킨입니다.', SKIN_NOT_OWNED: '보유하지 않은 스킨입니다.', NO_LOOTBOX: '보유한 컨테이너가 부족합니다.',
-  NO_CASE_KEY: '무기 상자 열쇠가 부족합니다.', INVALID_QTY: '구매·개봉 수량은 1 · 3 · 5 · 10개 중에서 고를 수 있습니다.', BOX_EMPTY: '컨테이너 구성이 비어 있습니다.',
+  NO_CASE_KEY: '무기 상자 열쇠가 부족합니다.', INVALID_QTY: '구매·개봉 수량은 1 ~ 999개 사이여야 합니다.', BOX_EMPTY: '컨테이너 구성이 비어 있습니다.',
   SHOP_NOT_READY: '상점 업데이트가 아직 서버에 적용되지 않았습니다. 잠시 후 다시 시도해 주세요.',
   BOX_NOT_FOUND: '존재하지 않는 박스입니다.', TITLE_LOCKED: '아직 해금되지 않은 칭호입니다.',
   FRIEND_NOT_FOUND: '해당 닉네임의 플레이어를 찾을 수 없습니다.', FRIEND_SELF: '자기 자신에게는 친구 요청을 보낼 수 없습니다.', FRIEND_EXISTS: '이미 친구이거나 요청을 보낸 상대입니다.',

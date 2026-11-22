@@ -393,6 +393,7 @@ export class GameClient {
   /** 서버가 크레딧을 갱신했을 때(관리자 지급 등) 호출 */
   onCredits: ((credits: number) => void) | null = null;
   onSkinsUpdate: (() => void) | null = null;
+  onItems: ((m: { lootboxes: number; store_cases: number; case_keys: number }) => void) | null = null;
   private req(ev: string, data: object = {}): Promise<Ack> {
     return new Promise((resolve) => {
       if (!this.socket?.connected) return resolve({ ok: false, error: 'NOT_CONNECTED' });
@@ -438,6 +439,7 @@ export class GameClient {
     s.on('kicked', (m: { reason: string }) => this.emit('error', m.reason));
     s.on('server:shutdown', () => this.emit('error', 'SERVER_SHUTDOWN'));
     s.on('credits:update', (m: { credits: number }) => this.onCredits?.(m.credits));
+    s.on('items:update', (m: { lootboxes: number; store_cases: number; case_keys: number }) => this.onItems?.(m)); // 개발자 모드 상자·열쇠 지급 → 보관함 즉시 반영
     s.on('skins:update', () => this.onSkinsUpdate?.()); // 관리자 지급/회수 → 보관함 즉시 갱신
     s.on('hello', (h: HelloInfo) => { this.hello = h; this.timeOffset = h.serverTime - Date.now(); this.emit('hello', h); });
 
