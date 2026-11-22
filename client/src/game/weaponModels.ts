@@ -80,9 +80,8 @@ const FILE_PARTS: Record<string, Record<string, PartDef>> = {
 interface BladeMask { from?: number; comps?: { blade: number[]; metal?: number[] }; handleOnly?: RegExp; blade?: PartDef; handle?: PartDef; metal?: PartDef; wrap?: PartDef; mats?: Record<string, PartDef>; nativeHandle?: boolean }
 /** 카람빗 기본(바닐라) 칼날·핑거 링 = 건메탈 탄소강 (원본 다마스커스 줄무늬 map 제거) */
 const KARAMBIT_VANILLA_BLADE: PartDef = { role: 'base', color: 0x2d323a, metalness: 0.84, roughness: 0.34 };
-/** 카람빗 스킨 칼날·핑거 링 마감 — damascus-karambit.glb 원본 ORM(roughness/metalness)·normal 맵을 그대로 사용(계수 1 = 맵 값 그대로, 골드 룬 상수 오버라이드 철회).
- *  원본 맵이 칼날·링 금속 광택 / 손잡이 매트 그립을 UV별로 이미 분리. 스킨 시트(map)만 uv1(평면 UV)로 매핑 */
-const NATIVE_PBR = { metalness: 1, roughness: 1, nativeMaps: true } as const;
+/** 카람빗 스킨 칼날·핑거 링 마감 — 칼날·링은 별도 재질 그룹이므로 원본 normal/ORM 맵을 연결하지 않고(다마스커스 물결 제거) 스칼라 PBR + 평면 UV 스킨 시트만 사용. */
+const NATIVE_PBR = { metalness: 0.92, roughness: 0.22 } as const; // 원본 normal/ORM 맵은 다마스커스 물결이 구워져 있어 칼날·링에선 쓰지 않고 균일 고광택 스칼라 사용(손잡이는 nativeHandle 로 원본 유지)
 const doppler = (offsetU: number, color: number, emissive: number, repeat: [number, number] = [0.24, 0.55], offsetV = 0.225): PartDef => ({
   role: 'base', color, ...NATIVE_PBR, finish: true, emissive, emissiveIntensity: 1.15,
   sheet: { url: 'textures/doppler.jpeg', rotation: 0, repeat, offset: [offsetU, offsetV] },
