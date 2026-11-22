@@ -157,6 +157,16 @@ export const EXTRA_SKINS: SkinDef[] = [
     blurb: '칼날 전체에 루비 레드 연기가 소용돌이치는 도플러 카람빗 (Ruby). 카람빗 스페셜 박스 한정.',
     model: 'default', material: { style: 'solid', baseColor: 0xb3122a, accentColor: 0x5a0a14, patternColor: 0xff4d5e, metalness: 0.78, roughness: 0.2 },
     emissive: NO_GLOW, vfx: { tracerColor: 0xff4d5e }, glb: { file: 'damascus_karambit.glb', length: 0.27, grip: 0.3, roll: 0, rot: [0, 0, Math.PI], variant: 'doppler_ruby' } },
+  // 카람빗 도플러(사파이어) — doppler.jpeg 오른쪽 블루 연기 구역
+  { id: 'karambit_doppler_sapphire', collection: 'karambit', weaponId: 'dagger', name: '★ 카람빗 | 사파이어', patternSeed: 418, tier: 'exrare', price: 4500, featured: false, inDaily: false, inBox: false, sort: 14.6,
+    blurb: '칼날 전체에 코발트 블루 연기가 감도는 도플러 카람빗 (Sapphire). 카람빗 스페셜 박스 한정.',
+    model: 'default', material: { style: 'solid', baseColor: 0x1d4fb8, accentColor: 0x0a1a5a, patternColor: 0x4d8dff, metalness: 0.78, roughness: 0.2 },
+    emissive: NO_GLOW, vfx: { tracerColor: 0x4d8dff }, glb: { file: 'damascus_karambit.glb', length: 0.27, grip: 0.3, roll: 0, rot: [0, 0, Math.PI], variant: 'doppler_sapphire' } },
+  // 카람빗 감마 도플러(에메랄드) — doppler.jpeg 가운데 그린 연기 구역
+  { id: 'karambit_gamma_doppler', collection: 'karambit', weaponId: 'dagger', name: '★ 카람빗 | 에메랄드', patternSeed: 419, tier: 'exrare', price: 4500, featured: false, inDaily: false, inBox: false, sort: 14.7,
+    blurb: '칼날 전체에 에메랄드 그린 연기가 피어오르는 감마 도플러 카람빗 (Emerald). 카람빗 스페셜 박스 한정.',
+    model: 'default', material: { style: 'solid', baseColor: 0x0f8f4a, accentColor: 0x06361c, patternColor: 0x4dff9a, metalness: 0.78, roughness: 0.2 },
+    emissive: NO_GLOW, vfx: { tracerColor: 0x4dff9a }, glb: { file: 'damascus_karambit.glb', length: 0.27, grip: 0.3, roll: 0, rot: [0, 0, Math.PI], variant: 'doppler_emerald' } },
   // 버터플라이 나이프 — 상점 NEW(featured) 상시 판매. 단검(근접 3번 슬롯) 전용, butterfly_knife.glb 내장 PBR 재질(스틸 날 + 블랙/레드 핸들) 사용
   // GLB 규약: 날끝 +X, 등날 +Y(위), 핸들 -X — 원본 .blend 에서 Blender 5.3 으로 변환
   { id: BUTTERFLY_SKIN_ID, collection: 'butterfly', weaponId: 'dagger', name: '버터플라이 나이프', tier: 'exrare', price: 4500, featured: true, inDaily: false, inBox: false, sort: 15,
@@ -227,9 +237,9 @@ export const LOOTBOXES: Record<string, LootboxDef> = {
   standard: { id: 'standard', name: '스탠다드 박스', price: 1000, rates: { consumer: 18.33, industrial: 18.33, milspec: 27.67, restricted: 22.67, classified: 8, covert: 5 } },
   premium: { id: 'premium', name: '프리미엄 박스', price: 2000, rates: { consumer: 6.66, industrial: 6.67, milspec: 20, restricted: 35.67, classified: 18, covert: 13 } },
   karambit: {
-    id: 'karambit', name: '카람빗 스페셜 박스', price: 4000, gunOnly: true, desc: '총기 스킨 전용 · 평범한·쓸만한 등급 제외 · 0.1% 확률로 단검 카람빗(표면 경화 / 도플러) 등장',
+    id: 'karambit', name: '카람빗 스페셜 박스', price: 4000, gunOnly: true, desc: '총기 스킨 전용 · 평범한·쓸만한 등급 제외 · 0.1% 확률로 단검 카람빗(표면 경화 / 도플러 / 사파이어 / 에메랄드) 등장',
     rates: { milspec: 15, restricted: 41.67, classified: 23.33, covert: 19.9 },
-    jackpot: { key: 'karambit', skinIds: [KARAMBIT_SKIN_ID, 'karambit_doppler'], weight: 0.1, refund: 2000, label: '단검: 카람빗' },
+    jackpot: { key: 'karambit', skinIds: [KARAMBIT_SKIN_ID, 'karambit_doppler', 'karambit_doppler_sapphire', 'karambit_gamma_doppler'], weight: 0.1, refund: 2000, label: '단검: 카람빗' },
   },
 };
 /** 중복 획득 시 크레딧 환급액 (등급 기준가의 25%) */

@@ -85,6 +85,10 @@ const BLADE_VARIANTS: Record<string, PartDef> = {
   case_hardened_387: { role: 'base', color: 0xa8bce6, metalness: 0.76, roughness: 0.26, envMapIntensity: 0.8, sheet: { url: 'textures/case_hardened.png', rotation: 0, repeat: [0.5, 0.5], offset: [-0.37, 0.41] } },
   // 도플러 루비: doppler.jpeg 시트의 왼쪽 붉은 연기 구역(U≈0.17~0.41)만 칼날+핑거 링에 매핑 (three offset 은 중심 기준: u' = r·(u-0.5)+0.5+off)
   doppler_ruby: { role: 'base', color: 0xffc4c4, metalness: 0.78, roughness: 0.2, envMapIntensity: 0.85, sheet: { url: 'textures/doppler.jpeg', rotation: 0, repeat: [0.24, 0.55], offset: [-0.21, 0.225] } },
+  // 도플러 사파이어: 시트 오른쪽 블루 연기 구역(U≈0.72~0.96, 중심 0.84 → offset 0.34)
+  doppler_sapphire: { role: 'base', color: 0xc4d8ff, metalness: 0.78, roughness: 0.2, envMapIntensity: 0.85, sheet: { url: 'textures/doppler.jpeg', rotation: 0, repeat: [0.24, 0.55], offset: [0.34, 0.225] } },
+  // 감마 도플러 에메랄드: 시트 가운데 그린 연기 구역(U≈0.43~0.68, 중심 0.555 → offset 0.055)
+  doppler_emerald: { role: 'base', color: 0xc4ffd4, metalness: 0.78, roughness: 0.2, envMapIntensity: 0.85, sheet: { url: 'textures/doppler.jpeg', rotation: 0, repeat: [0.24, 0.55], offset: [0.055, 0.225] } },
 };
 const DAMASCUS_FILE = 'damascus_karambit.glb';
 const BLADE_MASKS: Record<string, BladeMask> = {
