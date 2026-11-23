@@ -21,10 +21,10 @@ const MAP = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().mak
 const KNIFE_AXES = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(V(1, 0, 0), V(0, 0, 1), V(0, -1, 0)));
 const KNIFE_SCALE = V(-1, 1, 1);
 /** 무기 그룹 원점(뒤끝에서 30% 그립 지점 · 단면 중심) 의 MDL knife 로컬 좌표(u) */
-const KNIFE_ORIGIN = V(0.28, -4.44 + 9.8 * 0.3, 2.4);
+const KNIFE_ORIGIN = V(0.28, -4.44 + 9.8 * 0.3 + 1.0, 2.4); // +1.0: 핑거 링 중심을 검지 첫 마디에 맞추고 손잡이를 주먹 안쪽으로 당김(화면 검증)
 /** 자세히 보기 손바닥 지지 구간: 칼 그립 중심 ↔ 손 평면(손바닥 법선 +Y) 최소 거리(u).
  *  쥔 상태 = 손가락이 감싸므로 얕게, 손을 펼친 상태 = CS2 장갑 손바닥 두께 + 손잡이 반두께만큼 띄워 관통 방지 */
-const PALM_CLEAR_GRIP = 0.3, PALM_CLEAR_OPEN = 0.95;
+const PALM_CLEAR_GRIP = 0.3, PALM_CLEAR_OPEN = 1.3;
 /** 손가락 펼침 정도(검지~새끼 마디 방향 · 손 전방 평균 내적): 이 구간에서 쥔(0) → 펼친(1) 으로 보간 */
 const OPEN_LO = -0.3, OPEN_HI = -0.15;
 
