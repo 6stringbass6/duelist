@@ -289,21 +289,30 @@ body.mfx-lose #stage canvas,body.mfx-lose #hud{filter:saturate(.1) brightness(.5
 #loadout{position:absolute;z-index:30;left:50%;top:50%;transform:translate(-50%,-50%);width:min(720px,96vw);max-height:92vh;overflow:auto;touch-action:pan-y}
 .ld-row{display:grid;grid-template-columns:90px 1fr;gap:8px;align-items:start;padding:6px 0}.ld-opts{display:flex;gap:6px;flex-wrap:wrap}
 .ld-opts button{min-width:92px;text-align:left}.ld-opts button small{display:block;color:var(--mut);font-size:11px}.ld-opts button.on{border-color:var(--acc);background:#2a1a22}
-/* ── touch */
+/* ── touch (프리셋 좌표 기반: --x/--y = 중심 %, --s = 크기 배율, --o = 투명도) */
 #touch{position:absolute;inset:0;z-index:12;pointer-events:none}
-#joy-zone{position:absolute;left:0;top:18%;bottom:0;width:42%;pointer-events:auto}#aim-zone{position:absolute;right:0;top:12%;bottom:0;width:58%;pointer-events:auto}
-#joy-base{position:absolute;width:120px;height:120px;border-radius:50%;border:2px solid rgba(255,255,255,.35);background:rgba(255,255,255,.06);left:calc(36px + env(safe-area-inset-left));bottom:calc(36px + env(safe-area-inset-bottom))}
+#aim-zone{position:absolute;inset:0;pointer-events:auto}#joy-zone{position:absolute;top:20%;bottom:0;pointer-events:auto}
+.tbtn{position:absolute;left:var(--x,50%);top:var(--y,50%);width:var(--w,52px);height:var(--h,52px);transform:translate(-50%,-50%) scale(var(--s,1));opacity:var(--o,.7);box-sizing:border-box;pointer-events:auto;border-radius:50%;border:2px solid rgba(255,255,255,.45);background:rgba(20,26,38,.5);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:#fff;touch-action:none}
+.tbtn.off{display:none}.tbtn.down{background:rgba(255,255,255,.35)}.tbtn.big{border-color:var(--acc);font-size:15px}
+.tbtn.joy{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.35);pointer-events:none}.tbtn.joy.held{background:rgba(255,255,255,.12)}.tbtn.joy.sprint{border-color:var(--ok);box-shadow:0 0 14px rgba(80,220,140,.5)}
 #joy-knob{position:absolute;left:50%;top:50%;width:46%;height:46%;margin:-23% 0 0 -23%;border-radius:50%;background:rgba(255,255,255,.5)}
-.tbtn{position:absolute;pointer-events:auto;width:58px;height:58px;border-radius:50%;border:2px solid rgba(255,255,255,.45);background:rgba(20,26,38,.5);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:#fff;transform:scale(var(--ts,1));opacity:var(--to,.6)}
-.tbtn.down{background:rgba(255,255,255,.35)}.tbtn.big{width:84px;height:84px;font-size:15px;border-color:var(--acc)}
-#t-fire{right:calc(34px + env(safe-area-inset-right));bottom:calc(74px + env(safe-area-inset-bottom))}#t-ads{right:calc(132px + env(safe-area-inset-right));bottom:calc(46px + env(safe-area-inset-bottom))}
-#t-jump{right:calc(30px + env(safe-area-inset-right));bottom:calc(172px + env(safe-area-inset-bottom))}#t-slide{right:calc(126px + env(safe-area-inset-right));bottom:calc(120px + env(safe-area-inset-bottom))}
-#t-x{right:calc(284px + env(safe-area-inset-right));bottom:calc(60px + env(safe-area-inset-bottom))}
-#t-q{right:calc(202px + env(safe-area-inset-right));bottom:calc(30px + env(safe-area-inset-bottom))}#t-e{right:calc(204px + env(safe-area-inset-right));bottom:calc(104px + env(safe-area-inset-bottom))}
-#t-reload{right:calc(100px + env(safe-area-inset-right));bottom:calc(200px + env(safe-area-inset-bottom));width:46px;height:46px}
-#t-auto{right:calc(18px + env(safe-area-inset-right));top:calc(120px + env(safe-area-inset-top));width:auto;height:34px;border-radius:99px;padding:0 12px;font-size:11px}#t-auto.on{border-color:var(--ok);color:var(--ok)}
-#t-menu,#t-load{top:calc(8px + env(safe-area-inset-top));width:40px;height:40px;font-size:11px}#t-menu{left:calc(64px + env(safe-area-inset-left))}#t-load{left:calc(112px + env(safe-area-inset-left))}
-body.left #joy-base{left:auto;right:calc(36px + env(safe-area-inset-right))}
+.tbtn.slot{border-radius:10px;flex-direction:column;gap:0;line-height:1.1;overflow:hidden;padding:0 4px}.tbtn.slot b{font-size:15px}.tbtn.slot small{font-size:10px;font-weight:600;color:#cfd6e4;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tbtn.slot.on{border-color:#fff;background:rgba(255,255,255,.22)}
+.tbtn[data-hid=auto]{border-radius:99px;font-size:11px}.tbtn[data-hid=auto].on{border-color:var(--ok);color:var(--ok)}
+body.touchmode #hud-br{display:none}
+body.touchmode #hud-skills{bottom:calc(9% + 28px);pointer-events:none}body.touchmode .sk{width:46px;height:46px}body.touchmode #hud-ult{bottom:calc(9% + 80px)}
+/* ── HUD 편집기 */
+#hud-editor{position:fixed;inset:0;z-index:95;background:rgba(8,12,20,.86);touch-action:none;user-select:none}
+#hud-editor .hed-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);background-size:10% 10%;pointer-events:none}
+#hud-editor .hed-cross{position:absolute;left:50%;top:50%;width:18px;height:18px;margin:-9px;border:1px solid rgba(255,255,255,.3);border-radius:50%;pointer-events:none}
+#hud-editor .tbtn{opacity:var(--o,.7);cursor:grab}#hud-editor .tbtn.joy{pointer-events:auto}
+#hud-editor .tbtn.ghost{opacity:.3;border-style:dashed}#hud-editor .tbtn.sel{outline:2px solid var(--acc);outline-offset:3px}
+.hed-panel{position:absolute;left:50%;top:6px;transform:translateX(-50%);z-index:5;width:min(400px,94vw);background:rgba(16,22,34,.96);border:1px solid var(--line);border-radius:10px;padding:6px 8px;font-size:12px}
+.hed-row{cursor:move;display:flex;gap:6px;align-items:center}.hed-tabs{display:flex;gap:4px;flex:1;flex-wrap:wrap}.hed-tabs button,.hed-act button,.hed-fold{padding:4px 6px;font-size:11px}.hed-tabs button,.hed-act button{cursor:pointer}.hed-tabs button.on{border-color:var(--acc);background:#2a1a22}
+.hed-body{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin-top:6px;align-items:center}.hed-sel{display:flex;gap:10px;align-items:center;grid-column:1/-1}
+.hed-sl{display:flex;gap:6px;align-items:center}.hed-sl input{flex:1;min-width:0}.hed-sl output{min-width:38px;text-align:right}
+.hed-act{display:flex;gap:6px;justify-content:flex-end;grid-column:1/-1}.hed-act .pri{border-color:var(--acc)}
+#hud-editor.folded .hed-body{display:none}
 /* ── misc */
 #toasts{position:absolute;left:50%;top:70px;transform:translateX(-50%);z-index:60;display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none}
 .toast{background:#1d2637;border:1px solid var(--line);padding:8px 16px;border-radius:8px;font-size:14px}.toast.bad{border-color:var(--acc)}.toast.good{border-color:var(--ok)}
@@ -789,7 +798,7 @@ th{font-family:var(--c-en);font-weight:500;font-size:11px;letter-spacing:.2em;te
 .insp-bar{display:flex;align-items:center;gap:10px;padding:12px 24px 18px;border-top:1px solid var(--c-line)}.insp-sp{flex:1}
 @media(max-width:560px){.insp-sn{font-size:20px}.insp-bar{padding:10px 14px 14px;flex-wrap:wrap}}
 </style>
-  <script type="module" crossorigin src="/assets/index-ZrMtGBXr.js"></script>
+  <script type="module" crossorigin src="/assets/index-tsMWD6bF.js"></script>
 </head>
 <body>
 <div id="app">
@@ -822,16 +831,7 @@ th{font-family:var(--c-en);font-weight:500;font-size:11px;letter-spacing:.2em;te
   </div>
 
   <!-- 모바일 듀얼 터치 HUD -->
-  <div id="touch" class="hidden">
-    <div id="joy-zone"><div id="joy-base"><div id="joy-knob"></div></div></div>
-    <div id="aim-zone"></div>
-    <div class="tbtn" id="t-menu">메뉴</div><div class="tbtn" id="t-load">무기</div>
-    <div class="tbtn" id="t-auto">Auto-Fire OFF</div>
-    <div class="tbtn" id="t-reload" data-act="reload">R</div>
-    <div class="tbtn" id="t-q" data-act="updraft">Q</div><div class="tbtn" id="t-e" data-act="dash">E</div><div class="tbtn" id="t-x" data-act="ult">X</div>
-    <div class="tbtn" id="t-slide" data-act="slide">슬라</div><div class="tbtn" id="t-jump" data-act="jump">점프</div>
-    <div class="tbtn" id="t-ads" data-act="alt">줌</div><div class="tbtn big" id="t-fire" data-act="fire">사격</div>
-  </div>
+  <div id="touch" class="hidden"></div>
 
   <!-- 매치 종료 시네마틱 (승리/패배) -->
   <div id="match-fx" class="hidden"><div class="mfx-bg"></div><div class="mfx-rays"></div><div class="mfx-flash"></div><canvas id="mfx-canvas"></canvas><div class="mfx-text"><div id="mfx-title"></div><div id="mfx-sub"></div></div></div>
@@ -889,7 +889,7 @@ th{font-family:var(--c-en);font-weight:500;font-size:11px;letter-spacing:.2em;te
   <div class="modal hidden" id="m-login"><div class="card sm col"><div class="mh"><h3>7일 연속 로그인 보상</h3><button class="x" data-close>✕</button></div><div id="login-body"></div><button class="pri" data-close>확인</button></div></div>
   <div class="modal hidden" id="tacmap"><div class="card"><div class="mh"><h3>전술 맵 — 이동할 위치를 클릭 (그림자 습격)</h3><button class="x" id="tac-close">✕</button></div><canvas id="tac-canvas" width="640" height="640"></canvas><div class="mut" style="margin-top:6px;font-size:12px">시전 시간 1.5초 · 시전 중 피격되면 취소됩니다. 흰 점 = 내 위치</div></div></div>
   <div class="modal hidden" id="m-result"><div class="card col"><div id="res-body" class="col"></div><button class="pri" id="res-ok">로비로 돌아가기</button></div></div>
-  <div class="modal hidden" id="m-pause"><div class="card sm col"><div class="mh"><h3>일시 메뉴</h3></div><button class="pri" id="pause-resume">계속하기</button><button id="pause-load">무기 변경</button><button id="pause-settings">설정</button><button class="ghost" id="pause-leave">게임 나가기</button></div></div>
+  <div class="modal hidden" id="m-pause"><div class="card sm col"><div class="mh"><h3>일시 메뉴</h3></div><button class="pri" id="pause-resume">계속하기</button><button id="pause-load">무기 변경</button><button id="pause-settings">설정</button><button id="pause-touch">모바일 터치 조작: OFF</button><button class="ghost" id="pause-leave">게임 나가기</button></div></div>
 
   <div id="toasts"></div>
   <div id="rotate-hint"><div>📱↻<br />가로 화면으로 돌려 주세요</div></div>

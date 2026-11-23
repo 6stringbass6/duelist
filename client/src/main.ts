@@ -6,7 +6,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import {
   ACTIONS, ACTION_LABELS, CROSSHAIR_COLORS, CROSSHAIR_PRESETS, FPS_CAP_OPTIONS, HFOV_DEG, RESERVED_CODES, SETTINGS_LIMITS, VALORANT_YAW_DEG,
   applyCrosshairPreset, applyGraphicsPreset, bindFromEvent, bindLabel, cmPer360, createFrameLimiter, drawCrosshair, effectiveFpsCap, effectivePixelRatio,
-  getSettings, isTouchDevice, onSettingsChange, resetSettings, setBinding, updateSettings, verticalFovDeg,
+  getSettings, loadTouchMode, saveTouchMode, HUD_PRESET_NAMES, onSettingsChange, resetSettings, setBinding, updateSettings, verticalFovDeg,
   type Action, type CrosshairLines, type CrosshairPresetId, type FpsCap, type Settings,
 } from './config/settings';
 import {
@@ -33,6 +33,7 @@ import {
 import { SKILLS, SKILL_IDS, ULTS, ULT_IDS, ULT_COST, type SkillId, type UltId } from './config/skills';
 import { GameClient, createWeaponMesh, type MatchEnd, type MatchPlayerResult, type MatchReward, type PlayerInfo, type RoomState } from './game/network';
 import { PlayerController } from './game/playerController';
+import { TouchHud, openHudEditor } from './game/touchHud';
 import { HS_ICON, killBannerHtml, playBannerParticles, weaponIcon } from './game/killUi';
 
 // ───────────────────────────── DOM 헬퍼 ─────────────────────────────
@@ -56,7 +57,9 @@ function toast(msg: string, kind: '' | 'good' | 'bad' = ''): void {
 }
 const errMsg = (e: unknown): string => (e instanceof GameError ? e.message : (e as Error)?.message ?? String(e));
 async function guard<T>(fn: () => Promise<T>): Promise<T | null> { try { return await fn(); } catch (e) { toast(errMsg(e), 'bad'); return null; } }
-const TOUCH = isTouchDevice();
+/** 모바일 터치 조작 모드 (기기 로컬 · 언제든 ON/OFF) — 터치 기기는 기본 ON, PC 도 수동 ON 가능 */
+let TOUCH = loadTouchMode();
+let touchHud: TouchHud | null = null;
 
 // ───────────────────────────── 3D 코어 ─────────────────────────────
 const stage = $('stage'), xhair = $<HTMLCanvasElement>('xhair'), xctx = xhair.getContext('2d')!;
@@ -97,9 +100,7 @@ function applyGraphics(): void {
   const dpr = Math.min(2, devicePixelRatio || 1); xhair.width = Math.round(innerWidth * dpr); xhair.height = Math.round(innerHeight * dpr);
   show('hud-fps', g.showFps);
   document.body.classList.toggle('left', getSettings().mobile.leftHanded);
-  const m = getSettings().mobile; $('touch').style.setProperty('--ts', String(m.buttonScale)); $('touch').style.setProperty('--to', String(m.buttonOpacity));
-  $('joy-base').style.width = $('joy-base').style.height = m.joystickSize + 'px';
-  $('t-auto').textContent = `Auto-Fire ${m.autoFire ? 'ON' : 'OFF'}`; $('t-auto').classList.toggle('on', m.autoFire);
+  touchHud?.layout();
 }
 makeRenderer();
 addEventListener('resize', applyGraphics);
@@ -1125,8 +1126,6 @@ $('pause-resume').onclick = resumeGame;
 $('pause-load').onclick = () => { show('m-pause', false); toggleLoadout(true); };
 $('pause-settings').onclick = () => openSettings();
 $('pause-leave').onclick = () => void leaveGame();
-$('t-menu').onclick = () => show('m-pause', !visible('m-pause'));
-$('t-load').onclick = () => toggleLoadout(!visible('loadout'));
 $('range-exit').onclick = () => void leaveGame();
 $('range-load').onclick = () => toggleLoadout(true);
 $('range-move').onclick = () => net.setRangeMoving(!net.rangeMoving);
@@ -1291,6 +1290,7 @@ function updateHud(now: number): void {
   $('hud-hp').style.color = h.hp < 45 ? 'var(--acc)' : '';
   $('hud-ammo').innerHTML = h.slot === SLOT.melee ? '∞' : h.reloading ? `<small>재장전 ${Math.round(h.reloadProgress * 100)}%</small>` : `${h.ammo}<small> / ${h.magSize}</small>`;
   $('hud-weapon').textContent = h.weaponName;
+  if (TOUCH) touchHud?.update(h);
   $('hud-slots').querySelectorAll<HTMLElement>('[data-slot]').forEach((d) => d.classList.toggle('on', +d.dataset.slot! === h.slot));
   const sk = (id: string, cd: number, act: boolean): void => { const e = $(id); (e.lastElementChild as HTMLElement).style.height = `${cd * 100}%`; e.classList.toggle('act', act); };
   const skFill = (id: string, d: { icon: string; name: string }, uses: string, cd: number, act: boolean, off: boolean): void => {
@@ -1335,43 +1335,28 @@ function updateHud(now: number): void {
   fpsFrames++; if (now - fpsAt >= 500) { if (s.graphics.showFps) $('hud-fps').textContent = `${Math.round((fpsFrames * 1000) / (now - fpsAt))} FPS · ${net.pingMs}ms`; fpsFrames = 0; fpsAt = now; }
 }
 
-// ───────────────────────────── 모바일 듀얼 터치 컨트롤 ─────────────────────────────
-function bindTouch(): void {
-  const base = $('joy-base'), knob = $('joy-knob'), jz = $('joy-zone'), az = $('aim-zone');
-  let joyId = -1, jx = 0, jy = 0;
-  const joyMove = (e: PointerEvent): void => {
-    const R = base.clientWidth / 2; let dx = e.clientX - jx, dy = e.clientY - jy; const d = Math.hypot(dx, dy);
-    if (d > R) { dx = (dx / d) * R; dy = (dy / d) * R; }
-    knob.style.transform = `translate(${dx}px,${dy}px)`; pc.setMoveAxis(dx / R, -dy / R);
-  };
-  jz.addEventListener('pointerdown', (e) => { if (joyId !== -1) return; joyId = e.pointerId; jz.setPointerCapture(e.pointerId); const r = base.getBoundingClientRect(); jx = r.left + r.width / 2; jy = r.top + r.height / 2; pc.audio.resume(); joyMove(e); });
-  jz.addEventListener('pointermove', (e) => { if (e.pointerId === joyId) joyMove(e); });
-  const joyEnd = (e: PointerEvent): void => { if (e.pointerId !== joyId) return; joyId = -1; knob.style.transform = ''; pc.setMoveAxis(0, 0); };
-  jz.addEventListener('pointerup', joyEnd); jz.addEventListener('pointercancel', joyEnd);
-  // 우측 에임 드래그 (사격/줌 버튼 위에서 드래그해도 조준 가능)
-  const look = new Map<number, { x: number; y: number }>();
-  const aimDown = (e: PointerEvent): void => { look.set(e.pointerId, { x: e.clientX, y: e.clientY }); (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); };
-  const aimMove = (e: PointerEvent): void => { const p = look.get(e.pointerId); if (!p) return; pc.addLook(e.clientX - p.x, e.clientY - p.y); p.x = e.clientX; p.y = e.clientY; };
-  const aimUp = (e: PointerEvent): void => { look.delete(e.pointerId); };
-  for (const el of [az, $('t-fire'), $('t-ads')]) { el.addEventListener('pointerdown', aimDown); el.addEventListener('pointermove', aimMove); el.addEventListener('pointerup', aimUp); el.addEventListener('pointercancel', aimUp); }
-  // 버튼: 사격 / 줌(토글) / 점프 / 슬라이딩 / Q / E / 재장전
-  document.querySelectorAll<HTMLElement>('.tbtn[data-act]').forEach((b) => {
-    const act = b.dataset.act as Action;
-    if (act === 'alt') { // 줌은 토글. 섬광탄/클래식은 탭 = 우클릭 1회
-      b.addEventListener('pointerdown', () => { const on = !pc.isHeld('alt'); pc.setAction('alt', on); b.classList.toggle('down', on); if (on && pc.getHudState().slot !== SLOT.primary) setTimeout(() => { pc.setAction('alt', false); b.classList.remove('down'); }, 120); });
-      return;
-    }
-    b.addEventListener('pointerdown', () => { b.classList.add('down'); if (act === 'fire') manualFire = true; pc.setAction(act, true); });
-    const up = (): void => { b.classList.remove('down'); if (act === 'fire') manualFire = false; pc.setAction(act, false); };
-    b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up);
-  });
-  $('t-auto').addEventListener('pointerdown', () => updateSettings((s) => { s.mobile.autoFire = !s.mobile.autoFire; }));
+// ───────────────────────────── 모바일 터치 조작 (프리셋 기반 HUD · src/game/touchHud.ts) ─────────────────────────────
+touchHud = new TouchHud($('touch'), {
+  pc, primarySlot: SLOT.primary,
+  togglePause: () => show('m-pause', !visible('m-pause')),
+  toggleLoadout: () => toggleLoadout(!visible('loadout')),
+});
+/** 터치 조작 모드 ON/OFF — Pointer Lock 없이 터치/드래그로 시점·버튼을 쓴다 (PC 마우스도 동일 동작) */
+function setTouchMode(on: boolean): void {
+  if (on === TOUCH) return;
+  TOUCH = on; saveTouchMode(on); pc.touchMode = on; touchHud?.reset();
+  document.body.classList.toggle('touchmode', on); show('touch', view === 'game' && on);
+  if (on) { if (document.pointerLockElement) document.exitPointerLock(); }
+  else if (view === 'game' && !anyPanelOpen()) pc.requestCapture();
+  $('pause-touch').textContent = `모바일 터치 조작: ${on ? 'ON' : 'OFF'}`;
 }
-bindTouch();
+pc.touchMode = TOUCH; document.body.classList.toggle('touchmode', TOUCH);
+$('pause-touch').textContent = `모바일 터치 조작: ${TOUCH ? 'ON' : 'OFF'}`;
+$('pause-touch').onclick = () => setTouchMode(!TOUCH);
 
 // ── Auto-Fire: 조준선이 적에게 닿으면 자동 사격
 const rc = new THREE.Raycaster(), CENTER = new THREE.Vector2(0, 0);
-let manualFire = false, autoOn = false;
+let autoOn = false;
 function autoFireTick(): void {
   let on = false;
   if (TOUCH && getSettings().mobile.autoFire && pc.alive && net.phase === 'live' && !anyPanelOpen()) {
@@ -1383,7 +1368,7 @@ function autoFireTick(): void {
       if (hit && hit.distance < maxT) { on = true; break; }
     }
   }
-  if (on !== autoOn) { autoOn = on; if (!manualFire) pc.setAction('fire', on); }
+  if (on !== autoOn) { autoOn = on; if (!touchHud?.manualFire) pc.setAction('fire', on); }
 }
 
 // ───────────────────────────── 설정창 ─────────────────────────────
@@ -1576,6 +1561,22 @@ function checkRow(label: string, get: (s: Settings) => boolean, set: (s: Setting
   (row.querySelector('input') as HTMLInputElement).onchange = (e) => { updateSettings((s) => set(s, (e.target as HTMLInputElement).checked)); afterSettingChange(); };
   return row;
 }
+/** 모바일 터치 조작 모드 ON/OFF (기기 로컬 설정) */
+function touchModeRow(): HTMLElement {
+  const row = document.createElement('div'); row.className = 'set-row';
+  row.innerHTML = `<span>모바일 터치 조작 모드</span><label><input type="checkbox" ${TOUCH ? 'checked' : ''}/> ${TOUCH ? 'ON' : 'OFF'}</label><span class="mut" style="font-size:12px">포인터 잠금 없이 터치·드래그로 조작 (PC 에서도 사용 가능)</span>`;
+  (row.querySelector('input') as HTMLInputElement).onchange = (e) => { setTouchMode((e.target as HTMLInputElement).checked); renderSettings(); };
+  return row;
+}
+function hudEditRow(): HTMLElement {
+  const row = document.createElement('div'); row.className = 'set-row';
+  row.innerHTML = `<span>모바일 HUD 편집</span><button type="button" class="sm">HUD 레이아웃 편집기 열기</button><span class="mut" style="font-size:12px">버튼 위치·크기·투명도 (계정별 3개 저장)</span>`;
+  (row.querySelector('button') as HTMLButtonElement).onclick = () => {
+    const wasOpen = visible('m-settings'); if (wasOpen) show('m-settings', false);
+    openHudEditor(() => { if (wasOpen) show('m-settings'); renderSettings(); });
+  };
+  return row;
+}
 function choiceRow<T extends string | number>(label: string, opts: [T, string][], get: (s: Settings) => T, set: (s: Settings, v: T) => void): HTMLElement {
   const row = document.createElement('div'); row.className = 'set-row'; row.style.gridTemplateColumns = '170px 1fr';
   const draw = (): void => {
@@ -1605,7 +1606,7 @@ function renderSettings(): void {
 
   if (setTab === 'sens') {
     sensInfo = note('');
-    add(sliderRow('감도 (발로란트 수치)', L.sens[0], 5, 0.001, (s) => s.sens.valorant, (s, v) => { s.sens.valorant = v; }), sensInfo,
+    add(touchModeRow(), sliderRow('감도 (발로란트 수치)', L.sens[0], 5, 0.001, (s) => s.sens.valorant, (s, v) => { s.sens.valorant = v; }), sensInfo,
       sliderRow('줌 감도 배율', L.adsMult[0], L.adsMult[1], 0.01, (s) => s.sens.adsMult, (s, v) => { s.sens.adsMult = v; }),
       sliderRow('모바일 감도', L.mobile[0], L.mobile[1], 0.05, (s) => s.sens.mobile, (s, v) => { s.sens.mobile = v; }),
       sliderRow('모바일 줌 감도', L.mobile[0], L.mobile[1], 0.05, (s) => s.sens.mobileAds, (s, v) => { s.sens.mobileAds = v; }),
@@ -1665,12 +1666,11 @@ function renderSettings(): void {
     if (getSettings().graphics.fpsCap === 'custom') add(sliderRow('사용자 지정 FPS', L.customFps[0], 360, 1, (s) => s.graphics.customFps, (s, v) => { s.graphics.customFps = v; }));
     add(note(`현재 제한: <b>${effectiveFpsCap(getSettings().graphics)} FPS</b> (모니터 주사율을 넘을 수 없습니다)`), checkRow('FPS · 핑 표시', (s) => s.graphics.showFps, (s, v) => { s.graphics.showFps = v; }), resetBtn('graphics'));
   } else {
-    add(head('모바일'),
+    add(head('모바일'), touchModeRow(),
       checkRow('Auto-Fire (조준 시 자동 사격)', (s) => s.mobile.autoFire, (s, v) => { s.mobile.autoFire = v; }),
-      checkRow('왼손 모드', (s) => s.mobile.leftHanded, (s, v) => { s.mobile.leftHanded = v; }),
-      sliderRow('조이스틱 크기', 80, 200, 5, (s) => s.mobile.joystickSize, (s, v) => { s.mobile.joystickSize = v; }),
-      sliderRow('버튼 크기', 0.6, 1.6, 0.05, (s) => s.mobile.buttonScale, (s, v) => { s.mobile.buttonScale = v; }),
-      sliderRow('버튼 불투명도', 0.2, 1, 0.05, (s) => s.mobile.buttonOpacity, (s, v) => { s.mobile.buttonOpacity = v; }),
+      checkRow('왼손 모드 (HUD 좌우 반전)', (s) => s.mobile.leftHanded, (s, v) => { s.mobile.leftHanded = v; }),
+      choiceRow<number>('HUD 프리셋', HUD_PRESET_NAMES.map((n, i) => [i, n] as [number, string]), (s) => s.mobile.hudActive, (s, v) => { s.mobile.hudActive = v; }),
+      hudEditRow(),
       head('사운드'),
       sliderRow('마스터 볼륨', 0, 1, 0.05, (s) => s.audio.master, (s, v) => { s.audio.master = v; }),
       sliderRow('효과음', 0, 1, 0.05, (s) => s.audio.sfx, (s, v) => { s.audio.sfx = v; }),

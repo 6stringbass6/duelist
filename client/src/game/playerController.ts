@@ -301,6 +301,8 @@ export class PlayerController {
 
   // ── 설정 / 입력
   private rebuildBinds(): void { this.lookup = buildBindLookup(getSettings().keybinds); }
+  /** 모바일 터치 조작 모드: 포인터 잠금을 요청하지 않는다 */
+  touchMode = false;
   private get locked(): boolean { return document.pointerLockElement === this.dom; }
   private bindDom(): void {
     const add = <K extends keyof DocumentEventMap>(t: EventTarget, type: K | string, fn: (e: never) => void, opt?: AddEventListenerOptions): void => {
@@ -316,7 +318,7 @@ export class PlayerController {
     add(window, 'keyup', (e: KeyboardEvent) => { const a = this.lookup.get(e.code); if (a) this.setAction(a, false); });
     add(this.dom, 'mousedown', (e: MouseEvent) => {
       this.audio.resume();
-      if (!this.locked) { if (this.captureEnabled && (e as PointerEvent).pointerType !== 'touch') void this.dom.requestPointerLock?.(); return; }
+      if (!this.locked) { if (this.captureEnabled && !this.touchMode && (e as PointerEvent).pointerType !== 'touch') void this.dom.requestPointerLock?.(); return; }
       e.preventDefault(); const a = this.lookup.get(bindFromEvent(e) ?? ''); if (a) this.setAction(a, true);
     });
     add(window, 'mouseup', (e: MouseEvent) => { const a = this.lookup.get(bindFromEvent(e) ?? ''); if (a) this.setAction(a, false); });
@@ -339,7 +341,7 @@ export class PlayerController {
     if (this.yaw > Math.PI) this.yaw -= Math.PI * 2; else if (this.yaw < -Math.PI) this.yaw += Math.PI * 2;
   }
   releaseAll(): void { this.wheel.hide(); this.held.clear(); this.firePressed = this.altPressed = false; this.moveAxis.x = this.moveAxis.y = 0; }
-  requestCapture(): void { this.audio.resume(); if (this.captureEnabled) void this.dom.requestPointerLock?.(); }
+  requestCapture(): void { this.audio.resume(); if (this.captureEnabled && !this.touchMode) void this.dom.requestPointerLock?.(); }
 
   // ── 모바일/외부 입력 주입 API
   /** 조이스틱: x=우(+)/좌(-), y=전(+)/후(-), 크기 0..1 */

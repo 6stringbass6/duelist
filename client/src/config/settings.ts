@@ -201,8 +201,56 @@ export interface Settings {
   keybinds: Keybinds;
   graphics: GraphicsSettings;
   audio: { master: number; sfx: number; ui: number };
-  mobile: { autoFire: boolean; joystickSize: number; buttonScale: number; buttonOpacity: number; leftHanded: boolean };
+  mobile: { autoFire: boolean; joystickSize: number; buttonScale: number; buttonOpacity: number; leftHanded: boolean; hudActive: number; hudPresets: HudPreset[] };
 }
+
+// ───────────────────────────── 모바일 HUD 프리셋 (계정별 3슬롯 · 설정과 함께 클라우드 동기화) ─────────────────────────────
+export const HUD_BTN_IDS = [
+  'joy', 'fire', 'fireR', 'fireR2', 'ads', 'slide', 'jump', 'crouch', 'reload', 'interact',
+  'slot1', 'slot2', 'slot3', 'slot4', 'inspect', 'pause', 'skillQ', 'skillE', 'skillX', 'auto',
+] as const;
+export type HudBtnId = (typeof HUD_BTN_IDS)[number];
+/** x,y = 버튼 중심 위치(화면 대비 %), scale = 크기 배율(0.5~2), opacity = 0.2~1 */
+export interface HudBtnCfg { x: number; y: number; scale: number; opacity: number; enabled: boolean }
+export type HudPreset = Record<HudBtnId, HudBtnCfg>;
+export const HUD_PRESET_COUNT = 3;
+export const HUD_PRESET_NAMES = ['프리셋 1 (기본 4핑거)', '프리셋 2', '프리셋 3'] as const;
+export const HUD_LIMITS = { scale: [0.5, 2], opacity: [0.2, 1] } as const;
+
+/** 4핑거(Four-Finger Claw) 표준 배치 — 좌상단 왼검지: 발사 / 좌하단 왼엄지: 조이스틱 / 우상단 오른검지: 조준·점프·슬라이딩·앉기·재장전 / 우하단 오른엄지: 보조발사·상호작용 / 하단: 1~4 슬롯 + 자세히 보기 */
+export function defaultHudPreset(): HudPreset {
+  const b = (x: number, y: number, scale = 1, enabled = true, opacity = 0.7): HudBtnCfg => ({ x, y, scale, opacity, enabled });
+  return {
+    joy: b(13, 74, 1.1), fire: b(9, 30, 1.25),
+    fireR: b(89, 76), fireR2: b(77, 86, 1, false), interact: b(77, 66),
+    ads: b(72, 22), jump: b(83, 22), slide: b(93, 34), crouch: b(83, 44), reload: b(72, 44),
+    slot1: b(34, 91), slot2: b(44, 91), slot3: b(54, 91), slot4: b(64, 91), inspect: b(73, 91),
+    pause: b(96, 8), skillQ: b(22, 45), skillE: b(29, 45), skillX: b(36, 45), auto: b(85, 8),
+  };
+}
+const HUD_RANGE = { x: [0, 100], y: [0, 100] } as const;
+export function sanitizeHudPreset(raw: unknown): HudPreset {
+  const d = defaultHudPreset(), r = isObj(raw) ? raw : {};
+  for (const id of HUD_BTN_IDS) {
+    const c = r[id]; if (!isObj(c)) continue;
+    const num = (v: unknown, f: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : f);
+    d[id] = {
+      x: clamp(num(c.x, d[id].x), HUD_RANGE.x[0], HUD_RANGE.x[1]), y: clamp(num(c.y, d[id].y), HUD_RANGE.y[0], HUD_RANGE.y[1]),
+      scale: clamp(num(c.scale, d[id].scale), HUD_LIMITS.scale[0], HUD_LIMITS.scale[1]), opacity: clamp(num(c.opacity, d[id].opacity), HUD_LIMITS.opacity[0], HUD_LIMITS.opacity[1]),
+      enabled: typeof c.enabled === 'boolean' ? c.enabled : d[id].enabled,
+    };
+  }
+  return d;
+}
+
+// ───────────────────────────── 모바일 터치 조작 모드 (기기 로컬 설정 — 계정과 동기화하지 않음) ─────────────────────────────
+const TOUCH_KEY = 'gs_touch_mode';
+/** 저장된 선택이 없으면 터치 기기에서만 기본 ON */
+export function loadTouchMode(): boolean {
+  try { const v = localStorage.getItem(TOUCH_KEY); if (v === '1' || v === '0') return v === '1'; } catch { /* 무시 */ }
+  return isTouchDevice();
+}
+export function saveTouchMode(on: boolean): void { try { localStorage.setItem(TOUCH_KEY, on ? '1' : '0'); } catch { /* 무시 */ } }
 export const SETTINGS_VERSION = 2; // v2: FOV 기본값 발로란트 103° → CS2 106.26°
 export const SETTINGS_LIMITS = { sens: [0.01, 10], adsMult: [0.1, 3], mobile: [0.1, 5], hFov: [80, 120], resolutionScale: [0.5, 1.5], customFps: [10, 1000] } as const;
 
@@ -219,7 +267,7 @@ export function defaultSettings(): Settings {
     keybinds: structuredClone(DEFAULT_KEYBINDS),
     graphics: { preset: touch ? 'low' : 'medium', ...GRAPHICS_PRESETS[touch ? 'low' : 'medium'], fpsCap: 60, customFps: 144, showFps: false },
     audio: { master: 0.8, sfx: 1, ui: 0.7 },
-    mobile: { autoFire: true, joystickSize: 120, buttonScale: 1, buttonOpacity: 0.6, leftHanded: false },
+    mobile: { autoFire: true, joystickSize: 120, buttonScale: 1, buttonOpacity: 0.6, leftHanded: false, hudActive: 0, hudPresets: Array.from({ length: HUD_PRESET_COUNT }, defaultHudPreset) },
   };
 }
 
@@ -268,6 +316,9 @@ export function sanitizeSettings(raw: unknown): Settings {
   g.customFps = clamp(Math.round(g.customFps), L.customFps[0], L.customFps[1]);
   s.audio.master = clamp(s.audio.master, 0, 1); s.audio.sfx = clamp(s.audio.sfx, 0, 1); s.audio.ui = clamp(s.audio.ui, 0, 1);
   s.mobile.joystickSize = clamp(s.mobile.joystickSize, 80, 200); s.mobile.buttonScale = clamp(s.mobile.buttonScale, 0.6, 1.6); s.mobile.buttonOpacity = clamp(s.mobile.buttonOpacity, 0.2, 1);
+  s.mobile.hudActive = Math.round(clamp(s.mobile.hudActive, 0, HUD_PRESET_COUNT - 1));
+  const rp = isObj(raw) && isObj(raw.mobile) && Array.isArray(raw.mobile.hudPresets) ? raw.mobile.hudPresets : [];
+  s.mobile.hudPresets = Array.from({ length: HUD_PRESET_COUNT }, (_, i) => sanitizeHudPreset(rp[i])); // 배열은 mergeDeep 이 건너뛰므로 직접 검증
   return s;
 }
 
