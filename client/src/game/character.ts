@@ -247,6 +247,20 @@ function firstPersonGeometry(mesh: THREE.SkinnedMesh): THREE.BufferGeometry {
 }
 
 const _q = new THREE.Quaternion(), _hp = new THREE.Vector3(), _pq = new THREE.Quaternion(), _aq = new THREE.Quaternion();
+const _fq = new THREE.Quaternion(), _sq = new THREE.Quaternion(), _v = new THREE.Vector3();
+const DEG = Math.PI / 180;
+/** 검지~새끼 관절당 굽힘 허용 범위(0 = 곧게, + = 손바닥 쪽) — 손등 쪽 역관절 차단 · MCP 좌우 벌림 한계 */
+const FLEX_MAX = 95 * DEG, SPREAD_MAX = 12 * DEG;
+/** 손목 트위스트 보정: 손-아래팔 축 비틀림 중 아래팔(요골·척골 회내/회외)이 가져갈 비율 · 손목에 남길 최대 비틀림 */
+const FOREARM_TWIST = 0.7, WRIST_TWIST_MAX = 30 * DEG;
+/** 손가락 1개(3마디) 리타겟 데이터 — bind = 손 로컬 기준 마디 회전(엄지: 바인드 그대로, 나머지: 곧게 편 자세), rest = 바인드 마디 축(손 로컬) */
+interface FingerRig { at: number; bones: THREE.Bone[]; bind: THREE.Quaternion[]; rest: THREE.Vector3[]; flex: { m: THREE.Vector3; k: THREE.Vector3 } | null }
+interface ArmRig {
+  upper: THREE.Bone; lower: THREE.Bone; hand: THREE.Bone; middle: THREE.Bone; frameInv: THREE.Quaternion; fingers: (FingerRig | null)[];
+  /** 아래팔 로컬 장축(손목 방향) · 중립 자세의 (아래팔⁻¹·손)⁻¹ */ twistAxis: THREE.Vector3; twistRestInv: THREE.Quaternion;
+}
+/** 스킨 바인드 시점의 본 월드 행렬(스켈레톤 공간) */
+const bindMatrix = (s: THREE.Skeleton, b: THREE.Bone): THREE.Matrix4 => s.boneInverses[s.bones.indexOf(b)].clone().invert();
 /** 본의 월드 회전을 q 로 맞추고(부모 월드 기준 로컬화) 하위 행렬까지 갱신 */
 function setWorldQuat(b: THREE.Object3D, q: THREE.Quaternion): void {
   b.parent!.matrixWorld.decompose(_p, _pq, _s); b.quaternion.copy(_pq.invert().multiply(q)); b.updateMatrixWorld(true);
@@ -395,28 +409,74 @@ export class CharacterRig {
     const cosA = Math.min(1, Math.max(-1, (a * a + d * d - b * b) / (2 * a * d))), E = S.clone().addScaledVector(n, a * cosA).addScaledVector(pole, a * Math.sqrt(1 - cosA * cosA));
     aimBone(arm.upper, E0.sub(S), E.clone().sub(S));
     const El = wPos(arm.lower); aimBone(arm.lower, wPos(arm.hand).sub(El), S.addScaledVector(n, d).sub(El));
-    // 손: 목표 월드 회전 = MDL 손 회전 · MDL 손 프레임 · (이 리그 손 프레임)⁻¹
-    setWorldQuat(arm.hand, new THREE.Quaternion().copy(t.handQuat).multiply(t.handFrame).multiply(arm.frameInv));
-    // 손가락: 각 마디의 '뼈 방향'을 MDL 마디 방향(월드)에 맞춘다 (부모 → 자식 순, setWorldQuat 가 하위 행렬까지 갱신)
-    arm.fingers.forEach((f, i) => { if (f) aimBone(f.bone, f.dir.clone().applyQuaternion(wQuat(f.bone)), t.fingers[i]); });
+    // 손: 목표 월드 회전 = MDL 손 회전 · MDL 손 프레임 · (이 리그 손 프레임)⁻¹ — 칼 부착이 MDL 손 기준이라 손 자체 회전은 바꾸지 않는다
+    const Hq = new THREE.Quaternion().copy(t.handQuat).multiply(t.handFrame).multiply(arm.frameInv);
+    this.alignForearmTwist(arm, Hq);
+    setWorldQuat(arm.hand, Hq);
+    // 손가락: MDL 마디 방향(손 로컬)을 손가락별 굽힘 평면의 관절 각도로 환산 → 해부학 범위로 클램핑 → 바인드 포즈 기준으로 재구성
+    const HqInv = Hq.clone().invert();
+    for (const f of arm.fingers) {
+      if (!f) continue;
+      const tl = (j: number): THREE.Vector3 => t.fingers[f.at + j].clone().applyQuaternion(HqInv);
+      if (!f.flex) { // 엄지: 바인드 자세에서 MDL 방향까지 최소 회전(손 로컬 기준이라 비틀림이 누적되지 않음)
+        f.bones.forEach((bone, j) => setWorldQuat(bone, _fq.setFromUnitVectors(f.rest[j], tl(j)).premultiply(Hq).multiply(f.bind[j])));
+        continue;
+      }
+      const { m, k } = f.flex;
+      const t0 = tl(0), spread = THREE.MathUtils.clamp(Math.asin(THREE.MathUtils.clamp(t0.dot(k), -1, 1)), -SPREAD_MAX, SPREAD_MAX);
+      let theta = 0; const prev = m.clone();
+      f.bones.forEach((bone, j) => {
+        const tj = j ? tl(j) : t0;
+        theta += THREE.MathUtils.clamp(Math.atan2(_v.crossVectors(prev, tj).dot(k), prev.dot(tj)), 0, FLEX_MAX); // 이전 마디 대비 굽힘(손바닥 쪽 +)만 허용
+        prev.copy(m).applyAxisAngle(k, theta);
+        if (j === 0) _sq.setFromAxisAngle(_v.crossVectors(k, prev).normalize(), -spread); // MCP 좌우 벌림(손가락 전체에 적용)
+        setWorldQuat(bone, _fq.setFromAxisAngle(k, theta).multiply(f.bind[j]).premultiply(_sq).premultiply(Hq));
+      });
+    }
     return wPos(arm.hand);
+  }
+  /** 손목 트위스트 보정: 손(목표 Hq)과 아래팔 사이의 축 비틀림(중립 자세 대비)을 아래팔 롤로 옮겨, 손목에는 WRIST_TWIST_MAX 이하만 남긴다 */
+  private alignForearmTwist(arm: ArmRig, Hq: THREE.Quaternion): void {
+    const L = wQuat(arm.lower), D = L.clone().invert().multiply(Hq).multiply(arm.twistRestInv); // 아래팔 로컬 기준 비틀림 델타
+    const ax = arm.twistAxis, tw = Math.atan2(D.x * ax.x + D.y * ax.y + D.z * ax.z, D.w) * 2;
+    const tau = Math.atan2(Math.sin(tw), Math.cos(tw)), roll = THREE.MathUtils.clamp(tau * FOREARM_TWIST, tau - WRIST_TWIST_MAX, tau + WRIST_TWIST_MAX);
+    setWorldQuat(arm.lower, L.multiply(_fq.setFromAxisAngle(ax, roll)));
   }
   /** 오른손 손목 → 중지 뿌리 월드 거리(m) — 손 크기가 다른 MDL 손의 칼 오프셋을 이 장갑 크기에 맞춰 축척할 때 사용 */
   rightHandSpan(): number { const arm = this.arm ??= this.buildArm(); return wPos(arm.hand).distanceTo(wPos(arm.middle)); }
-  private arm: { upper: THREE.Bone; lower: THREE.Bone; hand: THREE.Bone; middle: THREE.Bone; frameInv: THREE.Quaternion; fingers: ({ bone: THREE.Bone; dir: THREE.Vector3 } | null)[] } | null = null;
-  private buildArm(): NonNullable<CharacterRig['arm']> {
+  private arm: ArmRig | null = null;
+  private buildArm(): ArmRig {
     const B = (l: string): THREE.Bone => this.bones[findBone(this.bones, l)];
-    const hand = B('RightHand'); this.model.updateMatrixWorld(true);
+    const hand = B('RightHand'), lower = B('RightForeArm'); this.model.updateMatrixWorld(true);
     const local = (o: THREE.Object3D): THREE.Vector3 => hand.worldToLocal(wPos(o));
-    const fb = (f: string, j: number): THREE.Bone | undefined => this.bones.find((x) => x.name === `finger_${f}_${j}_r`);
-    const frame = handFrame(local(fb('middle', 0)!), local(fb('index', 0)!).sub(local(fb('pinky', 0)!)));
-    // 마디 뼈 방향(본 로컬): 다음 마디가 있으면 그쪽, 끝 마디는 직전 마디 방향 연장
-    const fingers = FINGERS.flatMap((f) => [0, 1, 2].map((j) => {
-      const bone = fb(f, j); if (!bone) return null;
-      const next = fb(f, j + 1), dir = next ? bone.worldToLocal(wPos(next)) : bone.position.clone().applyQuaternion(bone.quaternion.clone().invert());
-      return { bone, dir: dir.normalize() };
-    }));
-    return { upper: B('RightArm'), lower: B('RightForeArm'), hand, middle: fb('middle', 0)!, frameInv: frame.invert(), fingers };
+    const fb = (n: string): THREE.Bone => this.bones.find((x) => x.name === n)!;
+    const frame = handFrame(local(fb('finger_middle_0_r')), local(fb('finger_index_0_r')).sub(local(fb('finger_pinky_0_r'))));
+    // 바인드 포즈(스킨 역행렬) 기준 손 로컬 변환 — 1인칭 준비 자세(중립)의 손가락 말림·롤에 영향받지 않는 기준
+    const skel = this.skeletonOf(hand), handInv = bindMatrix(skel, hand).invert();
+    const bindLocal = (b: THREE.Bone): { p: THREE.Vector3; q: THREE.Quaternion } => {
+      const p = new THREE.Vector3(), q = new THREE.Quaternion(); handInv.clone().multiply(bindMatrix(skel, b)).decompose(p, q, _s); return { p, q };
+    };
+    const palm = new THREE.Vector3(0, 1, 0).applyQuaternion(frame); // 손바닥 법선(손 로컬)
+    const fingers = FINGERS.map((f, fi): FingerRig | null => {
+      const bones = [0, 1, 2].map((j) => fb(`finger_${f}_${j}_r`)); if (bones.some((x) => !x)) return null;
+      // 마디 뼈 축(본 로컬) = 자식 관절 방향. 끝 마디는 같은 축 규약(-X)의 자기 오프셋으로 대신한다 (*_end 잎 본은 익스포터 더미로 +Y 를 향해 쓸 수 없음)
+      const axes = bones.map((_, j) => (bones[j + 1] ?? bones[j]).position.clone().normalize());
+      const binds = bones.map(bindLocal), rest = binds.map((x, j) => axes[j].clone().applyQuaternion(x.q));
+      if (f === 'thumb') return { at: fi * 3, bones, bind: binds.map((x) => x.q), rest, flex: null };
+      // 굽힘 평면: m = 손허리뼈(meta → 첫 마디) 방향 = 펴진 손가락, k = 굽힘 축(+θ 회전 = 손바닥 쪽)
+      const m = binds[0].p.clone().sub(bindLocal(fb(`finger_${f}_meta_r`)).p).normalize();
+      const k = new THREE.Vector3().crossVectors(m, palm.clone().addScaledVector(m, -palm.dot(m))).normalize();
+      // 각 마디를 바인드 자세에서 '곧게 편' 자세로(축 m 정렬) — 이후 굽힘은 k 축 회전만 누적
+      const bind = binds.map((x, j) => new THREE.Quaternion().setFromUnitVectors(rest[j], m).multiply(x.q));
+      return { at: fi * 3, bones, bind, rest, flex: { m, k } };
+    });
+    const twistRestInv = wQuat(lower).invert().multiply(wQuat(hand)).invert();
+    return { upper: B('RightArm'), lower, hand, middle: fb('finger_middle_0_r'), frameInv: frame.invert(), fingers, twistAxis: hand.position.clone().normalize(), twistRestInv };
+  }
+  private skeletonOf(bone: THREE.Bone): THREE.Skeleton {
+    let s: THREE.Skeleton | null = null;
+    this.model.traverse((o) => { const m = o as THREE.SkinnedMesh; if (!s && m.isSkinnedMesh && m.skeleton.bones.includes(bone)) s = m.skeleton; });
+    return s!;
   }
 
   dispose(): void {
